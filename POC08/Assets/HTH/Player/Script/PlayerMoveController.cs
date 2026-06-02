@@ -67,7 +67,7 @@ namespace SEAL
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(SpriteRenderer))]
-    public class PlayerTopViewMover : MonoBehaviour
+    public class PlayerMoveController : MonoBehaviour
     {
         // ──────────────────────────────────────────
         // Inspector — 데이터 연결

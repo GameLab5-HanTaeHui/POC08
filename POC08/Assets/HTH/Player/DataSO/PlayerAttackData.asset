@@ -1,0 +1,47 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c8e2c0fa03f57244ab3b1f4e68f2dc5, type: 3}
+  m_Name: PlayerAttackData
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.PlayerAttackDataSO
+  BasicSealGaugeAmount: 10
+  BasicHitboxDuration: 0.1
+  BasicAttackCooldown: 0
+  BasicAttackDuration: 0.35
+  MaxComboCount: 3
+  ComboWindowStartRatio: 0.5
+  ComboSealMultipliers:
+  - 1
+  - 1.2
+  - 1.5
+  ChargeMinHoldTime: 0.35
+  ChargeSealGaugeAmount: 30
+  ChargeHitboxDuration: 0.2
+  ChargeHitboxScale: 1.5
+  HitboxRadius: 1
+  HitboxOffset: 1
+  HitLayer:
+    serializedVersion: 2
+    m_Bits: 0
+  HitStopDuration: 0.05
+  HitStopTimeScale: 0.02
+  ChargeHitStopDuration: 0.1
+  BackswingDuration: 0.07
+  SwingDuration: 0.09
+  RecoverDuration: 0.15
+  BackswingDistance: 0.3
+  SwingDistance: 0.8
+  SwingPunchScale: 0.3
+  ChargeSwingDistanceMultiplier: 1.8
+  ChargePulseScale: 0.15
+  ChargePulsePeriod: 0.25
+  AttackLungeDistance: 0.2
+  AttackLungeDuration: 0.07
