@@ -29,4 +29,4 @@ MonoBehaviour:
     m_Bits: 1073741824
   EnemyLayer:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 1048576

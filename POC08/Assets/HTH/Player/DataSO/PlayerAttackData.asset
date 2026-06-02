@@ -12,36 +12,44 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9c8e2c0fa03f57244ab3b1f4e68f2dc5, type: 3}
   m_Name: PlayerAttackData
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.PlayerAttackDataSO
-  BasicSealGaugeAmount: 10
-  BasicHitboxDuration: 0.1
-  BasicAttackCooldown: 0
-  BasicAttackDuration: 0.35
+  BackswingDuration: 0.15
+  AttackDuration: 0.2
+  ReturnDuration: 0.4
   MaxComboCount: 3
-  ComboWindowStartRatio: 0.5
-  ComboSealMultipliers:
-  - 1
-  - 1.2
-  - 1.5
-  ChargeMinHoldTime: 0.35
-  ChargeSealGaugeAmount: 30
-  ChargeHitboxDuration: 0.2
+  ComboWindowStartRatio: 0.8
+  Combo1BackPos: {x: 0.4, y: -0.5}
+  Combo1AttackPos: {x: 3, y: 1}
+  Combo1RotBack: -150
+  Combo1RotAtk: 25
+  Combo1Clockwise: 0
+  Combo1SealAmount: 10
+  Combo2BackPos: {x: 1, y: 1}
+  Combo2AttackPos: {x: 3, y: -1.5}
+  Combo2RotBack: 120
+  Combo2RotAtk: -40
+  Combo2Clockwise: 1
+  Combo2SealAmount: 12
+  Combo3BackPos: {x: -1.2, y: 0}
+  Combo3AttackPos: {x: 2.8, y: 0}
+  Combo3SealAmount: 18
+  Combo3HitStopDuration: 0.1
+  ChargeMinHoldTime: 0.5
+  ChargeBackPos: {x: -0.5, y: 1}
+  ChargeAttackPos: {x: 2, y: -1}
+  ChargeRotBack: -150
+  ChargeRotAtk: -70
+  ChargeClockwise: 1
+  ChargeSealAmount: 30
+  ChargeHitStopDuration: 0.1
   ChargeHitboxScale: 1.5
+  ChargePulseScale: 0.15
+  ChargePulsePeriod: 0.25
   HitboxRadius: 1
   HitboxOffset: 1
   HitLayer:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 1048576
   HitStopDuration: 0.05
   HitStopTimeScale: 0.02
-  ChargeHitStopDuration: 0.1
-  BackswingDuration: 0.07
-  SwingDuration: 0.09
-  RecoverDuration: 0.15
-  BackswingDistance: 0.3
-  SwingDistance: 0.8
-  SwingPunchScale: 0.3
-  ChargeSwingDistanceMultiplier: 1.8
-  ChargePulseScale: 0.15
-  ChargePulsePeriod: 0.25
-  AttackLungeDistance: 0.2
-  AttackLungeDuration: 0.07
+  LungeDistance: 0.2
+  LungeDuration: 0.07
