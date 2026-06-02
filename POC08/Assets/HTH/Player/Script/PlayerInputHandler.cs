@@ -77,25 +77,25 @@ namespace SEAL
         /// WASD Composite 의 Up 방향.
         /// </summary>
         [Tooltip("이동 Up 키. 기본 W.")]
-        [SerializeField] private Key _keyMoveUp = Key.W;
+        [SerializeField] private Key _keyMoveUp = Key.UpArrow;
 
         /// <summary>
         /// 이동 Down 키. 기본 S.
         /// </summary>
         [Tooltip("이동 Down 키. 기본 S.")]
-        [SerializeField] private Key _keyMoveDown = Key.S;
+        [SerializeField] private Key _keyMoveDown = Key.DownArrow;
 
         /// <summary>
         /// 이동 Left 키. 기본 A.
         /// </summary>
         [Tooltip("이동 Left 키. 기본 A.")]
-        [SerializeField] private Key _keyMoveLeft = Key.A;
+        [SerializeField] private Key _keyMoveLeft = Key.LeftArrow;
 
         /// <summary>
         /// 이동 Right 키. 기본 D.
         /// </summary>
         [Tooltip("이동 Right 키. 기본 D.")]
-        [SerializeField] private Key _keyMoveRight = Key.D;
+        [SerializeField] private Key _keyMoveRight = Key.RightArrow;
 
         /// <summary>
         /// 대시 키. 기본 LShift.
@@ -104,18 +104,17 @@ namespace SEAL
         [SerializeField] private Key _keyDash = Key.LeftShift;
 
         /// <summary>
-        /// 공격 키. 기본 J.
-        /// 탑뷰에서 A키는 이동에 사용하므로 J로 분리.
+        /// 공격 키. 기본 A.
         /// </summary>
-        [Tooltip("공격 키. 기본 J. (이동 A와 충돌 방지)")]
-        [SerializeField] private Key _keyAttack = Key.J;
+        [Tooltip("공격 키. 기본 A.")]
+        [SerializeField] private Key _keyAttack = Key.A;
 
         /// <summary>
         /// 봉인 집행 키. 기본 K.
         /// 봉인도 100% 부위에 접근 후 입력.
         /// </summary>
         [Tooltip("봉인 집행 키. 기본 K. 봉인도 100% 도달 시 사용.")]
-        [SerializeField] private Key _keySeal = Key.K;
+        [SerializeField] private Key _keySeal = Key.S;
 
         // ──────────────────────────────────────────
         // InputAction 인스턴스 (코드 기반 ActionMap)
