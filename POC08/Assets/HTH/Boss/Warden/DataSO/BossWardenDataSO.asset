@@ -32,22 +32,22 @@ MonoBehaviour:
   finalSealSlowTimeScale: 0.1
   groggyDuration: 5
   dilPhaseDuration: 10
-  shockwaveRadius: 6
+  shockwaveRadius: 30
   shockwaveKnockbackForce: 12
   shockwaveKnockbackDuration: 0.2
   moveSpeed: 3.5
   phase2MoveSpeed: 4.5
-  patternRange: 5
+  patternRange: 10
   flipCooldown: 0.5
   chargeSpeed: 12
   phase2ChargeSpeed: 16
-  chargeDistance: 8
+  chargeDistance: 15
   chargeHitboxSize: {x: 1, y: 8}
   chargeWarningSize: {x: 1.6, y: 9.6}
   slamHitRadius: 2.5
   slamWarningRadius: 3
-  sweepHitRadius: 2.5
-  sweepWarningRadius: 3
+  sweepHitRadius: 5
+  sweepWarningRadius: 10
   sweepRotateSpeed: 180
   phase2SweepRotateSpeed: 270
   guardBreakHitboxSize: {x: 1, y: 0.8}

@@ -788,11 +788,39 @@ GroggyRoutine 완료 → ExitGroggyFailure()
 
 | 파일명 | 역할 | 연결 부위 | 특이사항 |
 |---|---|---|---|
-| `BossPattern_Charge.cs` | 돌진 / 2페이즈 Recovery 스킵 + Slam 연계 | 오른팔 | Interrupt 오버라이드 — linearVelocity 즉시 0 |
-| `BossPattern_Slam.cs` | 내려치기 / 2페이즈 2연속 (0.5초 간격) | 왼팔 | Warning 시 플레이어 위치 스냅 (이후 고정) |
-| `BossPattern_Sweep.cs` | 360° 회전 스윕 / 2페이즈 2회전 | 왼팔 | DORotate FastBeyond360 + 매 프레임 UpdateSweepDiscPosition |
-| `BossPattern_GuardBreak.cs` | 가드 자세 → 정면 강타 / 2페이즈 가드 단축 | 오른팔 | `IsGuarding` public — 가드 중 봉인도 누적 무효 신호 |
-| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 | `_isPhase2Only = true` 자체 설정. 0.3초 간격 순차 예고선 |
+| `BossPattern_Charge.cs` | 돌진 / 2페이즈 Recovery 스킵 + Slam 연계 | 오른팔 | v1.3 — `_rigid2D.position` 수정 + 타임아웃/속도감지 안전장치 3종 추가 |
+| `BossPattern_Slam.cs` | 내려치기 / 2페이즈 2연속 (0.5초 간격) | 왼팔 | **v2.0 디테일링** — 팔이 플레이어 방향 조준 이동 + 실제로 목표 위치까지 뻗는 연출 |
+| `BossPattern_Sweep.cs` | 360° 회전 스윕 / 2페이즈 2회전 | 왼팔 | **v2.0 디테일링** — 양팔 벌리기 준비 → 본체+팔 함께 회전 연출 |
+| `BossPattern_GuardBreak.cs` | 가드 자세 → 찌르기 / 2페이즈 가드 단축 | 오른팔 | **v2.0 디테일링** — 양팔 앞 가드 → 백스윙 → 방향 찌르기 → 복귀 |
+| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 | `_isPhase2Only = true` / `_rigid2D.position` 수정 완료 |
+
+### 레이어 6분리 — Inspector 설정 필수 항목
+
+```
+[6분리 구조]
+  Player           : 플레이어 본체 정의
+  Enemy            : 보스 본체 / 부위 정의 (봉인도 누적 대상)
+  PlayerAttack     : 플레이어 공격 발생원 (무기 GameObject)
+  EnemyAttack      : 보스 공격 발생원 (패턴 OverlapXX 소속)
+  PlayerAttackHitBox  : 플레이어 무기의 HurtBox (보스 피격 판정)
+  EnemyAttackHitBox   : 보스 패턴의 HurtBox (플레이어 피격 판정) ← 패턴 _playerLayer
+
+[패턴 스크립트 _playerLayer 설정]
+  모든 패턴 스크립트의 _playerLayer → EnemyAttackHitBox 레이어 선택
+  → 플레이어 HurtBox 오브젝트의 Layer = EnemyAttackHitBox 필수
+
+[PlayerAttackHitboxManager._enemyLayer 설정]
+  → Enemy 레이어 선택 (보스 본체/부위 봉인도 누적 대상)
+
+[BossWardenShockwave._playerLayer 설정]
+  → EnemyAttackHitBox 레이어 선택 (충격파 넉백 대상)
+
+[Physics2D Layer Collision Matrix]
+  Enemy         ↔ PlayerAttackHitBox : ON  (보스가 플레이어 공격 맞음)
+  EnemyAttack   ↔ EnemyAttackHitBox  : OFF (보스 공격이 자기 자신 HurtBox 안 맞음)
+  Player        ↔ Enemy              : OFF (본체끼리 충돌 없음)
+  EnemyAttack   ↔ Player             : OFF (보스 공격발생원이 플레이어 본체 통과)
+```
 
 ### 플레이어 피격 처리 — 현재 구현 상태
 
