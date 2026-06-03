@@ -1287,7 +1287,7 @@ BossWardenCoreSealGauge.cs  (v1.0)
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
 | `BossWardenCore.cs` | 딜 페이즈 종료 조건 판정 (시간 / 봉인도) | ✅ 구현 완료 |
-| `BossWardenShockwave.cs` | 충격파 범위 + 플레이어 넉백 + 연출 | ⬜ 미구현 |
+| `BossWardenShockwave.cs` | 충격파 범위 + 플레이어 넉백 + 연출 | ✅ 구현 완료 |
 | `BossWardenCore.cs` | 부위 봉인 해제 + 봉인도 초기화 | ✅ 구현 완료 |
 | `BossWardenCore.cs` | OnPhaseChanged(2) 발행 → AI 2페이즈 강화 | ✅ 구현 완료 |
 | `BossWardenAI.cs` | 2페이즈 패턴 강화 적용 + RageCharge 추가 | ✅ STEP02 완료 |
@@ -1341,6 +1341,18 @@ BossWardenCore.cs  (v1.0)
     BossWardenArmPart.OnPartSealed (SealGaugeComponent.OnSealed 래핑) → HandlePartSealed
     BossWardenSealExecutor.OnPartSealed → HandleExecutorPartSealed (카운트 없음)
     카운트는 HandlePartSealed 에서만 증가 → 중복 카운트 방지
+
+BossWardenShockwave.cs  (v1.0)
+  - POC07 TestBossShockwave v1.3 의 WaitForFixedUpdate 넉백 교훈 적용
+  - 탑뷰 변환: 수직 힘 제거 → X/Y 평면 방향 × knockbackForce 만 적용
+  - 넉백 코루틴:
+      BlockAll 즉시 → WaitForFixedUpdate → linearVelocity 설정
+      → WaitForSecondsRealtime(shockwaveKnockbackDuration) → UnblockAll
+  - 시각 연출: SpriteRenderer 디스크 Scale 0 → 반경 × 2 DOScale(OutQuart) + DOColor 페이드
+  - SetUpdate(true): DOTween Sequence — TimeScale 슬로우 중에도 정상 동작
+  - SortingLayer = Ground 권장 (캐릭터 아래에 표시)
+  - OverlapCircleNonAlloc: GC 없이 플레이어 감지
+  - 카메라 DOShakePosition: 미연결 시 스킵
 ```
 
 ---
@@ -1356,6 +1368,33 @@ BossWardenCore.cs  (v1.0)
 | 그로기 실패 처리 확인 | 코어 해제 실패 시 부위 해제 + 루프 재시작 확인 | ⬜ 미완료 |
 | 예고 범위 피드백 전체 확인 | 5개 패턴 예고 범위 모두 정상 표시 확인 | ⬜ 미완료 |
 | 색상 상태 전환 전체 확인 | 모든 상태의 색상이 혼동 없이 구분되는지 확인 | ⬜ 미완료 |
+
+### ⚠️ Unity 씬 설정 체크리스트 (STEP 09 진입 전 필수)
+
+```
+[ ] Project Settings → Tags and Layers:
+      Enemy / Player / BossHitbox / Ground 레이어 등록
+
+[ ] Physics2D Layer Collision Matrix:
+      Player ↔ BossHitbox: 충돌 ON
+      Enemy ↔ Player: 충돌 OFF
+
+[ ] Boss_Warden 오브젝트 구성:
+      BossWardenCore 연결: _data, _armL, _armR, _coreObject, _coreSealGauge
+      BossWardenAI 연결: _data, _patterns, _armL, _armR
+      BossWardenFeedback 연결: _data, _bodyRenderer, _armLRenderer, _armRRenderer, _coreRenderer
+      BossWardenSealExecutor 연결: _data, _armL, _armR, _coreObject, _coreSealGauge
+      BossWardenShockwave 연결: _data, _discRenderer, _playerLayer
+
+[ ] PlayerInputHandler:
+      IsSealHeld 프로퍼티 추가 (S키 홀드 상태)
+
+[ ] BossWardenDataSO 에셋 생성 후 수치 설정
+
+[ ] 각 패턴 스크립트 _data, _ai, _attackRange, _playerLayer 연결
+
+[ ] DEBUG ContextMenu 로 그로기/딜페이즈 강제 진입 테스트
+```
 
 ---
 
