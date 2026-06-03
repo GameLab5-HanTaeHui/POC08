@@ -1,6 +1,20 @@
 ﻿// ============================================================
-// ObjectDirectionController.cs  v1.0
+// ObjectDirectionController.cs  v1.1
 // 탑뷰 자식 오브젝트 방향 동기화 컴포넌트
+//
+// [v1.1 변경 — 이동 방향 → WeaponPivot 실시간 동기화 추가]
+//   HandleFacingChanged() 에서 스윙 중이 아닐 때
+//   PlayerWeaponSwingController.UpdatePivotToFacing(dir) 를 호출.
+//
+//   [변경 이유]
+//     기존: WeaponPivot 은 공격 시에만 RotatePivotToAttackDir() 로 회전.
+//           이동 방향이 바뀌어도 WeaponPivot 은 마지막 공격 방향을 유지.
+//           → 비공격 상태에서 무기가 엉뚱한 방향을 향함.
+//
+//     변경: 이동 방향 변경 시 스윙 중이 아니면 즉시 WeaponPivot 회전.
+//           스윙 중이면 공격 방향(WeaponSwingController 제어) 유지.
+//           → 이동 방향 = 무기 방향 항상 일치 (비공격 상태)
+//           → 공격 중에는 공격 방향 고정 유지
 //
 // [POC07 참고 스크립트]
 //   ObjectFlipController.cs (v1.5)
@@ -14,14 +28,9 @@
 //
 //   POC08: facing = Vector2 (8방향)
 //          → localPosition.x 반전 개념 불필요
-//          → 대신 두 가지 역할만 수행:
-//            ① WeaponPivot 방향 동기화 (PlayerWeaponSwingController 연동)
+//          → 두 가지 역할 수행:
+//            ① WeaponPivot 방향 동기화 (비공격 상태에서 이동방향 추적)
 //            ② SpriteRenderer flipX (좌/우 방향만 적용)
-//
-// [탑뷰에서의 방향 처리 원칙]
-//   모든 8방향 무기 연출은 WeaponPivot Z회전으로 처리
-//   (PlayerWeaponSwingController.RotatePivotToAttackDir 가 담당)
-//   이 컴포넌트는 그 외의 자식 오브젝트 동기화 보조 역할만 수행.
 //
 // [이벤트 소스]
 //   PlayerMoveController.OnFacingChanged(Vector2)
@@ -29,7 +38,7 @@
 //
 // [역할]
 //   ① SpriteRenderer 좌우 반전 (X 방향 기준 flipX)
-//   ② WeaponPivot SyncOrigin — 방향 전환 시 스윙 원점 재동기화
+//   ② WeaponPivot 방향 동기화 — 비공격 상태에서 이동 방향으로 실시간 회전
 //   ③ 자식 Transform 위치 동기화 (선택 사항)
 //
 // [네임스페이스]
@@ -277,18 +286,17 @@ namespace SEAL
 
         /// <summary>
         /// PlayerMoveController.OnFacingChanged(Vector2) 수신.
-        /// 탑뷰 8방향 → 좌/우 기준 flipX + 동기화 처리.
+        /// 탑뷰 8방향 → flipX + WeaponPivot 방향 동기화 처리.
+        ///
+        /// [v1.1 추가 — WeaponPivot 이동방향 추적]
+        ///   스윙 중이 아닐 때: _swingController.UpdatePivotToFacing(dir) 호출
+        ///     → 이동 방향과 무기 방향 항상 일치
+        ///   스윙 중일 때: WeaponPivot 변경 없음
+        ///     → 공격 방향 고정 유지 (RotatePivotToAttackDir 가 제어 중)
         ///
         /// [POC07 HandleFlipped(float dir) 와의 차이]
-        ///   POC07: dir = +1/-1 (좌/우 2방향)
-        ///          → localPosition.x 부호 반전
-        ///          → flipX (dir < 0)
-        ///
-        ///   POC08: dir = Vector2 (8방향)
-        ///          → localPosition.x 반전 미사용
-        ///            (WeaponPivot Z회전으로 방향 처리)
-        ///          → flipX 는 X 성분만 참조
-        ///          → _syncTargets X 동기화 (선택)
+        ///   POC07: dir = +1/-1 (좌/우 2방향) → localPosition.x 부호 반전
+        ///   POC08: dir = Vector2 (8방향) → flipX X성분 참조 + WeaponPivot Z회전
         /// </summary>
         private void HandleFacingChanged(Vector2 newFacing)
         {
@@ -297,10 +305,15 @@ namespace SEAL
             // ① flipX 처리 — X 방향 성분만 참조
             ApplyFlipX(newFacing.x);
 
-            // ② _syncTargets X 동기화 (선택)
+            // ② WeaponPivot 이동 방향 동기화 — 비공격 상태에서만
+            //    스윙 중이면 공격 방향 고정 유지 (SwingController 가 제어)
+            if (_swingController != null && !_swingController.IsSwinging)
+                _swingController.UpdatePivotToFacing(newFacing);
+
+            // ③ _syncTargets X 동기화 (선택)
             SyncTargetPositions(newFacing.x);
 
-            // ③ 스윙 취소 (설정된 경우)
+            // ④ 스윙 취소 (설정된 경우)
             if (_cancelSwingOnDirectionChange && _swingController != null
                 && _swingController.IsSwinging)
             {

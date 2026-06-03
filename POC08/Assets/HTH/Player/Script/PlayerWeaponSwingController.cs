@@ -1,6 +1,25 @@
 ﻿// ============================================================
-// PlayerWeaponSwingController.cs  v1.1
+// PlayerWeaponSwingController.cs  v1.2
 // 탑뷰 무기 스윙 연출 전담 컴포넌트
+//
+// [v1.2 변경 — UpdatePivotToFacing() 추가]
+//   이동 방향 → WeaponPivot 실시간 동기화 지원.
+//
+//   [추가 이유]
+//     기존: WeaponPivot 은 공격 시 RotatePivotToAttackDir() 에서만 회전.
+//           비공격 상태에서 이동 방향이 바뀌어도 WeaponPivot 은 마지막
+//           공격 방향을 유지 → 무기가 엉뚱한 방향을 향하는 문제.
+//
+//     추가: ObjectDirectionController.HandleFacingChanged() 에서
+//           스윙 중이 아닐 때 UpdatePivotToFacing(dir) 을 호출.
+//           → 비공격 상태: 이동 방향 = 무기 방향 (항상 일치)
+//           → 공격 중    : RotatePivotToAttackDir 가 제어 (변경 없음)
+//
+//   [함수]
+//     UpdatePivotToFacing(Vector2 facingDir)  ← 신규 public
+//       → 스윙 중이 아닐 때 ObjectDirectionController 에서 호출
+//       → 내부적으로 RotatePivotToAttackDir() 와 동일 로직
+//       → 차이: 부드러운 DOTween 보간 없음 (즉시 회전 — 이동 방향 추적)
 //
 // [v1.1 변경 — 회전 방향 bool 연동]
 //   PlayerAttackDataSO v2.1 의 Combo1/2/Charge Clockwise bool 을 읽어
@@ -315,6 +334,34 @@ namespace SEAL
 
             _isSwinging = false;
             SnapWeaponToOrigin();
+        }
+
+        /// <summary>
+        /// 이동 방향으로 WeaponPivot 즉시 회전.
+        /// 비공격 상태에서 ObjectDirectionController 가 매 방향 변경 시 호출.
+        ///
+        /// [호출 조건 — ObjectDirectionController.HandleFacingChanged()]
+        ///   IsSwinging == false 일 때만 호출.
+        ///   IsSwinging == true  일 때는 RotatePivotToAttackDir 가 제어 중이므로 호출 안 함.
+        ///
+        /// [RotatePivotToAttackDir 와의 차이]
+        ///   RotatePivotToAttackDir : 공격 시작 시 1회 즉시 회전 (내부 private)
+        ///   UpdatePivotToFacing    : 이동 방향 실시간 추적용 (외부 public)
+        ///   둘 다 동일한 각도 계산 (Atan2 → Quaternion.Euler Z).
+        ///
+        /// [즉시 회전 이유]
+        ///   이동 방향은 입력마다 즉시 변경됨.
+        ///   DOTween 보간을 넣으면 이동 방향보다 무기가 늦게 따라가는 어색함 발생.
+        ///   8방향 방향키 입력 기준 → 즉시 스냅이 더 자연스러움.
+        /// </summary>
+        /// <param name="facingDir">이동 방향 벡터 (정규화됨).</param>
+        public void UpdatePivotToFacing(Vector2 facingDir)
+        {
+            if (_weaponPivot == null) return;
+            if (facingDir.sqrMagnitude < 0.001f) return; // 입력 없음 → 현재 방향 유지
+
+            float angle = Mathf.Atan2(facingDir.y, facingDir.x) * Mathf.Rad2Deg;
+            _weaponPivot.rotation = Quaternion.Euler(0f, 0f, angle);
         }
 
         // ══════════════════════════════════════════════════════

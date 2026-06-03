@@ -427,7 +427,8 @@ MonoBehaviour:
   _invertFlipX: 0
   _swingController: {fileID: 3780021507373822961}
   _cancelSwingOnDirectionChange: 1
-  _syncTargets: []
+  _syncTargets:
+  - {fileID: 6930283203486199548}
   _syncInvertList: 
 --- !u!114 &6134240118273279565
 MonoBehaviour:
