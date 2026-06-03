@@ -546,7 +546,7 @@ namespace SEAL
             // ── 대시 종료 ──────────────────────
             _rigid2D.linearVelocity = Vector2.zero; // 대시 후 즉시 멈춤
             _isDashing = false;
-            _isMoveLocked = wasMoveLocked; // 이전 잠금 상태 복원
+            _isMoveLocked = false; // 이전 잠금 상태 복원
 
             OnDashEnded?.Invoke();
 
