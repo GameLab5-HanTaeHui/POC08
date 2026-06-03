@@ -1758,6 +1758,24 @@ Player 오브젝트:
 
 ---
 
+### 🔧 전체 코드 버그 수정 이력 (STEP 재체크)
+
+| 번호 | 파일 | 버전 | 심각도 | 문제 | 수정 내용 |
+|---|---|---|---|---|---|
+| 🔴 버그1 | `BossWardenSealExecutor.cs` | v1.0→v1.1 | 크리티컬 | `SubscribeArmEvents()` 람다 구독 → 해제 불가 + 중복 호출 | `_onArmLSealReady` 등 `Action` 필드에 캐싱 → `-=` 정상 해제 보장 |
+| 🔴 버그2 | `BossWardenSealExecutor.cs` | v1.0→v1.1 | 크리티컬 | `Update()` 에서 `_holdTimer` 리셋 조건 역전 (`_isExecuting = true` 일 때 리셋) | 해당 블록 제거 — `_holdTimer` 는 `DetectSealInput` 코루틴에서만 관리 |
+| 🔴 버그3 | `SealGaugeComponent.cs` | v1.1→v1.2 | 낮음 | `AddGauge()` 주석에 구버전 `OnTriggerEnter2D` 내용 잔존 | 주석을 현재 구현(`PlayerAttackHitboxManager.OnHit`) 기준으로 수정 |
+| 🔴 버그4 | `BossWardenCore.cs` | v1.0→v1.1 | 높음 | `Start()` 실행 순서 미보장 → `BossWardenFeedback.SubscribeArmGauge()` 시점에 `SealGauge` 미초기화 가능 | `[DefaultExecutionOrder(-10)]` 추가 + `Initialize()` 를 `Awake()` 로 이동 |
+| 🔴 버그5 | `BossWardenAI.cs` | v1.0→v1.1 | 중간 | `TrySelectPattern()` 에서 `Idle` 상태 매 프레임 `new List<>` 생성 → GC 압박 | `_availablePatterns` 멤버 변수로 캐싱 → `Clear()` 후 재사용 |
+| 🔴 버그6 | `BossPattern_Charge.cs` | v1.0→v1.2 | 크리티컬 | `Awake()` 에서 `_triggerGroggyOnRecovery = true` 강제 설정 → Inspector 값 덮어쓰기 → Recovery 마다 그로기 무한 발행 | `Awake()` 강제 설정 코드 제거 (프로젝트 파일 기준 v1.1에서 수정 완료) |
+| 🔴 버그7 | `BossPattern_Charge.cs` | v1.1→v1.2 | 크리티컬 | `transform.position` 사용 → Patterns 자식 오브젝트 기준 → 거리 계산 항상 0 → 무한루프 | `_rigid2D.position` 으로 교체 (프로젝트 파일 기준 v1.2에서 수정 완료) |
+| 🔴 버그8 | `BossPattern_RageCharge.cs` | v1.0→v1.1 | 크리티컬 | 동일 — `transform.position` → 무한루프 | `_rigid2D.position` 으로 교체 (프로젝트 파일 기준 v1.1에서 수정 완료) |
+| 🟡 경고1 | `BossWardenCoreSealGauge.cs` | v1.0→v1.1 | 낮음 | 프로젝트 파일에 `_core` 필드(미사용) 존재 | 프로젝트 파일에서 `_core` 필드 및 `GetComponentInParent` 참조 제거 권장 |
+| 🟡 경고2 | `BossWardenAI.cs` | - | 낮음 | `RageCharge` 에 불필요한 그로기 이벤트 구독 | 동작 영향 없음. 향후 정리 |
+| 🟡 경고3 | `BossWardenFeedback.cs` | - | 낮음 | `PlayBodyHitFlash()` 미연결 | 플레이어 피격 처리 구현 시 연결 필요 |
+
+---
+
 ### 진척 상태 범례
 
 | 아이콘 | 상태 |

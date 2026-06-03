@@ -1,6 +1,11 @@
 ﻿// ============================================================
-// BossWardenAI.cs  v1.0
+// BossWardenAI.cs  v1.1
 // Boss_Warden 탑뷰 AI
+//
+// [v1.1 버그 수정]
+//   🔴 버그5: TrySelectPattern() 에서 매 프레임 List 생성으로 GC 압박
+//       기존: var available = new List<BossPatternBase>(); — Idle 상태 매 프레임 할당
+//       수정: _availablePatterns 멤버 변수로 캐싱 → Clear() 후 재사용
 //
 // [POC07 참고]
 //   TestBossAI.cs (v1.0) 구조를 기반으로 탑뷰 시스템에 맞게 재설계.
@@ -251,6 +256,16 @@ namespace SEAL
         /// Chase 이동 방향 및 패턴 Warning 방향에 사용.
         /// </summary>
         private Vector2 _facingDir = Vector2.right;
+
+        /// <summary>
+        /// 패턴 선택 시 재사용하는 리스트 캐시.
+        ///
+        /// [v1.1 버그5 수정]
+        ///   TrySelectPattern() 이 Idle 상태에서 매 프레임 호출됨.
+        ///   기존: var available = new List&#60;BossPatternBase&#62;() — 매 프레임 GC 할당
+        ///   수정: 멤버 변수로 캐싱 → Clear() 후 재사용 → GC 할당 제거
+        /// </summary>
+        private readonly List<BossPatternBase> _availablePatterns = new List<BossPatternBase>();
 
         // ══════════════════════════════════════════════════════
         // 이벤트
@@ -608,21 +623,21 @@ namespace SEAL
             if (_currentPattern != null) return;
             if (_patterns == null || _patterns.Count == 0) return;
 
-            // 실행 가능 패턴 수집
-            var available = new List<BossPatternBase>();
+            // ✅ v1.1 버그5 수정: 캐시된 리스트 재사용 (GC 할당 제거)
+            _availablePatterns.Clear();
             foreach (var p in _patterns)
             {
                 if (p == null) continue;
                 if (!p.CanExecute) continue;
                 if (!p.IsAvailable) continue;
-                available.Add(p);
+                _availablePatterns.Add(p);
             }
 
-            if (available.Count == 0) return;
+            if (_availablePatterns.Count == 0) return;
 
             // 랜덤 선택
-            int idx = UnityEngine.Random.Range(0, available.Count);
-            var selected = available[idx];
+            int idx = UnityEngine.Random.Range(0, _availablePatterns.Count);
+            var selected = _availablePatterns[idx];
 
             _currentPattern = selected;
             _patternCoroutine = StartCoroutine(ExecutePattern(selected));

@@ -1,6 +1,18 @@
 ﻿// ============================================================
-// BossWardenCore.cs  v1.0
+// BossWardenCore.cs  v1.1
 // Boss_Warden 루트 통합 상태 관리 컴포넌트
+//
+// [v1.1 버그 수정]
+//   🔴 버그4: Start() 실행 순서 미보장으로 초기화 타이밍 문제
+//       원인: BossWardenFeedback.Start() 가 BossWardenCore.Start() 보다
+//             먼저 실행되면 SubscribeArmGauge() 시점에
+//             SealGaugeComponent 가 아직 Initialize() 되지 않은 상태
+//             → SealGauge.MaxGauge 가 기본값(1f) 인 상태로 이벤트 구독
+//       수정 1: [DefaultExecutionOrder(-10)] 추가
+//               → BossWardenCore 가 다른 Warden 컴포넌트보다 먼저 Start() 실행
+//       수정 2: 하위 컴포넌트 Initialize() 를 Start() 에서 Awake() 로 이동
+//               → Awake() 는 씬 내 모든 Start() 보다 먼저 실행됨을 보장
+//               → BossWardenFeedback.Start() 시점에는 반드시 초기화 완료 상태
 //
 // [POC07 참고]
 //   TestBossCore.cs (v1.0) 전체 구조 계승.
@@ -68,6 +80,7 @@ namespace SEAL
     ///   - 충격파 판정 → BossWardenShockwave
     /// ────────────────────────────────────────────────────
     /// </summary>
+    [DefaultExecutionOrder(-10)] // ✅ v1.1: 다른 Warden 컴포넌트보다 먼저 Awake/Start 실행 보장
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(BossWardenAI))]
     [RequireComponent(typeof(BossWardenFeedback))]
@@ -252,6 +265,21 @@ namespace SEAL
             _feedback = GetComponent<BossWardenFeedback>();
             _executor = GetComponent<BossWardenSealExecutor>();
             _attackRange = GetComponent<BossWardenAttackRange>();
+
+            // ✅ v1.1 버그4 수정: Initialize를 Start → Awake 로 이동
+            // Awake 는 씬 내 모든 Start() 보다 먼저 실행됨을 보장.
+            // BossWardenFeedback.Start() → SubscribeArmGauge() 시점에
+            // SealGaugeComponent 가 반드시 초기화 완료 상태임을 보장.
+            //
+            // [주의] DataSO null 체크는 Start() 에서 수행 (Awake 시점 Inspector 연결 보장)
+            //        Awake 에서 _data 가 null 이면 Initialize 스킵 → Start 에서 오류 출력.
+            if (_data != null)
+            {
+                _armL?.Initialize(_data);
+                _armR?.Initialize(_data);
+                _coreSealGauge?.Initialize(_data);
+                _ai?.Initialize(_data);
+            }
         }
 
         private void Start()
@@ -266,12 +294,6 @@ namespace SEAL
             // 코어 기본 비활성 보장
             if (_coreObject != null)
                 _coreObject.SetActive(false);
-
-            // 하위 컴포넌트 초기화 (DataSO 주입)
-            _armL?.Initialize(_data);
-            _armR?.Initialize(_data);
-            _coreSealGauge?.Initialize(_data);
-            _ai?.Initialize(_data);
 
             // 이벤트 구독
             SubscribeAll();
@@ -754,7 +776,7 @@ namespace SEAL
 
 #if UNITY_EDITOR
             UnityEditor.Handles.Label(
-                transform.position + Vector3.up * 3f,
+                transform.position + Vector3.up * 1.8f,
                 $"Phase:{_currentPhase} | Groggy:{_isGroggy} | Dil:{_isDilPhase} | SealedArms:{_sealedArmCount}");
 #endif
         }

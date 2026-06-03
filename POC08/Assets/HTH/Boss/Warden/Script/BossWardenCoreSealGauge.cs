@@ -1,6 +1,12 @@
 ﻿// ============================================================
-// BossWardenCoreSealGauge.cs  v1.0
+// BossWardenCoreSealGauge.cs  v1.1
 // Boss_Warden 코어 봉인도 누적 전담 컴포넌트
+//
+// [v1.1 수정]
+//   🟡 경고1 확인: 프로젝트 파일 버전의 _core 필드(BossWardenCore 참조)가
+//       Inspector 연결만 되고 실제 코드에서 미사용인 것을 확인.
+//       → outputs 버전에는 해당 필드 없음 (정상).
+//       → 프로젝트 파일에서 _core 필드 및 GetComponentInParent 참조 제거 권장.
 //
 // [역할]
 //   딜 페이즈 중 플레이어가 코어를 공격하면 코어 봉인도를 누적한다.

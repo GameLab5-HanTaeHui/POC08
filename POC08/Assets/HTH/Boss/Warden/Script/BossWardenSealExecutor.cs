@@ -1,6 +1,20 @@
 ﻿// ============================================================
-// BossWardenSealExecutor.cs  v1.0
+// BossWardenSealExecutor.cs  v1.1
 // Boss_Warden S키 봉인 집행 / 코어 해제 / 최종 봉인 처리 컴포넌트
+//
+// [v1.1 버그 수정]
+//   🔴 버그1: SubscribeArmEvents() 람다 이벤트 구독 → 해제 불가 + 중복 호출
+//       기존: arm.SealGauge.OnSealReady += () => HandleArmSealReady(arm);
+//             → 람다는 매번 새 객체 생성 → -= 로 해제 불가
+//             → SubscribeArmEvents 2회 이상 호출 시 중복 구독 → 핸들러 2회 이상 실행
+//       수정: 멤버 함수 캐싱 방식으로 교체
+//             _onArmLSealReady / _onArmRSealReady 필드에 Action 저장
+//             → -= 로 정상 해제 가능
+//
+//   🔴 버그2: Update() 에서 _holdTimer 리셋 조건 역전
+//       기존: if (_isExecuting) _holdTimer = 0f;
+//             → 집행 중에 타이머를 초기화하는 역전 버그
+//       수정: 해당 블록 제거 — _holdTimer 는 DetectSealInput 코루틴에서만 관리
 //
 // [POC07 참고]
 //   TestBossExecution.cs (v1.1) 구조 계승.
@@ -153,6 +167,23 @@ namespace SEAL
         private Coroutine _detectCoroutine;
 
         // ══════════════════════════════════════════════════════
+        // 람다 대체 이벤트 핸들러 캐시
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 왼팔 SealReady 이벤트 핸들러 캐시.
+        ///
+        /// [버그1 수정]
+        ///   람다 (() => HandleArmSealReady(_armL)) 는 매번 새 객체를 생성하여
+        ///   -= 로 해제가 불가능하고 중복 구독 시 핸들러가 여러 번 호출됨.
+        ///   Action 필드에 저장하면 동일 참조로 += / -= 가 정상 동작.
+        /// </summary>
+        private Action _onArmLSealReady;
+        private Action _onArmLReleased;
+        private Action _onArmRSealReady;
+        private Action _onArmRReleased;
+
+        // ══════════════════════════════════════════════════════
         // 이벤트
         // ══════════════════════════════════════════════════════
 
@@ -185,6 +216,14 @@ namespace SEAL
 
             if (_attackRange == null)
                 _attackRange = GetComponent<BossWardenAttackRange>();
+
+            // ✅ v1.1 버그1 수정: 람다 대신 Action 필드에 저장하여 정상 해제 보장
+            // 람다는 매번 새 객체 생성 → -= 해제 불가 → 중복 구독 버그
+            // Action 필드에 저장 → 동일 참조로 +=/- = 정상 동작
+            _onArmLSealReady = () => HandleArmSealReady(_armL);
+            _onArmLReleased = () => HandleArmReleased(_armL);
+            _onArmRSealReady = () => HandleArmSealReady(_armR);
+            _onArmRReleased = () => HandleArmReleased(_armR);
         }
 
         private void Start()
@@ -234,9 +273,9 @@ namespace SEAL
             if (_mustReleaseKey && _input != null && !_input.IsSealHeld)
                 _mustReleaseKey = false;
 
-            // 비실행 중 홀드 타이머 리셋
-            if (_isExecuting)
-                _holdTimer = 0f;
+            // ✅ v1.1 버그 수정: _holdTimer 는 DetectSealInput 코루틴에서 전담 관리
+            // 기존: if (_isExecuting) _holdTimer = 0f; ← 집행 중에 리셋하는 역전 버그
+            // 수정: 이 블록 제거 — DetectSealInput 루프 내에서만 초기화
         }
 
         // ══════════════════════════════════════════════════════
@@ -272,16 +311,29 @@ namespace SEAL
         {
             if (arm == null || arm.SealGauge == null) return;
 
-            arm.SealGauge.OnSealReady -= () => HandleArmSealReady(arm);
-            arm.SealGauge.OnSealReady += () => HandleArmSealReady(arm);
-            arm.SealGauge.OnReleased -= () => HandleArmReleased(arm);
-            arm.SealGauge.OnReleased += () => HandleArmReleased(arm);
+            // ✅ v1.1 버그1 수정: 람다 → 캐싱된 Action 참조 사용
+            // 왼팔 / 오른팔 각각 다른 Action 참조로 정상 등록/해제
+            bool isLeft = arm == _armL;
+            Action onReady = isLeft ? _onArmLSealReady : _onArmRSealReady;
+            Action onReleased = isLeft ? _onArmLReleased : _onArmRReleased;
+
+            arm.SealGauge.OnSealReady -= onReady;
+            arm.SealGauge.OnSealReady += onReady;
+            arm.SealGauge.OnReleased -= onReleased;
+            arm.SealGauge.OnReleased += onReleased;
         }
 
         private void UnsubscribeArmEvents(BossWardenArmPart arm)
         {
             if (arm == null || arm.SealGauge == null) return;
-            // 람다 구독은 해제 불가 → OnDestroy에서 코루틴 정리로 충분
+
+            // ✅ v1.1 버그1 수정: 캐싱된 Action 참조로 정상 해제
+            bool isLeft = arm == _armL;
+            Action onReady = isLeft ? _onArmLSealReady : _onArmRSealReady;
+            Action onReleased = isLeft ? _onArmLReleased : _onArmRReleased;
+
+            arm.SealGauge.OnSealReady -= onReady;
+            arm.SealGauge.OnReleased -= onReleased;
         }
 
         // ══════════════════════════════════════════════════════

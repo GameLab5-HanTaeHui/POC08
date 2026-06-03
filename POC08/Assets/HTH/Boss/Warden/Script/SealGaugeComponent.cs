@@ -222,8 +222,12 @@ namespace SEAL
         /// 봉인 저항 배율을 적용한 후 실제 누적.
         ///
         /// [호출처]
-        ///   BossWardenArmPart.OnTriggerEnter2D() — 플레이어 공격 피격 시
-        ///   Recovery 구간에서 recoveryVulnMultiplier 추가 적용 가능.
+        ///   BossWardenArmPart.HandlePlayerHit() — PlayerAttackHitboxManager.OnHit 수신 시
+        ///   Recovery 구간에서는 BossWardenArmPart._isRecoveryVuln 플래그로 배율 적용.
+        ///
+        /// ✅ v1.1 주석 수정: OnTriggerEnter2D → PlayerAttackHitboxManager.OnHit 방식으로 변경됨
+        ///   BossWardenArmPart v1.1 에서 OnTriggerEnter2D 제거.
+        ///   현재는 PlayerAttackHitboxManager.OnHit 이벤트 구독 방식 사용.
         /// </summary>
         /// <param name="rawAmount">원시 봉인도 누적량 (저항 적용 전).</param>
         public void AddGauge(float rawAmount)
