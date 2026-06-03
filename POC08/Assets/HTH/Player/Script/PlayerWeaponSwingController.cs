@@ -474,18 +474,22 @@ namespace SEAL
         /// <summary>
         /// 콤보별 DOTween Sequence 생성.
         ///
-        /// [구조 — POC07 BuildSwingSequence 계승 + v1.2 히트박스 직접 제어]
-        ///   Append: 백스윙 (위치 + Z회전) → OutQuart
-        ///   InsertCallback(백스윙 완료): _hitboxManager.EnableHitbox(index, sealAmount)
-        ///   Append: 타격 (위치 + Z회전) → 콤보별 이즈
-        ///   InsertCallback(타격 완료):   _hitboxManager.DisableAllHitboxes()
-        ///   Append: 복귀 (원점 위치 + Z=0) → 콤보별 이즈
+        /// [구조]
+        ///   Append     : 백스윙 (위치 + Z회전) → OutQuart
+        ///   AppendCallback: _hitboxManager.EnableHitbox  ← 백스윙 완료 직후 활성
+        ///   Append     : 타격 (위치 + Z회전) → 콤보별 이즈
+        ///   AppendCallback: _hitboxManager.DisableAllHitboxes ← 타격 완료 직후 비활성
+        ///   Append     : 복귀 (원점 위치 + Z=0) → 콤보별 이즈
         ///
-        /// [v1.2 변경 — onHit 콜백 제거]
-        ///   기존: onHit(float radius) 콜백 → PlayerAttackController 가 OverlapCircle 판정
-        ///   변경: _hitboxManager 직접 호출 → Weapon 하위 Collider2D 활성/비활성
-        ///         → 공격 구간에서만 콜라이더 활성 (항상 켜져 있는 문제 해결)
-        ///         → 복귀/준비 구간에서 콜라이더 비활성 보장
+        /// [InsertCallback 대신 AppendCallback 을 사용하는 이유]
+        ///   InsertCallback(time) 은 Sequence 전체 기준 절대 시각에 발화.
+        ///   Append 와 같은 시각(bD)이면 DOTween 내부 순서에 따라
+        ///   Append 보다 InsertCallback 이 먼저 실행되는 경우 발생.
+        ///   → 백스윙 시작 시점에 EnableHitbox 가 발화하는 역전 버그.
+        ///   AppendCallback 은 이전 Append 가 완전히 완료된 직후 실행 보장.
+        ///   → 백스윙 끝 → EnableHitbox → 타격 → DisableHitbox → 복귀 순서 확실.
+        ///
+        /// [v1.2 변경 — onHit 콜백 제거, _hitboxManager 직접 제어]
         /// </summary>
         /// <param name="combo">콤보 단계.</param>
         /// <param name="sealAmount">이 콤보의 봉인도 누적량.</param>
@@ -517,14 +521,14 @@ namespace SEAL
                     rotBack = _data.Combo1RotBack;
                     rotAtk = _data.Combo1RotAtk;
 
+                    // ① 백스윙
                     seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart));
                     seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
-                    // 백스윙 완료 → 히트박스 활성 (타격 구간 시작)
-                    seq.InsertCallback(bD, () => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
-                    // 타격 완료 → 히트박스 비활성 (복귀 구간)
-                    seq.InsertCallback(bD + aD, () => _hitboxManager?.DisableAllHitboxes());
+                    // ② 백스윙 완료 직후 → 히트박스 활성 (타격 Append 시작 전 보장)
+                    seq.AppendCallback(() => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
 
+                    // ③ 타격
                     {
                         float delta1 = PlayerAttackDataSO.CalcSwingDelta(
                             rotBack, rotAtk, _data.Combo1Clockwise);
@@ -532,6 +536,10 @@ namespace SEAL
                         seq.Join(RotateWeaponDelta(delta1, aD, Ease.InOutCubic));
                     }
 
+                    // ④ 타격 완료 직후 → 히트박스 비활성 (복귀 시작 전 보장)
+                    seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
+
+                    // ⑤ 복귀
                     seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutQuart));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutQuart));
                     break;
@@ -543,12 +551,14 @@ namespace SEAL
                     rotBack = _data.Combo2RotBack;
                     rotAtk = _data.Combo2RotAtk;
 
+                    // ① 백스윙
                     seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart));
                     seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
-                    seq.InsertCallback(bD, () => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
-                    seq.InsertCallback(bD + aD, () => _hitboxManager?.DisableAllHitboxes());
+                    // ② 백스윙 완료 직후 → 히트박스 활성
+                    seq.AppendCallback(() => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
 
+                    // ③ 타격
                     {
                         float delta2 = PlayerAttackDataSO.CalcSwingDelta(
                             rotBack, rotAtk, _data.Combo2Clockwise);
@@ -556,30 +566,41 @@ namespace SEAL
                         seq.Join(RotateWeaponDelta(delta2, aD, Ease.InCubic));
                     }
 
+                    // ④ 타격 완료 직후 → 히트박스 비활성
+                    seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
+
+                    // ⑤ 복귀 (OutBounce — 내리찍힌 반동감)
                     seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBounce));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutQuart));
                     break;
 
                 // ── Combo3 — 찌르기 피니셔 ───────────────────────
-                default:
+                default: // Combo3 — 찌르기 피니셔
                     backPos = ToV3(_data.Combo3BackPos);
                     atkPos = ToV3(_data.Combo3AttackPos);
                     rotBack = 0f;
                     rotAtk = 0f;
 
+                    // ① 백스윙
                     seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart));
                     seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
+                    // ② 찌르기 직전 예비동작 딜레이 (0.03초)
                     seq.AppendInterval(0.03f);
 
-                    seq.InsertCallback(bD + 0.03f, () => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
-                    seq.InsertCallback(bD + 0.03f + aD, () => _hitboxManager?.DisableAllHitboxes());
+                    // ③ 백스윙 + 딜레이 완료 직후 → 히트박스 활성
+                    seq.AppendCallback(() => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
 
+                    // ④ 타격 (찌르기)
                     seq.Append(_weapon.DOLocalMove(atkPos, aD).SetEase(Ease.OutExpo));
                     seq.AppendCallback(() =>
                         _weapon.DOPunchPosition(
                             Vector3.right * 0.1f, 0.12f, vibrato: 8, elasticity: 0.5f));
 
+                    // ⑤ 타격 완료 직후 → 히트박스 비활성
+                    seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
+
+                    // ⑥ 복귀
                     seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBack));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutBack));
                     break;
@@ -610,14 +631,15 @@ namespace SEAL
             float rotBack = _data.ChargeRotBack;
             float rotAtk = _data.ChargeRotAtk;
 
+            // ① 백스윙
             seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutBack));
             seq.Join(RotateWeapon(rotBack, bD, Ease.OutBack));
 
-            // 백스윙 완료 → 히트박스 활성 (강공격 전용 인덱스)
-            seq.InsertCallback(bD, () =>
+            // ② 백스윙 완료 직후 → 히트박스 활성 (강공격 전용 인덱스)
+            seq.AppendCallback(() =>
                 _hitboxManager?.EnableHitbox(PlayerAttackHitboxManager.HitboxCharge, sealAmount));
-            seq.InsertCallback(bD + aD, () => _hitboxManager?.DisableAllHitboxes());
 
+            // ③ 타격
             {
                 float chargeDelta = PlayerAttackDataSO.CalcSwingDelta(
                     rotBack, rotAtk, _data.ChargeClockwise);
@@ -625,6 +647,10 @@ namespace SEAL
                 seq.Join(RotateWeaponDelta(chargeDelta, aD, Ease.InOutQuart));
             }
 
+            // ④ 타격 완료 직후 → 히트박스 비활성
+            seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
+
+            // ⑤ 복귀
             seq.Append(_weapon.DOLocalMove(origin, rD * 1.2f).SetEase(Ease.OutElastic));
             seq.Join(RotateWeapon(0f, rD * 1.2f, Ease.OutElastic));
 
