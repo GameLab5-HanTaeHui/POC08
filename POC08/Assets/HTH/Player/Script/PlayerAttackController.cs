@@ -1,7 +1,23 @@
 ﻿// ============================================================
-// PlayerAttackController.cs  v2.1
+// PlayerAttackController.cs  v2.3
 // 플레이어 A키 공격 컨트롤러
 //
+// [v2.3 변경 — 공격 중 대시 시 공격 캔슬 (7단계)]
+//   Start() 에서 _moveController.OnDashStarted 구독.
+//   대시 시작 시 CancelAttack() 호출.
+//
+//   CancelAttack():
+//     ① _attackCoroutine StopCoroutine
+//     ② _swingController.CancelSwing()   — DOTween 중단 + 무기 원점
+//     ③ _hitboxManager.DisableAllHitboxes() — 히트박스 즉시 비활성
+//     ④ _moveController.SetMoveLocked(false) — 이동 잠금 해제
+//     ⑤ 콤보 상태 전체 초기화
+//
+//   [공격하면서 대시 불가]
+//     대시 입력 → OnDashStarted 발행 → CancelAttack()
+//     → 공격 완전 중단 후 대시 진행
+//
+// [v2.2 변경 — 콤보 전환 시점 방향 결정 (6단계)]
 // [v2.1 변경 — 히트박스 판정 경로 통합]
 //   기존 두 경로 (OverlapCircle / Collider2D) 가 독립적으로 존재하던 구조를
 //   PlayerAttackHitboxManager 단일 경로로 통합.
@@ -165,6 +181,23 @@ namespace SEAL
         /// </summary>
         private Vector2 _currentAttackDir;
 
+        /// <summary>
+        /// 다음 콤보 공격 방향 스냅샷.
+        /// 콤보 윈도우에서 A키를 누르는 순간(HandleAttackPress)에 저장.
+        ///
+        /// [6단계 추가 — 콤보 전환 시점에만 방향 결정]
+        ///   공격 중 SetMoveLocked(true) → FacingDirection 갱신 안 됨.
+        ///   → ComboAttackRoutine 진입 시 GetAttackDirection() 을 호출해도
+        ///     항상 1콤보 시작 방향이 반환되는 문제.
+        ///
+        ///   해결: 콤보 윈도우에서 A키가 눌리는 순간
+        ///         PlayerInputHandler.Instance.MoveInput (실제 눌린 방향키) 을
+        ///         _nextComboDir 에 스냅샷 저장.
+        ///         다음 콤보 시작 시 이 방향을 사용.
+        ///         방향키 입력이 없으면 _currentAttackDir 유지 (이전 방향 그대로).
+        /// </summary>
+        private Vector2 _nextComboDir;
+
         // ──────────────────────────────────────────
         // 이벤트
         // ──────────────────────────────────────────
@@ -236,6 +269,14 @@ namespace SEAL
                 _hitboxManager.OnHit -= HandleHitboxHit;
                 _hitboxManager.OnHit += HandleHitboxHit;
             }
+
+            // [7단계] 대시 시작 시 공격 캔슬
+            // 대시 입력 → OnDashStarted 발행 → CancelAttack()
+            if (_moveController != null)
+            {
+                _moveController.OnDashStarted -= HandleDashStarted;
+                _moveController.OnDashStarted += HandleDashStarted;
+            }
         }
 
         // Update() 제거 — ProcessHitCheck OverlapCircle 경로 삭제
@@ -251,6 +292,9 @@ namespace SEAL
 
             if (_hitboxManager != null)
                 _hitboxManager.OnHit -= HandleHitboxHit;
+
+            if (_moveController != null)
+                _moveController.OnDashStarted -= HandleDashStarted;
         }
 
         // ══════════════════════════════════════════════════════
@@ -260,13 +304,18 @@ namespace SEAL
         /// <summary>
         /// A키 누름. OnAttack 콜백.
         /// 홀드 타이머 시작 + 공격 실행 또는 콤보 예약.
+        ///
+        /// [6단계 — 콤보 전환 시점 방향 스냅샷]
+        ///   콤보 윈도우에서 A키가 눌리는 순간
+        ///   PlayerInputHandler.MoveInput (실제 눌린 방향키) 을 _nextComboDir 에 저장.
+        ///   → 다음 콤보는 이 방향으로 실행.
+        ///   → 방향키 입력 없으면 Vector2.zero → 이전 방향(_currentAttackDir) 유지.
         /// </summary>
         private void HandleAttackPress()
         {
             _attackPressTime = Time.time;
             _isChargeHolding = true;
 
-            // 강공격 홀드 맥동 연출 시작
             _swingController.StartChargePulse();
 
             if (!_isAttacking)
@@ -276,7 +325,19 @@ namespace SEAL
             }
 
             if (_comboWindowOpen)
+            {
                 _comboInputQueued = true;
+
+                // 콤보 입력 시점의 방향키 입력을 스냅샷으로 저장
+                // 이동 잠금 중이어도 PlayerInputHandler.MoveInput 은 실제 누른 키를 반환
+                Vector2 inputDir = PlayerInputHandler.Instance != null
+                    ? PlayerInputHandler.Instance.MoveInput
+                    : Vector2.zero;
+
+                // 방향키 입력이 있을 때만 방향 변경
+                // 없으면 Vector2.zero → 다음 콤보에서 _currentAttackDir 유지
+                _nextComboDir = inputDir;
+            }
         }
 
         /// <summary>
@@ -295,6 +356,63 @@ namespace SEAL
             // 강공격: 최소 홀드 시간 충족 + 현재 공격 중 아님
             if (holdTime >= _data.ChargeMinHoldTime && !_isAttacking)
                 ExecuteChargeAttack();
+        }
+
+        /// <summary>
+        /// PlayerMoveController.OnDashStarted 수신 핸들러.
+        /// 대시 시작 시 현재 공격을 즉시 캔슬.
+        ///
+        /// [7단계 — 공격 중 대시 시 공격 캔슬]
+        ///   공격하면서 대시를 하는 것이 아니라
+        ///   대시 입력이 들어오면 공격이 먼저 취소된 후 대시가 실행됨.
+        /// </summary>
+        private void HandleDashStarted()
+        {
+            if (!_isAttacking) return;
+
+            CancelAttack();
+            Debug.Log("[PlayerAttackController] 대시 입력 → 공격 캔슬");
+        }
+
+        /// <summary>
+        /// 현재 공격을 즉시 캔슬하고 상태를 초기화한다.
+        /// 대시 / 피격 / 봉인 집행 등 공격 중단이 필요한 상황에서 호출.
+        ///
+        /// [캔슬 처리 순서]
+        ///   ① _attackCoroutine StopCoroutine  — 코루틴 즉시 중단
+        ///   ② SwingController.CancelSwing()   — DOTween 중단 + 무기 원점 복귀
+        ///   ③ HitboxManager.DisableAllHitboxes() — 히트박스 즉시 비활성
+        ///   ④ MoveController.SetMoveLocked(false) — 이동 잠금 해제
+        ///   ⑤ 콤보 상태 전체 초기화
+        /// </summary>
+        public void CancelAttack()
+        {
+            // ① 공격 코루틴 중단
+            if (_attackCoroutine != null)
+            {
+                StopCoroutine(_attackCoroutine);
+                _attackCoroutine = null;
+            }
+
+            // ② 무기 스윙 DOTween 중단 + 원점 복귀
+            _swingController?.CancelSwing();
+
+            // ③ 히트박스 비활성화
+            _hitboxManager?.DisableAllHitboxes();
+
+            // ④ 이동 잠금 해제
+            _moveController?.SetMoveLocked(false);
+
+            // ⑤ 콤보 상태 초기화
+            _isAttacking = false;
+            _comboWindowOpen = false;
+            _comboInputQueued = false;
+            _currentCombo = 0;
+            _nextComboDir = Vector2.zero;
+            _isChargeHolding = false;
+
+            // 강공격 맥동 중이면 종료
+            _swingController?.StopChargePulse();
         }
 
         // ══════════════════════════════════════════════════════
@@ -343,16 +461,34 @@ namespace SEAL
 
             OnAttackStarted?.Invoke();
 
-            _currentAttackDir = GetAttackDirection();
+            // [6단계] 공격 방향 결정
+            //   1콤보 시작(_currentCombo = 0) : 현재 FacingDirection 사용
+            //   2/3콤보 시작                  : 이전 콤보 종료 시 저장된 _nextComboDir 사용
+            //     → _nextComboDir 에 방향키 입력 있으면 그 방향
+            //     → _nextComboDir = zero 이면 이전 방향(_currentAttackDir) 유지
+            if (_currentCombo == 0)
+            {
+                // 1콤보: 현재 이동 방향 기준
+                _currentAttackDir = GetAttackDirection();
+            }
+            else
+            {
+                // 2/3콤보: 콤보 입력 시점에 스냅샷한 방향 사용
+                // 방향키 입력이 없었으면 이전 콤보 방향 그대로 유지
+                if (_nextComboDir.sqrMagnitude > 0.01f)
+                    _currentAttackDir = _nextComboDir.normalized;
+                // else: _currentAttackDir 변경 없음 (이전 방향 유지)
+            }
+
+            // 다음 콤보 방향 초기화 (매 콤보 시작 시 리셋)
+            _nextComboDir = Vector2.zero;
 
             _moveController.SetMoveLocked(true);
 
-            // 콤보 인덱스 변환 + 봉인도 직접 전달
             var comboIndex = (PlayerWeaponSwingController.ComboIndex)
                 Mathf.Clamp(_currentCombo, 0, 2);
             float sealAmount = GetComboSealAmount();
 
-            // SwingController 가 내부에서 HitboxManager 직접 제어
             _swingController.PlaySwing(comboIndex, _currentAttackDir, sealAmount);
             PlayLunge(_currentAttackDir);
 
