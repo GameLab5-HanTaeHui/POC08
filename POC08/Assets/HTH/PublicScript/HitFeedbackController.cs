@@ -122,42 +122,52 @@ namespace SEAL
         {
             if (_playerHitVfx == null)
             {
-                Debug.LogWarning("[HitFeedbackController] _playerHitVfx 미연결.");
+                Debug.LogWarning("[HitFeedbackController] PlayPlayerHit — _playerHitVfx 미연결.");
                 return;
             }
 
+            Debug.Log($"[HitFeedbackController] PlayPlayerHit 호출 " +
+                      $"| 목표위치: {worldPosition} " +
+                      $"| SimSpace: {_playerHitVfx.main.simulationSpace} " +
+                      $"| isPlaying: {_playerHitVfx.isPlaying}");
+
             _playerHitVfx.transform.position = worldPosition;
 
-            // 이미 재생 중이면 중단 후 재시작 (빠른 연속 피격 대응)
+            Debug.Log($"[HitFeedbackController] transform.position 설정 후 실제위치: " +
+                      $"{_playerHitVfx.transform.position}");
+
             if (_playerHitVfx.isPlaying)
                 _playerHitVfx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
 
             _playerHitVfx.Play();
+
+            Debug.Log($"[HitFeedbackController] Play() 완료 | isPlaying: {_playerHitVfx.isPlaying}");
         }
 
-        /// <summary>
-        /// 적 피격 파티클 재생 (봉인 부위 적중).
-        /// 플레이어 공격이 보스 팔/코어에 적중했을 때 호출.
-        ///
-        /// [호출 위치 예시]
-        ///   PlayerAttackController.HandleHitboxHit(col, sealAmount)
-        ///   BossWardenArmPart.HandlePlayerHit(col, sealAmount)
-        /// </summary>
-        /// <param name="worldPosition">파티클 재생 위치 (월드 좌표).</param>
         public void PlayEnemyHit(Vector2 worldPosition)
         {
             if (_enemyHitVfx == null)
             {
-                Debug.LogWarning("[HitFeedbackController] _enemyHitVfx 미연결.");
+                Debug.LogWarning("[HitFeedbackController] PlayEnemyHit — _enemyHitVfx 미연결.");
                 return;
             }
 
+            Debug.Log($"[HitFeedbackController] PlayEnemyHit 호출 " +
+                      $"| 목표위치: {worldPosition} " +
+                      $"| SimSpace: {_enemyHitVfx.main.simulationSpace} " +
+                      $"| isPlaying: {_enemyHitVfx.isPlaying}");
+
             _enemyHitVfx.transform.position = worldPosition;
+
+            Debug.Log($"[HitFeedbackController] transform.position 설정 후 실제위치: " +
+                      $"{_enemyHitVfx.transform.position}");
 
             if (_enemyHitVfx.isPlaying)
                 _enemyHitVfx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
 
             _enemyHitVfx.Play();
+
+            Debug.Log($"[HitFeedbackController] Play() 완료 | isPlaying: {_enemyHitVfx.isPlaying}");
         }
 
         // ══════════════════════════════════════════════════════

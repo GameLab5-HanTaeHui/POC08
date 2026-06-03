@@ -447,7 +447,7 @@ MonoBehaviour:
   - {fileID: 1852811069793712602}
   _enemyLayer:
     serializedVersion: 2
-    m_Bits: 1048576
+    m_Bits: 4194304
 --- !u!1 &4640367753067742347
 GameObject:
   m_ObjectHideFlags: 0
