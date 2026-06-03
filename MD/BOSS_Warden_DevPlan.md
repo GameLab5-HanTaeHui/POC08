@@ -1772,7 +1772,27 @@ Player 오브젝트:
 | 🔴 버그8 | `BossPattern_RageCharge.cs` | v1.0→v1.1 | 크리티컬 | 동일 — `transform.position` → 무한루프 | `_rigid2D.position` 으로 교체 (프로젝트 파일 기준 v1.1에서 수정 완료) |
 | 🟡 경고1 | `BossWardenCoreSealGauge.cs` | v1.0→v1.1 | 낮음 | 프로젝트 파일에 `_core` 필드(미사용) 존재 | 프로젝트 파일에서 `_core` 필드 및 `GetComponentInParent` 참조 제거 권장 |
 | 🟡 경고2 | `BossWardenAI.cs` | - | 낮음 | `RageCharge` 에 불필요한 그로기 이벤트 구독 | 동작 영향 없음. 향후 정리 |
-| 🟡 경고3 | `BossWardenFeedback.cs` | - | 낮음 | `PlayBodyHitFlash()` 미연결 | 플레이어 피격 처리 구현 시 연결 필요 |
+| 🔴 버그9 | `BossWardenAI.cs` | v1.1→v1.2 | 크리티컬 | `ExecutePattern()` 에서 `_isStopped` 만 체크 → Active 내부 무한루프 시 탈출 불가 | POC07 방식으로 `_currentState` 이중 체크 추가 + 단계별 패턴명 디버그 로그 추가 |
+| 🔴 버그10 | `BossPatternBase.cs` | v1.1→v1.2 | 높음 | Warning/Active/Recovery 단계 전환 로그 없어 정지 위치 추적 불가 | 각 단계 진입/종료 + `isInterrupted` 상태 상세 로그 추가 |
+
+### 레이어 구조 (SEAL 프로젝트 3분리)
+
+```
+Layer 이름               용도                                         오브젝트
+─────────────────────────────────────────────────────────────────────────────
+Player|Enemy             보스 본체/부위 — 플레이어 공격 감지 대상      Boss_Warden, LeftArm, RightArm, Core
+Player|EnemyAttack       보스 패턴 OverlapXX 발생원 레이어             (패턴 히트박스 내부 레이어)
+Player|EnemyAttackHitBox 플레이어 HurtBox 레이어                       Player.HurtBox
+
+패턴 스크립트 _playerLayer  → Player|EnemyAttackHitBox 선택
+PlayerAttackHitboxManager._enemyLayer → Player|Enemy 선택
+BossWardenShockwave._playerLayer → Player|EnemyAttackHitBox 선택
+
+Physics2D Layer Collision Matrix:
+  Player|Enemy         ↔ Player 본체 : OFF (보스가 플레이어를 밀지 않음)
+  Player|EnemyAttack   ↔ Player|EnemyAttackHitBox : ON (패턴이 플레이어 HurtBox 감지)
+  Player|Enemy         ↔ Player|Enemy : OFF
+```
 
 ---
 

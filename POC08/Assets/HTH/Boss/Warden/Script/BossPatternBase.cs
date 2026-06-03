@@ -1,6 +1,20 @@
 ﻿// ============================================================
-// BossPatternBase.cs  v1.0
+// BossPatternBase.cs  v1.2
 // Boss_Warden 패턴 추상 베이스 클래스
+//
+// [v1.2 수정]
+//   🔴 디버그 로그 추가: Warning/Active/Recovery 각 단계 진입/종료 + isInterrupted 상태 출력
+//       → 어떤 패턴이 어느 단계에서 정지하는지 정확히 추적 가능
+//
+// [v1.1 수정]
+//   🔴 버그2: ExecuteRecovery OnPatternEnd 중복 발행 방지
+//   🟡 경고2: SetActive=false 코루틴 중단 주의사항 주석 추가
+//
+// [레이어 구조 — SEAL 프로젝트 3분리 방식]
+//   Player|Enemy         : 보스 본체/부위 피격 감지 (플레이어 공격 → Enemy 레이어 감지)
+//   Player|EnemyAttack   : 보스 패턴 공격 발생원 (패턴 OverlapXX 의 소속 레이어)
+//   Player|EnemyAttackHitBox : 플레이어 피격 판정 (플레이어 HurtBox 레이어)
+//                              ← 패턴 스크립트의 _playerLayer 는 이 레이어 선택
 //
 // [POC07 참고]
 //   TestBossPatternBase.cs (v1.0) 구조를 기반으로
@@ -235,8 +249,10 @@ namespace SEAL
             _isExecuting = true;
             _isInterrupted = false;
 
+            Debug.Log($"[{GetType().Name}] Warning 진입 | isInterrupted:{_isInterrupted}");
             OnPatternStart?.Invoke(this);
             yield return StartCoroutine(OnWarning());
+            Debug.Log($"[{GetType().Name}] Warning OnWarning() 반환 | isInterrupted:{_isInterrupted}");
         }
 
         /// <summary>
@@ -244,8 +260,15 @@ namespace SEAL
         /// </summary>
         public IEnumerator ExecuteActive()
         {
-            if (_isInterrupted) yield break;
+            if (_isInterrupted)
+            {
+                Debug.Log($"[{GetType().Name}] Active 진입 전 isInterrupted=true → 스킵");
+                yield break;
+            }
+
+            Debug.Log($"[{GetType().Name}] Active 진입");
             yield return StartCoroutine(OnActive());
+            Debug.Log($"[{GetType().Name}] Active OnActive() 반환 | isInterrupted:{_isInterrupted}");
         }
 
         /// <summary>
@@ -265,9 +288,15 @@ namespace SEAL
         /// </summary>
         public IEnumerator ExecuteRecovery()
         {
-            if (_isInterrupted) yield break;
+            if (_isInterrupted)
+            {
+                Debug.Log($"[{GetType().Name}] Recovery 진입 전 isInterrupted=true → 스킵");
+                yield break;
+            }
 
+            Debug.Log($"[{GetType().Name}] Recovery 진입");
             yield return StartCoroutine(OnRecovery());
+            Debug.Log($"[{GetType().Name}] Recovery OnRecovery() 반환 | isInterrupted:{_isInterrupted}");
 
             // _isInterrupted = true 면 Interrupt() 에서 이미 처리됨 → 중복 방지
             if (_isInterrupted) yield break;
@@ -277,6 +306,7 @@ namespace SEAL
             _isExecuting = false;
 
             OnPatternEnd?.Invoke(this);
+            Debug.Log($"[{GetType().Name}] Recovery 정상 완료 | triggerGroggy:{_triggerGroggyOnRecovery}");
 
             // 그로기 유도 (정상 종료 + 설정 true 일 때만)
             if (_triggerGroggyOnRecovery)

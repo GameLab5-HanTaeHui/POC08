@@ -1,11 +1,22 @@
 ﻿// ============================================================
-// BossWardenAI.cs  v1.1
+// BossWardenAI.cs  v1.2
 // Boss_Warden 탑뷰 AI
 //
-// [v1.1 버그 수정]
+// [v1.2 수정]
+//   🔴 ExecutePattern() 상태 이중 체크 + 상세 디버그 로그 추가
+//       기존: _isStopped 만 체크 → Active 내부 무한루프 시 탈출 불가
+//       수정: POC07 TestBossAI 처럼 _currentState == Warning/Active 이중 체크
+//             → 상태 불일치 감지 시 즉시 패턴 중단
+//       추가: 패턴명/단계 진입출 로그 → "어떤 패턴이 어디서 멈추는지" 추적 가능
+//
+// [v1.1 수정]
 //   🔴 버그5: TrySelectPattern() 에서 매 프레임 List 생성으로 GC 압박
-//       기존: var available = new List<BossPatternBase>(); — Idle 상태 매 프레임 할당
 //       수정: _availablePatterns 멤버 변수로 캐싱 → Clear() 후 재사용
+//
+// [레이어 구조 — SEAL 프로젝트 3분리]
+//   Player|Enemy            : 보스 본체/부위 레이어 (플레이어 공격 감지 대상)
+//   Player|EnemyAttack      : 보스 패턴 OverlapXX 발생원 레이어
+//   Player|EnemyAttackHitBox: 플레이어 HurtBox 레이어 (패턴 _playerLayer 에 선택)
 //
 // [POC07 참고]
 //   TestBossAI.cs (v1.0) 구조를 기반으로 탑뷰 시스템에 맞게 재설계.
@@ -663,30 +674,75 @@ namespace SEAL
         ///   Interrupt() 를 먼저 호출한 뒤 StopCoroutine().
         ///   StopCoroutine 만 호출하면 패턴 내부 정리가 실행되지 않음.
         /// </summary>
+        /// <summary>
+        /// 패턴 실행 코루틴.
+        /// Warning → Active → Recovery 순서로 실행.
+        ///
+        /// [v1.2 수정 — POC07 TestBossAI 상태 이중 체크 적용]
+        ///   기존: _isStopped 만 체크 → Active 내부 무한루프 시 탈출 불가
+        ///   수정: POC07 처럼 _currentState == Warning/Active 이중 체크 추가
+        ///         + 패턴명/단계 상세 디버그 로그 추가
+        ///
+        /// [Active 무한루프 원인]
+        ///   BossPattern_Charge.OnActive() 내부 while(true) 에서
+        ///   _isInterrupted 체크로만 탈출 → Interrupt 호출 없이 Active 가 종료되지 않으면
+        ///   ExecuteActive() 가 영원히 반환되지 않음.
+        ///   → _isStopped 가 true 여도 이미 Active 코루틴 내부에 있으면 탈출 불가.
+        ///   → 상태 이중 체크: _currentState != Active 면 Active 단계 스킵.
+        ///
+        /// [코루틴 호출 주의]
+        ///   Interrupt() 를 먼저 호출한 뒤 StopCoroutine().
+        ///   StopCoroutine 만 호출하면 패턴 내부 정리가 실행되지 않음.
+        /// </summary>
         private IEnumerator ExecutePattern(BossPatternBase pattern)
         {
+            string patternName = pattern.GetType().Name;
+
             // ── Warning ──────────────────────────────
+            Debug.Log($"[BossWardenAI] ▶ [{patternName}] Warning 시작");
             ChangeState(WardenAIState.Warning);
             yield return StartCoroutine(pattern.ExecuteWarning());
+            Debug.Log($"[BossWardenAI] ■ [{patternName}] Warning 종료 | isStopped:{_isStopped}");
 
             // Groggy / DilPhase 진입 감지
             if (_isStopped)
             {
+                Debug.Log($"[BossWardenAI] ⚠ [{patternName}] Warning 후 isStopped → 패턴 중단");
                 CleanupPattern();
                 yield break;
             }
 
             // ── Active ──────────────────────────────
+            // [POC07 이중 체크] Warning 단계가 정상 완료됐는지 상태로 확인
+            if (_currentState != WardenAIState.Warning)
+            {
+                Debug.Log($"[BossWardenAI] ⚠ [{patternName}] Warning 후 상태 불일치({_currentState}) → 패턴 중단");
+                CleanupPattern();
+                yield break;
+            }
+
+            Debug.Log($"[BossWardenAI] ▶ [{patternName}] Active 시작");
             ChangeState(WardenAIState.Active);
             yield return StartCoroutine(pattern.ExecuteActive());
+            Debug.Log($"[BossWardenAI] ■ [{patternName}] Active 종료 | isStopped:{_isStopped}");
 
             if (_isStopped)
             {
+                Debug.Log($"[BossWardenAI] ⚠ [{patternName}] Active 후 isStopped → 패턴 중단");
                 CleanupPattern();
                 yield break;
             }
 
             // ── Recovery ────────────────────────────
+            // [POC07 이중 체크] Active 단계가 정상 완료됐는지 상태로 확인
+            if (_currentState != WardenAIState.Active)
+            {
+                Debug.Log($"[BossWardenAI] ⚠ [{patternName}] Active 후 상태 불일치({_currentState}) → 패턴 중단");
+                CleanupPattern();
+                yield break;
+            }
+
+            Debug.Log($"[BossWardenAI] ▶ [{patternName}] Recovery 시작");
             ChangeState(WardenAIState.Recovery);
 
             // 취약 구간 시작 — 양팔 봉인도 배율 활성
@@ -696,14 +752,17 @@ namespace SEAL
 
             // 취약 구간 종료 — 반드시 해제 (정상/중단 무관)
             SetArmsRecoveryVuln(false);
+            Debug.Log($"[BossWardenAI] ■ [{patternName}] Recovery 종료 | isStopped:{_isStopped}");
 
             if (_isStopped)
             {
+                Debug.Log($"[BossWardenAI] ⚠ [{patternName}] Recovery 후 isStopped → 패턴 중단");
                 CleanupPattern();
                 yield break;
             }
 
             // ── 정상 종료 → Idle 복귀 ──────────────
+            Debug.Log($"[BossWardenAI] ✅ [{patternName}] 패턴 정상 완료 → Idle 복귀");
             CleanupPattern();
             ChangeState(WardenAIState.Idle);
         }
