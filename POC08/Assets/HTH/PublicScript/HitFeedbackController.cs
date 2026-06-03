@@ -1,36 +1,30 @@
 ﻿// ============================================================
-// HitFeedbackController.cs  v1.0
+// HitFeedbackController.cs  v1.1
 // 피격 파티클 재생 전담 싱글턴 컴포넌트
 //
-// [역할]
-//   플레이어 피격(PlayerHit) / 적 피격(EnemyHit) 파티클을
-//   위치 이동 후 Play() 하는 단일 진입점.
+// [v1.1 변경 — 시뮬레이션 공간 검증 추가]
+//   ValidateVfx() 에 SimulationSpace.World 체크 추가.
 //
-// [VFX 파일]
-//   HitParticle.prefab     → 플레이어가 적에게 공격당할 때
-//   EnemyHitParticle.prefab → 플레이어가 적을 공격할 때 (봉인 부위 피격)
-//   ShockWaveParticle.prefab → 무시 (추후 보스 코드에서 직접 사용)
+//   [문제]
+//     파티클 SimulationSpace = Local 이면
+//     transform.position 으로 월드 위치 이동 시
+//     파티클이 부모(HitFeedbackController) 기준 로컬로 해석되어
+//     재생 중 파티클이 부모와 함께 이동하거나 위치가 틀어짐.
 //
-// [파티클 설정 전제]
-//   playOnAwake = false  → Play() 수동 호출
-//   looping     = false  → 1회 재생 후 자동 종료
+//   [해결]
+//     파티클 Main.SimulationSpace = World 로 설정 필수.
+//     ValidateVfx() 에서 경고 로그로 안내.
 //
-// [사용 흐름]
-//   PlayerHit:
-//     각 패턴 피격 감지 시
-//       → HitFeedbackController.Instance.PlayPlayerHit(playerPosition)
-//
-//   EnemyHit:
-//     BossWardenArmPart.HandlePlayerHit() 또는
-//     PlayerAttackController.HandleHitboxHit() 에서
-//       → HitFeedbackController.Instance.PlayEnemyHit(hitPosition)
+// [누락 연결 항목 — POC08 프로젝트 파일에서 직접 추가 필요]
+//   BossPattern_Slam.ExecuteThrow()     → PlayPlayerHit(hit.bounds.center)
+//   BossPattern_Sweep.CheckSweepHit()   → PlayPlayerHit(hit.bounds.center)
+//   BossPattern_GuardBreak.CheckHit()   → PlayPlayerHit(hit.bounds.center)
+//   BossPattern_RageCharge.OnActive()   → PlayPlayerHit(hit.bounds.center)
 //
 // [씬 배치]
-//   EffectRoot 하위에 HitFeedbackController 오브젝트 1개 배치.
+//   EffectRoot 하위 HitFeedbackController 오브젝트.
 //   Inspector 에서 _playerHitVfx, _enemyHitVfx 연결.
-//
-// [네임스페이스]
-//   namespace : SEAL
+//   파티클 Main.SimulationSpace = World 필수.
 // ============================================================
 
 using UnityEngine;
@@ -186,6 +180,20 @@ namespace SEAL
                 Debug.LogWarning("[HitFeedbackController] _playerHitVfx.playOnAwake = true — false 로 변경 필요.");
             if (_enemyHitVfx != null && _enemyHitVfx.main.playOnAwake)
                 Debug.LogWarning("[HitFeedbackController] _enemyHitVfx.playOnAwake = true — false 로 변경 필요.");
+
+            // [v1.1] SimulationSpace 검증
+            // Local 이면 transform.position 으로 위치 이동 시 파티클이 부모 기준으로
+            // 해석되어 재생 중 위치가 틀어지거나 부모와 함께 이동하는 문제 발생.
+            // 반드시 World 로 설정해야 월드 좌표 기반 재생이 정상 동작.
+            if (_playerHitVfx != null &&
+                _playerHitVfx.main.simulationSpace != ParticleSystemSimulationSpace.World)
+                Debug.LogWarning("[HitFeedbackController] _playerHitVfx.SimulationSpace ≠ World " +
+                                 "— Particle System > Main > Simulation Space 를 World 로 변경 필요.");
+
+            if (_enemyHitVfx != null &&
+                _enemyHitVfx.main.simulationSpace != ParticleSystemSimulationSpace.World)
+                Debug.LogWarning("[HitFeedbackController] _enemyHitVfx.SimulationSpace ≠ World " +
+                                 "— Particle System > Main > Simulation Space 를 World 로 변경 필요.");
         }
     }
 }
