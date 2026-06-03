@@ -789,10 +789,40 @@ GroggyRoutine 완료 → ExitGroggyFailure()
 | 파일명 | 역할 | 연결 부위 | 특이사항 |
 |---|---|---|---|
 | `BossPattern_Charge.cs` | 돌진 / 2페이즈 Recovery 스킵 + Slam 연계 | 오른팔 | v1.3 — `_rigid2D.position` 수정 + 타임아웃/속도감지 안전장치 3종 추가 |
-| `BossPattern_Slam.cs` | 내려치기 / 2페이즈 2연속 (0.5초 간격) | 왼팔 | **v2.0 디테일링** — 팔이 플레이어 방향 조준 이동 + 실제로 목표 위치까지 뻗는 연출 |
-| `BossPattern_Sweep.cs` | 360° 회전 스윕 / 2페이즈 2회전 | 왼팔 | **v2.0 디테일링** — 양팔 벌리기 준비 → 본체+팔 함께 회전 연출 |
-| `BossPattern_GuardBreak.cs` | 가드 자세 → 찌르기 / 2페이즈 가드 단축 | 오른팔 | **v2.0 디테일링** — 양팔 앞 가드 → 백스윙 → 방향 찌르기 → 복귀 |
+| `BossPattern_Slam.cs` | 내려치기 / 팔 분리 + 공략 타임 / 2페이즈 2연속 | 왼팔 | **v3.0** — 팔 SetParent 분리 → 플레이어 위치 꽂기 → 공략 타임 → 귀환 |
+| `BossPattern_Sweep.cs` | 360° 회전 스윕 / 원심력 팔 날리기 / 2페이즈 2회전 | 왼팔 | **v3.0** — DORotate 대상 수정 + 회전 완료 후 원심력 팔 분리 + 공략 타임 |
+| `BossPattern_GuardBreak.cs` | 가드 자세 → 찌르기 / 2페이즈 가드 단축 | 오른팔 | **v2.0** — 가드 자세 DOLocalMove + 백스윙 + 방향 찌르기 |
 | `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 | `_isPhase2Only = true` / `_rigid2D.position` 수정 완료 |
+
+### 팔 던지기(분리) 메카닉 설계
+
+```
+[적용 패턴]
+  BossPattern_Slam  v3.0 — 왼팔 꽂기 + 공략 타임 2.0초 (SlamVuln × 2.0)
+  BossPattern_Sweep v3.0 — 양팔 원심력 날리기 + 공략 타임 1.5초 (SlamVuln × 1.5)
+
+[구현 방식]
+  팔 분리: _armLTransform.SetParent(null, worldPositionStays: true)
+  팔 이동: DOMove(targetWorldPos, duration, Ease)
+  공략 타임: WaitForSecondsRealtime(vulnDuration) + DOPunchPosition 진동
+  팔 귀환: DOMove(bossPos + armOriginLocalPos, returnDuration, InBack)
+  재부착: SetParent(bossTransform, true) + localPosition = origin
+
+[봉인도 배율]
+  BossWardenArmPart.SetSlamVuln(true, multiplier) → HandlePlayerHit 배율 적용
+  Slam 공략 타임: × 2.0 (강한 보상)
+  Sweep 날리기: × 1.5 (적당한 보상)
+  공략 타임 종료: SetSlamVuln(false, 1.0f) → 배율 해제
+
+[_isArmDetached / _isArmsDetached 플래그]
+  Interrupt() 또는 OnDestroy() 에서 ReattachArm() 자동 호출
+  → 예외 상황에서도 팔이 월드에 분리된 채 남지 않음 보장
+
+[BossWardenArmPart v1.2 추가 API]
+  SetSlamVuln(bool isActive, float multiplier)
+  _isSlamVuln, _slamVulnMultiplier 내부 상태
+  HandlePlayerHit 에서 _isSlamVuln 체크 → rawAmount × _slamVulnMultiplier
+```
 
 ### 레이어 6분리 — Inspector 설정 필수 항목
 

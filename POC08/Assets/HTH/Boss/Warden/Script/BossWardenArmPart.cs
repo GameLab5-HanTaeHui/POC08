@@ -137,6 +137,18 @@ namespace SEAL
         private bool _isRecoveryVuln;
 
         /// <summary>
+        /// 패턴 공략 타임 (팔 분리 구간) 활성 여부.
+        /// BossPattern_Slam / Sweep 에서 SetSlamVuln(true, mult) 호출 시 활성.
+        /// </summary>
+        private bool _isSlamVuln;
+
+        /// <summary>
+        /// 공략 타임 봉인도 배율.
+        /// Slam 공략 타임 = 2.0 / Sweep 날리기 타임 = 1.5 / 기본 = 1.0.
+        /// </summary>
+        private float _slamVulnMultiplier = 1.0f;
+
+        /// <summary>
         /// 기본 색상 캐시 (Awake 에서 저장).
         /// 히트 점멸 후 복귀 색상.
         /// BossWardenFeedback 이 색상을 바꿀 때 UpdateBaseColor() 로 동기화 필요.
@@ -318,6 +330,12 @@ namespace SEAL
             if (_isRecoveryVuln && _data != null)
                 rawAmount *= _data.recoveryVulnMultiplier;
 
+            // 패턴 공략 타임 배율 적용 (Slam/Sweep 팔 분리 구간)
+            // RecoveryVuln 과 중복 적용되지 않도록 else if 처리
+            // → 공략 타임은 패턴 Active 구간이지 Recovery 구간이 아니므로 별개
+            if (_isSlamVuln)
+                rawAmount *= _slamVulnMultiplier;
+
             // 봉인도 누적
             if (_sealGauge != null)
                 _sealGauge.AddGauge(rawAmount);
@@ -390,6 +408,21 @@ namespace SEAL
         public void SetRecoveryVuln(bool isVuln)
         {
             _isRecoveryVuln = isVuln;
+        }
+
+        /// <summary>
+        /// 패턴 공략 타임 전용 봉인도 배율 설정.
+        /// BossPattern_Slam / BossPattern_Sweep 에서 팔 분리 구간 동안 호출.
+        ///
+        /// [RecoveryVuln 과의 차이]
+        ///   RecoveryVuln : DataSO.recoveryVulnMultiplier 고정 배율 (보통 1.5)
+        ///   SlamVuln     : 패턴별 자유 배율 (Slam = 2.0, Sweep = 1.5)
+        ///                  팔이 분리된 공략 타임에만 활성
+        /// </summary>
+        public void SetSlamVuln(bool isActive, float multiplier)
+        {
+            _isSlamVuln = isActive;
+            _slamVulnMultiplier = multiplier;
         }
 
         /// <summary>

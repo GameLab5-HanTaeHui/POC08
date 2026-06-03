@@ -1,27 +1,35 @@
 ﻿// ============================================================
-// BossPattern_Sweep.cs  v2.0
-// Boss_Warden 회전 스윕 패턴 — 전면 재작성
+// BossPattern_Sweep.cs  v3.0
+// Boss_Warden 회전 스윕 패턴 — 원심력 팔 날리기 + 수거
 //
-// [v2.0 디테일링]
-//   기존: 그냥 본체 회전 + 원형 디스크. 전혀 직관적이지 않음.
+// [v3.0 핵심 변경]
+//   기존: DORotate 대상이 Patterns 자신(오류). 팔 방향 X축 고정.
 //   변경:
-//     Warning:
-//       ① 양팔이 좌우로 벌어지는 준비 모션 (팔이 넓게 펼침)
-//       ② 원형 예고 디스크 표시 (보스 중심)
-//       ③ 본체 DOColor 붉은 Pulse
+//     Warning:  FacingDir 기준 좌우 수직(perpendicular) 방향으로 양팔 벌리기
+//               예고 디스크 보스 중심
+//               본체 + 팔 주황 Pulse
+//     Active-회전: Boss_Warden 본체 Transform DORotate (캐싱된 _bossTransform)
+//                  팔이 자식이므로 함께 회전 → 스윕 연출 자연스러움
+//                  매 프레임 OverlapCircle 피격 판정
+//     Active-날리기: 회전 완료 시 팔의 현재 월드 방향 계산
+//                    양팔 SetParent(null) 분리
+//                    원심력 방향으로 DOMove (날아감)
+//                    공략 타임: 두 팔 모두 공격 가능
+//                    귀환: DOMove 보스 위치로 복귀 → SetParent 재부착
+//     Recovery: 본체 Z각도 복구 + 색상 복귀
 //
-//     Active:
-//       ① 본체 + 양팔이 함께 회전 (DORotate FastBeyond360)
-//       ② 팔 회전 시 팔도 실제로 회전 (부모 본체 회전 따라감)
-//       ③ 매 프레임 OverlapCircle 피격 판정
-//       ④ 디스크 보스와 함께 이동 (중심 유지)
+// [2페이즈]
+//   2회전 + 더 멀리 날아감 (flyDist × 1.5)
 //
-//     Recovery:
-//       ① 양팔 원위치 복귀 DOLocalMove
-//       ② 본체 DOColor 원래 색상
+// [원심력 방향 계산]
+//   회전 완료 시점 팔의 현재 월드 방향:
+//   bossForward = bossTransform.up (또는 right, Hierarchy 구성에 따라)
+//   perpL = (-bossForward.y,  bossForward.x) ← 왼팔 원심력 방향
+//   perpR = ( bossForward.y, -bossForward.x) ← 오른팔 원심력 방향
 //
 // [레이어]
-//   _playerLayer = EnemyAttackHitBox 레이어
+//   _playerLayer = PlayerAttackHitBox 레이어
+//   팔 분리 중에도 팔의 EnemyAttackHitBox Collider 살아있음 → 봉인도 정상 누적
 //
 // [연결 부위] 왼팔 (LeftArm)
 // [namespace] SEAL
@@ -34,17 +42,22 @@ using DG.Tweening;
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 회전 스윕 패턴. (v2.0)
+    /// Boss_Warden 회전 스윕 패턴 — 원심력 팔 날리기. (v3.0)
     ///
     /// ────────────────────────────────────────────────────
     /// [연출 흐름]
-    ///   Warning: 양팔 벌리기 준비 → 붉은 Pulse → 예고 디스크
-    ///   Active:  본체 360° 회전 → 팔이 함께 휩쓸기 → 히트박스 판정
-    ///   Recovery: 양팔 원위치 복귀 → 색상 복귀
+    ///   Warning : 양팔 수직 방향 벌리기 → 예고 디스크 → 주황 Pulse
+    ///   Active  : 본체 360° 회전 → 팔 함께 스윕 → 회전 완료 후 원심력으로 분리
+    ///             공략 타임 → 귀환 재부착
+    ///   Recovery: Z각도 복구 → 팔 원위치 → 색상 복귀
     /// ────────────────────────────────────────────────────
     /// </summary>
     public class BossPattern_Sweep : BossPatternBase
     {
+        // ══════════════════════════════════════════════════════
+        // Inspector
+        // ══════════════════════════════════════════════════════
+
         [Header("── 컴포넌트 연결 ──────────────────────")]
         [SerializeField] private BossWardenAttackRange _attackRange;
         [SerializeField] private BossWardenAI _ai;
@@ -52,49 +65,122 @@ namespace SEAL
 
         [Header("── 팔 Transform / Renderer ──────────────────────")]
 
-        /// <summary>왼팔 Transform. 스윕 회전 시 팔도 함께 이동.</summary>
         [Tooltip("왼팔 Transform.")]
         [SerializeField] private Transform _armLTransform;
 
-        /// <summary>오른팔 Transform.</summary>
         [Tooltip("오른팔 Transform.")]
         [SerializeField] private Transform _armRTransform;
 
+        [Tooltip("왼팔 SpriteRenderer.")]
         [SerializeField] private SpriteRenderer _armLRenderer;
+
+        [Tooltip("오른팔 SpriteRenderer.")]
         [SerializeField] private SpriteRenderer _armRRenderer;
+
+        [Tooltip("보스 본체 SpriteRenderer.")]
         [SerializeField] private SpriteRenderer _bodyRenderer;
 
         [Header("── 레이어 ──────────────────────")]
 
         /// <summary>
         /// 플레이어 HurtBox 레이어 마스크.
-        /// EnemyAttackHitBox 레이어 선택.
+        /// PlayerAttackHitBox 레이어 선택.
         /// </summary>
-        [Tooltip("플레이어 HurtBox 레이어. EnemyAttackHitBox 선택.")]
+        [Tooltip("플레이어 HurtBox 레이어. PlayerAttackHitBox 레이어 선택.")]
         [SerializeField] private LayerMask _playerLayer;
 
         [Header("── 연출 수치 ──────────────────────")]
 
-        /// <summary>Warning 중 팔이 좌우로 벌어지는 거리 (로컬 X 오프셋).</summary>
-        [Tooltip("Warning 팔 벌리기 거리. 권장: 0.5")]
+        /// <summary>
+        /// Warning 시 팔이 좌우로 벌어지는 거리 (로컬 오프셋).
+        /// </summary>
+        [Tooltip("팔 벌리기 거리. 권장: 0.6")]
         [Min(0f)]
-        [SerializeField] private float _armSpreadAmount = 0.5f;
+        [SerializeField] private float _armSpreadAmount = 0.6f;
 
-        // ── 내부 상태 ──
+        /// <summary>
+        /// 회전 완료 후 팔이 날아가는 거리.
+        /// 2페이즈에서는 × 1.5 적용.
+        /// </summary>
+        [Tooltip("원심력 날아가는 거리. 권장: 1.5")]
+        [Min(0.5f)]
+        [SerializeField] private float _flyDistance = 1.5f;
+
+        /// <summary>
+        /// 팔이 날아가는 데 걸리는 시간 (초).
+        /// </summary>
+        [Tooltip("팔 날아가는 시간 (초). 권장: 0.2")]
+        [Min(0.05f)]
+        [SerializeField] private float _flyDuration = 0.2f;
+
+        /// <summary>
+        /// 팔이 날아간 후 공략 타임 지속 시간 (초).
+        /// </summary>
+        [Tooltip("팔 공략 타임 지속 시간 (초). 권장: 1.5")]
+        [Min(0.5f)]
+        [SerializeField] private float _flyVulnDuration = 1.5f;
+
+        /// <summary>
+        /// 팔 귀환 시간 (초).
+        /// </summary>
+        [Tooltip("팔 귀환 시간 (초). 권장: 0.3")]
+        [Min(0.05f)]
+        [SerializeField] private float _returnDuration = 0.3f;
+
+        // ══════════════════════════════════════════════════════
+        // 내부 상태
+        // ══════════════════════════════════════════════════════
+
+        /// <summary> 왼팔 원래 로컬 위치. </summary>
         private Vector3 _armLOriginLocalPos;
+
+        /// <summary> 오른팔 원래 로컬 위치. </summary>
         private Vector3 _armROriginLocalPos;
+
+        /// <summary> 왼팔 원래 색상. </summary>
         private Color _armLOriginColor;
+
+        /// <summary> 오른팔 원래 색상. </summary>
         private Color _armROriginColor;
+
+        /// <summary>
+        /// 보스 본체 Transform. 회전 대상 + 팔 재부착 대상.
+        /// Awake 에서 캐싱 (GetComponentInParent 매 프레임 호출 방지).
+        /// </summary>
+        private Transform _bossTransform;
+
+        /// <summary>
+        /// 보스 Rigidbody2D. 월드 위치 참조.
+        /// </summary>
+        private Rigidbody2D _rigid2D;
+
+        /// <summary> 2페이즈 여부. </summary>
         private bool _isPhase2;
-        private bool _isSweeping;
+
+        /// <summary>
+        /// 팔 분리 상태 추적.
+        /// true = 양팔 분리 중 / false = 보스에 부착 중.
+        /// </summary>
+        private bool _isArmsDetached;
+
         private Tweener _rotateTween;
         private Tweener _bodyColorTween;
+        private Tweener _armLColorTween;
+        private Tweener _armRColorTween;
+
+        // ══════════════════════════════════════════════════════
+        // Unity 라이프사이클
+        // ══════════════════════════════════════════════════════
 
         private void Awake()
         {
             if (_attackRange == null) _attackRange = GetComponentInParent<BossWardenAttackRange>();
             if (_ai == null) _ai = GetComponentInParent<BossWardenAI>();
             if (_bodyRenderer == null) _bodyRenderer = GetComponentInParent<SpriteRenderer>();
+
+            // Boss_Warden 본체 참조 캐싱 (매 프레임 GetComponentInParent 방지)
+            _rigid2D = GetComponentInParent<Rigidbody2D>();
+            _bossTransform = _rigid2D != null ? _rigid2D.transform : transform.parent;
 
             if (_armLTransform != null) _armLOriginLocalPos = _armLTransform.localPosition;
             if (_armRTransform != null) _armROriginLocalPos = _armRTransform.localPosition;
@@ -108,6 +194,10 @@ namespace SEAL
         {
             _rotateTween?.Kill();
             _bodyColorTween?.Kill();
+            _armLColorTween?.Kill();
+            _armRColorTween?.Kill();
+
+            ReattachArms();
         }
 
         public new void UnlockPhase2()
@@ -117,7 +207,7 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // Warning — 양팔 벌리기 + 예고 디스크 + 붉은 Pulse
+        // Warning — FacingDir 기준 양팔 수직 벌리기
         // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnWarning()
@@ -125,29 +215,35 @@ namespace SEAL
             if (_data == null) yield break;
 
             float radius = _isPhase2 ? _data.sweepWarningRadius + 0.5f : _data.sweepWarningRadius;
+            Vector2 bossPos = GetBossWorldPos();
 
-            // ① 예고 디스크 표시 (보스 중심)
-            _attackRange?.ShowSweepDisc(GetBossWorldPos(), radius);
+            // ① 예고 디스크 표시
+            _attackRange?.ShowSweepDisc(bossPos, radius);
 
-            // ② 양팔 좌우로 벌리기 (준비 동작)
-            //    왼팔: X 방향 왼쪽으로 / 오른팔: X 방향 오른쪽으로
+            // ② FacingDir 기준 좌우 수직 방향 계산
+            //    perpL = 왼쪽 수직 / perpR = 오른쪽 수직
+            Vector2 forward = _ai != null ? _ai.FacingDir : Vector2.right;
+            Vector2 perpL = new Vector2(-forward.y, forward.x); // 왼쪽 수직
+            Vector2 perpR = new Vector2(forward.y, -forward.x); // 오른쪽 수직
+
+            // 팔 벌리기: perpendicular 방향으로 로컬 오프셋 이동
             if (_armLTransform != null)
             {
+                Vector3 spreadOffsetL = new Vector3(perpL.x, perpL.y, 0f) * _armSpreadAmount;
                 _armLTransform
-                    .DOLocalMove(_armLOriginLocalPos + new Vector3(-_armSpreadAmount, 0.2f, 0f),
-                                 _warningDuration * 0.5f)
+                    .DOLocalMove(_armLOriginLocalPos + spreadOffsetL, _warningDuration * 0.5f)
                     .SetEase(Ease.OutBack);
             }
             if (_armRTransform != null)
             {
+                Vector3 spreadOffsetR = new Vector3(perpR.x, perpR.y, 0f) * _armSpreadAmount;
                 _armRTransform
-                    .DOLocalMove(_armROriginLocalPos + new Vector3(_armSpreadAmount, 0.2f, 0f),
-                                 _warningDuration * 0.5f)
+                    .DOLocalMove(_armROriginLocalPos + spreadOffsetR, _warningDuration * 0.5f)
                     .SetEase(Ease.OutBack);
             }
 
-            // ③ 본체 붉은 Pulse (경고)
-            if (_bodyRenderer != null && _data != null)
+            // ③ 본체 + 팔 주황 Pulse
+            if (_bodyRenderer != null)
             {
                 _bodyColorTween?.Kill();
                 _bodyColorTween = _bodyRenderer
@@ -155,75 +251,81 @@ namespace SEAL
                     .SetLoops(-1, LoopType.Yoyo)
                     .SetUpdate(true);
             }
-
-            // ④ 팔 색상도 주황으로
-            if (_armLRenderer != null && _data != null)
-                _armLRenderer.DOColor(_data.colorWarning, _warningDuration * 0.3f).SetUpdate(true);
-            if (_armRRenderer != null && _data != null)
-                _armRRenderer.DOColor(_data.colorWarning, _warningDuration * 0.3f).SetUpdate(true);
+            if (_armLRenderer != null)
+            {
+                _armLColorTween?.Kill();
+                _armLColorTween = _armLRenderer
+                    .DOColor(_data.colorWarning, _data.pulsePeriod * 0.4f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetUpdate(true);
+            }
+            if (_armRRenderer != null)
+            {
+                _armRColorTween?.Kill();
+                _armRColorTween = _armRRenderer
+                    .DOColor(_data.colorWarning, _data.pulsePeriod * 0.4f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetUpdate(true);
+            }
 
             yield return StartCoroutine(WaitForPattern(_warningDuration));
         }
 
         // ══════════════════════════════════════════════════════
-        // Active — 본체 + 팔 360° 회전 + 히트박스
+        // Active — 회전 → 원심력 날리기 → 공략 타임 → 귀환
         // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnActive()
         {
             if (_isInterrupted || _data == null) yield break;
 
+            // ① Pulse 정지 + 흰색 순간 (공격 시작)
             _bodyColorTween?.Kill();
+            _armLColorTween?.Kill();
+            _armRColorTween?.Kill();
 
-            // 팔이 벌려진 상태에서 즉시 흰색 (공격 임박 신호)
-            if (_bodyRenderer != null)
-                _bodyRenderer.DOColor(_data.colorActive, 0.05f).SetUpdate(true);
-            if (_armLRenderer != null)
-                _armLRenderer.DOColor(Color.white, 0.05f).SetUpdate(true);
-            if (_armRRenderer != null)
-                _armRRenderer.DOColor(Color.white, 0.05f).SetUpdate(true);
+            if (_bodyRenderer != null) _bodyRenderer.color = _data.colorActive;
+            if (_armLRenderer != null) _armLRenderer.color = Color.white;
+            if (_armRRenderer != null) _armRRenderer.color = Color.white;
 
-            _isSweeping = true;
-
+            // ──────────────────────────────────────────
+            // ② Boss_Warden 본체 회전
+            //    _bossTransform (캐싱) 으로 DORotate → 팔이 자식이므로 함께 회전
+            // ──────────────────────────────────────────
             float rotateSpeed = _isPhase2 ? _data.phase2SweepRotateSpeed : _data.sweepRotateSpeed;
             int rotations = _isPhase2 ? 2 : 1;
             float totalAngle = 360f * rotations;
-            float duration = totalAngle / rotateSpeed;
+            float rotateDuration = totalAngle / rotateSpeed;
 
-            // 본체 회전 (팔이 자식이므로 함께 회전됨)
             _rotateTween?.Kill();
-            _rotateTween = GetComponentInParent<Transform>()
-                .DORotate(
-                    new Vector3(0f, 0f, totalAngle),
-                    duration,
-                    RotateMode.FastBeyond360)
-                .SetEase(Ease.Linear)
-                .SetRelative(true)
-                .SetUpdate(false);
+            if (_bossTransform != null)
+            {
+                _rotateTween = _bossTransform
+                    .DORotate(
+                        new Vector3(0f, 0f, totalAngle),
+                        rotateDuration,
+                        RotateMode.FastBeyond360)
+                    .SetRelative(true)
+                    .SetEase(Ease.Linear)
+                    .SetUpdate(false);
+            }
 
+            // ③ 회전 중 매 프레임 히트박스 + 디스크 위치 갱신
             float elapsed = 0f;
-            while (elapsed < duration)
+            float hitRadius = _isPhase2 ? _data.sweepHitRadius + 0.5f : _data.sweepHitRadius;
+
+            while (elapsed < rotateDuration)
             {
                 if (_isInterrupted)
                 {
                     _rotateTween?.Kill();
-                    _isSweeping = false;
                     yield break;
                 }
 
-                // 디스크 중심 보스와 함께
-                _attackRange?.UpdateSweepDiscPosition(GetBossWorldPos());
+                Vector2 bossPos = GetBossWorldPos();
+                _attackRange?.UpdateSweepDiscPosition(bossPos);
 
-                // 매 프레임 히트박스 판정
-                float hitRadius = _isPhase2
-                    ? _data.sweepHitRadius + 0.5f
-                    : _data.sweepHitRadius;
-
-                Collider2D hit = Physics2D.OverlapCircle(
-                    GetBossWorldPos(),
-                    hitRadius,
-                    _playerLayer);
-
+                Collider2D hit = Physics2D.OverlapCircle(bossPos, hitRadius, _playerLayer);
                 if (hit != null)
                     Debug.Log("[BossPattern_Sweep] 스윕 피격!");
 
@@ -231,66 +333,241 @@ namespace SEAL
                 yield return null;
             }
 
-            _isSweeping = false;
             _attackRange?.HideSweepDisc();
+
+            if (_isInterrupted) yield break;
+
+            // ──────────────────────────────────────────
+            // ④ 회전 완료 — 팔의 현재 월드 방향 계산 (원심력 방향)
+            // ──────────────────────────────────────────
+            //    회전 완료 시점 bossTransform.up 이 보스의 현재 "위" 방향
+            //    왼팔: bossTransform.up 기준 왼쪽 수직
+            //    오른팔: bossTransform.up 기준 오른쪽 수직
+
+            Vector2 bossUp = _bossTransform != null
+                ? (Vector2)_bossTransform.up
+                : Vector2.up;
+
+            // 원심력 방향 = 팔이 벌려진 방향 (bossUp 기준 수직)
+            Vector2 flyDirL = new Vector2(-bossUp.y, bossUp.x); // 왼팔 날아가는 방향
+            Vector2 flyDirR = new Vector2(bossUp.y, -bossUp.x); // 오른팔 날아가는 방향
+
+            float actualFlyDist = _isPhase2 ? _flyDistance * 1.5f : _flyDistance;
+
+            // ──────────────────────────────────────────
+            // ⑤ 양팔 분리 + 원심력 날리기
+            // ──────────────────────────────────────────
+            Vector3 armLCurrentWorldPos = _armLTransform != null
+                ? _armLTransform.position : Vector3.zero;
+            Vector3 armRCurrentWorldPos = _armRTransform != null
+                ? _armRTransform.position : Vector3.zero;
+
+            if (_armLTransform != null)
+            {
+                _armLTransform.SetParent(null, worldPositionStays: true);
+            }
+            if (_armRTransform != null)
+            {
+                _armRTransform.SetParent(null, worldPositionStays: true);
+            }
+            _isArmsDetached = true;
+
+            // 날아가는 목표 위치
+            Vector3 armLFlyTarget = armLCurrentWorldPos + new Vector3(flyDirL.x, flyDirL.y, 0f) * actualFlyDist;
+            Vector3 armRFlyTarget = armRCurrentWorldPos + new Vector3(flyDirR.x, flyDirR.y, 0f) * actualFlyDist;
+
+            if (_armLTransform != null)
+            {
+                _armLTransform
+                    .DOMove(armLFlyTarget, _flyDuration)
+                    .SetEase(Ease.OutCubic);
+            }
+            if (_armRTransform != null)
+            {
+                _armRTransform
+                    .DOMove(armRFlyTarget, _flyDuration)
+                    .SetEase(Ease.OutCubic);
+            }
+
+            yield return new WaitForSecondsRealtime(_flyDuration);
+            if (_isInterrupted) { ReattachArms(); yield break; }
+
+            // ──────────────────────────────────────────
+            // ⑥ 공략 타임 — 양팔 모두 공격 가능
+            // ──────────────────────────────────────────
+            if (_armLRenderer != null && _data != null)
+            {
+                _armLColorTween?.Kill();
+                _armLColorTween = _armLRenderer
+                    .DOColor(_data.colorArm100, _data.pulsePeriod * 0.3f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetUpdate(true);
+            }
+            if (_armRRenderer != null && _data != null)
+            {
+                _armRColorTween?.Kill();
+                _armRColorTween = _armRRenderer
+                    .DOColor(_data.colorArm100, _data.pulsePeriod * 0.3f)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetUpdate(true);
+            }
+
+            // 날아간 팔 진동 연출
+            _armLTransform?.DOPunchPosition(
+                new Vector3(0.05f, 0.05f, 0f), _flyVulnDuration, 15, 0.5f)
+                .SetUpdate(true);
+            _armRTransform?.DOPunchPosition(
+                new Vector3(0.05f, 0.05f, 0f), _flyVulnDuration, 15, 0.5f)
+                .SetUpdate(true);
+
+            // BossWardenArmPart 공략 배율 활성
+            var armLPart = _armLTransform?.GetComponent<BossWardenArmPart>();
+            var armRPart = _armRTransform?.GetComponent<BossWardenArmPart>();
+            armLPart?.SetSlamVuln(true, 1.5f);
+            armRPart?.SetSlamVuln(true, 1.5f);
+
+            yield return new WaitForSecondsRealtime(_flyVulnDuration);
+
+            armLPart?.SetSlamVuln(false, 1f);
+            armRPart?.SetSlamVuln(false, 1f);
+            _armLColorTween?.Kill();
+            _armRColorTween?.Kill();
+
+            if (_isInterrupted) { ReattachArms(); yield break; }
+
+            // ──────────────────────────────────────────
+            // ⑦ 양팔 귀환
+            // ──────────────────────────────────────────
+            Vector3 bossCurrentPos = _bossTransform != null ? _bossTransform.position : Vector3.zero;
+
+            Vector3 returnL = bossCurrentPos + _armLOriginLocalPos;
+            Vector3 returnR = bossCurrentPos + _armROriginLocalPos;
+
+            if (_armLTransform != null)
+                _armLTransform.DOMove(returnL, _returnDuration).SetEase(Ease.InBack);
+            if (_armRTransform != null)
+                _armRTransform.DOMove(returnR, _returnDuration).SetEase(Ease.InBack);
+
+            yield return new WaitForSecondsRealtime(_returnDuration);
+
+            ReattachArms();
         }
 
         // ══════════════════════════════════════════════════════
-        // Recovery — 팔/색상 복귀
+        // Recovery — 본체 Z각도 복구 + 색상 복귀
         // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnRecovery()
         {
             if (_isInterrupted) yield break;
 
-            // 팔 원위치 복귀
+            // 팔 원위치 보정 (재부착 후 미세 오차)
             if (_armLTransform != null)
-                _armLTransform.DOLocalMove(_armLOriginLocalPos, _recoveryDuration * 0.5f).SetEase(Ease.OutBack);
+                _armLTransform.DOLocalMove(_armLOriginLocalPos, _recoveryDuration * 0.3f).SetEase(Ease.OutBack);
             if (_armRTransform != null)
-                _armRTransform.DOLocalMove(_armROriginLocalPos, _recoveryDuration * 0.5f).SetEase(Ease.OutBack);
+                _armRTransform.DOLocalMove(_armROriginLocalPos, _recoveryDuration * 0.3f).SetEase(Ease.OutBack);
+
+            // 본체 Z각도 복구 — 플레이어 방향으로 정렬
+            if (_bossTransform != null && _ai != null)
+            {
+                float targetAngle = Mathf.Atan2(_ai.FacingDir.y, _ai.FacingDir.x) * Mathf.Rad2Deg - 90f;
+                _bossTransform
+                    .DORotate(new Vector3(0f, 0f, targetAngle), _recoveryDuration * 0.5f)
+                    .SetEase(Ease.OutCubic);
+            }
 
             // 색상 복귀
             if (_armLRenderer != null)
-                _armLRenderer.DOColor(_armLOriginColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            {
+                _armLColorTween?.Kill();
+                _armLColorTween = _armLRenderer
+                    .DOColor(_armLOriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .SetUpdate(true);
+            }
             if (_armRRenderer != null)
-                _armRRenderer.DOColor(_armROriginColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            {
+                _armRColorTween?.Kill();
+                _armRColorTween = _armRRenderer
+                    .DOColor(_armROriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .SetUpdate(true);
+            }
 
             yield return StartCoroutine(WaitForPattern(_recoveryDuration));
         }
 
         // ══════════════════════════════════════════════════════
-        // Interrupt
+        // Interrupt 오버라이드
         // ══════════════════════════════════════════════════════
 
         public override void Interrupt()
         {
             _rotateTween?.Kill();
             _bodyColorTween?.Kill();
-            _isSweeping = false;
+            _armLColorTween?.Kill();
+            _armRColorTween?.Kill();
+
             _attackRange?.HideSweepDisc();
 
-            // 팔 즉시 원위치
-            if (_armLTransform != null)
-                _armLTransform.DOLocalMove(_armLOriginLocalPos, 0.1f);
-            if (_armRTransform != null)
-                _armRTransform.DOLocalMove(_armROriginLocalPos, 0.1f);
-
-            // 색상 즉시 복귀
-            if (_armLRenderer != null) _armLRenderer.DOColor(_armLOriginColor, 0.1f).SetUpdate(true);
-            if (_armRRenderer != null) _armRRenderer.DOColor(_armROriginColor, 0.1f).SetUpdate(true);
+            ReattachArms();
 
             base.Interrupt();
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 양팔 재부착 공용 처리
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 분리된 양팔을 보스에게 즉시 재부착한다.
+        ///
+        /// [주의]
+        ///   _isArmsDetached = false 이면 이미 재부착 완료 → 스킵.
+        ///   Interrupt / OnDestroy / 귀환 완료 후 호출.
+        /// </summary>
+        private void ReattachArms()
+        {
+            if (!_isArmsDetached) return;
+            if (_bossTransform == null) return;
+
+            if (_armLTransform != null)
+            {
+                _armLTransform.DOKill();
+                _armLTransform.SetParent(_bossTransform, worldPositionStays: true);
+                _armLTransform.localPosition = _armLOriginLocalPos;
+                if (_armLRenderer != null) _armLRenderer.color = _armLOriginColor;
+
+                var armLPart = _armLTransform.GetComponent<BossWardenArmPart>();
+                armLPart?.SetSlamVuln(false, 1f);
+            }
+
+            if (_armRTransform != null)
+            {
+                _armRTransform.DOKill();
+                _armRTransform.SetParent(_bossTransform, worldPositionStays: true);
+                _armRTransform.localPosition = _armROriginLocalPos;
+                if (_armRRenderer != null) _armRRenderer.color = _armROriginColor;
+
+                var armRPart = _armRTransform.GetComponent<BossWardenArmPart>();
+                armRPart?.SetSlamVuln(false, 1f);
+            }
+
+            _isArmsDetached = false;
+
+            Debug.Log("[BossPattern_Sweep] 양팔 재부착 완료");
         }
 
         // ══════════════════════════════════════════════════════
         // 유틸
         // ══════════════════════════════════════════════════════
 
+        /// <summary>
+        /// 보스 월드 위치 반환. 캐싱된 _rigid2D 사용 (매 프레임 GetComponent 방지).
+        /// </summary>
         private Vector2 GetBossWorldPos()
         {
-            // Patterns 자식 오브젝트이므로 부모 Boss_Warden 위치 참조
-            return GetComponentInParent<Rigidbody2D>()?.position
-                   ?? (Vector2)transform.parent.position;
+            return _rigid2D != null
+                ? _rigid2D.position
+                : (_bossTransform != null ? (Vector2)_bossTransform.position : Vector2.zero);
         }
     }
 }
