@@ -460,3 +460,100 @@ Player 오브젝트:
     _cancelSwingOnDirectionChange : false (기본)
     _syncTargets         : [] (WeaponPivot 연결 불필요)
 ```
+
+---
+
+## v0.6 — 레이어 구조 재설계 + BossPattern_Charge 버그 수정
+
+**단계**: 핵심 메카닉 구현 (1단계) / STEP 09 진입  
+**작업**: 레이어 구조 적용 + Charge 패턴 그로기 무한 발행 버그 수정
+
+### 신규 레이어 구조 정의
+
+| Layer | 역할 | 부착 오브젝트 |
+|---|---|---|
+| `PlayerAttack` | 플레이어 공격을 보내는 쪽 | PlayerWeapon (무기 히트박스) |
+| `PlayerAttackHitBox` | 플레이어가 피격받는 공간 | Player HurtBox |
+| `EnemyAttack` | 적 공격을 보내는 쪽 (OverlapXX 감지 기준) | 패턴 스크립트 _playerLayer 로 감지 |
+| `EnemyAttackHitBox` | 적이 피격받는 공간 (봉인도 누적 대상) | LeftArm / RightArm / Core |
+
+**Physics2D Collision Matrix:**
+
+| | PlayerAttack | PlayerAttackHitBox | EnemyAttack | EnemyAttackHitBox |
+|---|:---:|:---:|:---:|:---:|
+| PlayerAttack | ❌ | ❌ | ❌ | ✅ |
+| PlayerAttackHitBox | ❌ | ❌ | ✅ | ❌ |
+| EnemyAttack | ❌ | ✅ | ❌ | ❌ |
+| EnemyAttackHitBox | ✅ | ❌ | ❌ | ❌ |
+
+### 변경 파일 목록
+
+| 파일 | 버전 | 변경 내용 |
+|---|---|---|
+| `PlayerAttackHitboxManager.cs` | v1.0 → v1.1 | `_enemyLayer` → EnemyAttackHitBox 레이어 명시 |
+| `BossPattern_Charge.cs` | v1.0 → v1.1 | 🔴 버그 수정 + _playerLayer → PlayerAttackHitBox 명시 |
+
+### 🔴 BossPattern_Charge 버그 수정 상세
+
+```
+버그: Awake() 에서 _triggerGroggyOnRecovery = true 강제 설정
+  → Inspector 직렬화값(Prefab: false) 을 Awake 에서 덮어씀
+  → Charge Recovery 완료마다 OnPatternGroggy 발행
+  → BossWardenCore.EnterGroggy() 무한 호출
+  → Warden 상태 루프 충돌 → 고장
+
+수정: Awake() 에서 _triggerGroggyOnRecovery = true; 코드 제거
+  → Inspector / Prefab 직렬화값 그대로 사용
+  → Prefab 에서 직접 설정 가능
+```
+
+### Prefab 레이어 변경 필요 항목 (Unity 에서 직접 수정)
+
+**Player.prefab:**
+```
+PlayerWeapon (무기) → Layer: PlayerAttack
+HurtBox            → Layer: PlayerAttackHitBox
+```
+
+**BossRoot_Warden.prefab:**
+```
+LeftArm   → Layer: EnemyAttackHitBox
+RightArm  → Layer: EnemyAttackHitBox
+Core      → Layer: EnemyAttackHitBox
+HurtBox   → Layer: EnemyAttackHitBox
+```
+
+**Inspector 레이어마스크 변경:**
+```
+PlayerAttackHitboxManager._enemyLayer → EnemyAttackHitBox 선택
+BossPattern_Charge._playerLayer       → PlayerAttackHitBox 선택
+BossPattern_Slam._playerLayer         → PlayerAttackHitBox 선택
+BossPattern_Sweep._playerLayer        → PlayerAttackHitBox 선택
+BossPattern_GuardBreak._playerLayer   → PlayerAttackHitBox 선택
+BossPattern_RageCharge._playerLayer   → PlayerAttackHitBox 선택
+BossWardenShockwave._playerLayer      → PlayerAttackHitBox 선택
+```
+
+### 미수정 항목 (코드 변경 불필요 — Unity Inspector 에서만 수정)
+
+```
+BossPattern_Slam._playerLayer Tooltip    → "PlayerAttackHitBox 레이어 선택"
+BossPattern_Sweep._playerLayer Tooltip   → "PlayerAttackHitBox 레이어 선택"  
+BossPattern_GuardBreak._playerLayer Tooltip → "PlayerAttackHitBox 레이어 선택"
+BossPattern_RageCharge._playerLayer Tooltip → "PlayerAttackHitBox 레이어 선택"
+
+※ Tooltip 은 코드 힌트일 뿐, 실제 동작에 영향 없음
+  Unity Inspector 에서 레이어마스크 값만 변경하면 됨
+```
+
+### 다음 작업 예정
+
+```
+[ ] STEP 09 — 전체 루프 통합 테스트
+    ① 패턴 예고 범위 + 피격 확인
+    ② 봉인도 누적 + 색상 단계 변화 확인
+    ③ S키 봉인 집행 + 그로기 진입 확인
+    ④ 코어 해제 + 딜 페이즈 확인
+    ⑤ 충격파 + 2페이즈 전환 확인
+    ⑥ 최종 봉인 + 처치 확인
+```

@@ -754,7 +754,7 @@ namespace SEAL
 
 #if UNITY_EDITOR
             UnityEditor.Handles.Label(
-                transform.position + Vector3.up * 1.8f,
+                transform.position + Vector3.up * 3f,
                 $"Phase:{_currentPhase} | Groggy:{_isGroggy} | Dil:{_isDilPhase} | SealedArms:{_sealedArmCount}");
 #endif
         }

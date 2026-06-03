@@ -1,6 +1,21 @@
 ﻿// ============================================================
-// PlayerAttackHitboxManager.cs  v1.0
+// PlayerAttackHitboxManager.cs  v1.1
 // 탑뷰 플레이어 무기 히트박스 관리 컴포넌트
+//
+// [v1.1 변경 — 레이어 구조 재설계 적용]
+//   _enemyLayer 역할 변경:
+//     변경 전: Enemy 레이어 (보스 본체 레이어)
+//     변경 후: EnemyAttackHitBox 레이어
+//              → 플레이어 공격(PlayerAttack 레이어)이 닿으면 피격이 발생하는 공간
+//              → LeftArm / RightArm / Core 오브젝트의 레이어를 EnemyAttackHitBox 로 설정
+//
+//   [레이어 구조]
+//     PlayerAttack      = 플레이어 무기(PlayerWeapon)가 가진 레이어
+//                         → EnemyAttackHitBox 에 닿으면 봉인도 누적
+//     PlayerAttackHitBox = 플레이어가 피격받는 공간 (HurtBox)
+//                         → EnemyAttack(패턴 OverlapXX) 이 감지하는 대상
+//     EnemyAttack       = Warden 패턴 OverlapXX 가 감지할 레이어 (PlayerAttackHitBox 감지)
+//     EnemyAttackHitBox = Warden 팔/코어에 설정 (PlayerAttack 이 닿으면 OnHit 발행)
 //
 // [POC07 참고 스크립트]
 //   PlayerWeaponHitboxManager.cs (v1.3)
@@ -19,7 +34,7 @@
 //     콜라이더 배열 [Combo1, Combo2, Combo3, Charge]
 //       → AirAttack 없음 (탑뷰 공중 공격 없음)
 //       → Charge 추가 (강공격 전용 히트박스)
-//     Enemy 레이어 단일 감지 (봉인도 누적 대상)
+//     EnemyAttackHitBox 레이어 단일 감지 (봉인도 누적 대상)
 //       → Lock/Shield 분기 없음
 //       → IDamageable 대신 OnHit 이벤트 발행
 //     WeaponPivot 기준 히트박스 월드 위치 자동 계산
@@ -116,14 +131,19 @@ namespace SEAL
 
         /// <summary>
         /// 공격이 적중할 수 있는 레이어마스크.
-        /// Enemy 레이어 선택.
-        /// 봉인도 누적 대상.
+        /// EnemyAttackHitBox 레이어 선택.
+        /// 봉인도 누적 대상 (LeftArm / RightArm / Core 오브젝트 레이어).
         ///
-        /// [POC07 과의 차이]
-        ///   POC07: Enemy + EnemyLock + EnemyShield 세 레이어 분기
-        ///   POC08: Enemy 단일 레이어 (봉인 시스템은 별도 SealGaugeSystem 처리)
+        /// [레이어 구조]
+        ///   PlayerAttack 레이어를 가진 플레이어 히트박스(PlayerWeapon)가
+        ///   EnemyAttackHitBox 레이어를 가진 적 콜라이더에 Overlap 시
+        ///   OnHit 이벤트 발행 → BossWardenArmPart.HandlePlayerHit() 처리.
+        ///
+        /// [설정 방법]
+        ///   Inspector 에서 EnemyAttackHitBox 레이어 선택.
+        ///   LeftArm / RightArm / Core 오브젝트의 Layer = EnemyAttackHitBox 설정 필수.
         /// </summary>
-        [Tooltip("공격 감지 레이어. Enemy 레이어 선택.")]
+        [Tooltip("공격 감지 레이어. EnemyAttackHitBox 레이어 선택. LeftArm/RightArm/Core 레이어와 일치해야 함.")]
         [SerializeField] private LayerMask _enemyLayer;
 
         // ──────────────────────────────────────────
@@ -259,11 +279,16 @@ namespace SEAL
         ///   _hitTargets 에 이미 있는 콜라이더는 중복 처리 건너뜀.
         ///   감지된 콜라이더에 OnHit 이벤트 발행.
         ///
+        /// [레이어 감지 대상]
+        ///   _enemyLayer = EnemyAttackHitBox 레이어.
+        ///   LeftArm / RightArm / Core 오브젝트가 이 레이어를 가져야 감지됨.
+        ///   PlayerWeapon(PlayerAttack 레이어)의 히트박스가 EnemyAttackHitBox 에 Overlap 시 발동.
+        ///
         /// [POC07 과의 차이]
         ///   POC07: Enemy / EnemyLock / EnemyShield 레이어 분기
         ///          → LockComponent.TakeDamage() / IDamageable.TakeDamage() 분리
-        ///   POC08: Enemy 레이어 단일 감지
-        ///          → OnHit 이벤트 발행만 (피격 처리는 외부)
+        ///   POC08: EnemyAttackHitBox 레이어 단일 감지
+        ///          → OnHit 이벤트 발행만 (피격 처리는 외부 — BossWardenArmPart)
         /// </summary>
         private void CheckHit(Collider2D hitbox)
         {

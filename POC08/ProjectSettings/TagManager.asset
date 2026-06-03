@@ -12,8 +12,8 @@ TagManager:
   - Water
   - UI
   - Player
-  - 
-  - 
+  - PlayerAttack
+  - PlayerAttackHitBox
   - 
   - 
   - 
@@ -26,8 +26,8 @@ TagManager:
   - 
   - 
   - Enemy
-  - 
-  - 
+  - EnemyAttack
+  - EnemyAttackHitBox
   - 
   - 
   - 
