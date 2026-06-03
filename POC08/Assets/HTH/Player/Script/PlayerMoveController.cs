@@ -425,11 +425,9 @@ namespace SEAL
 
             if (_rotateTowardsMoveDirection)
             {
-                // 이동 방향 각도 계산 (오른쪽=0°, 반시계 증가)
                 float angle = Mathf.Atan2(_facingDirection.y, _facingDirection.x) * Mathf.Rad2Deg;
-                Quaternion targetRot = Quaternion.Euler(0f, 0f, angle - 90f); // -90°: 스프라이트가 위를 향할 경우 보정
+                Quaternion targetRot = Quaternion.Euler(0f, 0f, angle - 90f);
 
-                // 보간 회전 (Slerp)
                 transform.rotation = Quaternion.RotateTowards(
                     transform.rotation,
                     targetRot,
@@ -437,8 +435,6 @@ namespace SEAL
             }
             else
             {
-                // 좌우만 flipX 반전
-                // X 방향이 음수(왼쪽)이면 flipX = true
                 if (_facingDirection.x != 0f)
                     _spriteRenderer.flipX = _facingDirection.x < 0f;
             }
@@ -459,17 +455,45 @@ namespace SEAL
         ///   _remainingDashCount > 0 (충전 횟수 남음)
         ///   !_isDashing (중복 대시 방지)
         /// </summary>
+        /// <summary>
+        /// PlayerInputHandler.OnDash 콜백.
+        /// 대시 가능 조건 확인 후 대시 코루틴 시작.
+        ///
+        /// [대시 가능 조건]
+        ///   _remainingDashCount > 0 (충전 횟수 남음)
+        ///   !_isDashing (중복 대시 방지)
+        ///
+        /// [대시 방향 결정 — v1.2 수정]
+        ///   기존: _moveInput 기준
+        ///         → 공격 중 _isMoveLocked = true 이면 _moveInput = zero
+        ///         → 항상 _lastMoveDirection (공격 시작 방향) 으로 대시
+        ///
+        ///   변경: PlayerInputHandler.Instance.MoveInput 기준 (실제 눌린 키)
+        ///         → 잠금 여부와 무관하게 현재 방향키 입력 그대로 참조
+        ///         → 방향키 입력 있으면 → 그 방향으로 대시
+        ///         → 방향키 입력 없으면 → _lastMoveDirection (마지막 이동 방향)
+        ///
+        ///   [결과]
+        ///     공격 준비/복귀 중 대시 → 방향키 방향으로 대시 (공격 방향 무관)
+        ///     방향키 미입력 중 대시  → 마지막 이동 방향으로 대시 (기존 동작 유지)
+        /// </summary>
         private void HandleDashInput()
         {
             if (_isDashing) return;
             if (_remainingDashCount <= 0) return;
 
-            // 대시 방향 결정: 현재 입력 → 없으면 마지막 이동 방향
-            Vector2 dashDir = _moveInput.sqrMagnitude > 0.01f
-                ? _moveInput.normalized
+            // 실제 눌린 방향키 입력 참조 (잠금 여부 무관)
+            Vector2 currentKeyInput = PlayerInputHandler.Instance != null
+                ? PlayerInputHandler.Instance.MoveInput
+                : Vector2.zero;
+
+            // 대시 방향 결정:
+            //   현재 방향키 입력 있으면 → 그 방향
+            //   없으면 → 마지막 이동 방향 (정지 중 대시 시 자연스러운 방향 유지)
+            Vector2 dashDir = currentKeyInput.sqrMagnitude > 0.01f
+                ? currentKeyInput.normalized
                 : _lastMoveDirection;
 
-            // 대시 실행
             if (_dashCoroutine != null)
                 StopCoroutine(_dashCoroutine);
 

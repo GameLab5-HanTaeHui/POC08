@@ -410,6 +410,7 @@ MonoBehaviour:
   _weapon: {fileID: 2250583622059237812}
   _visualTransform: {fileID: 2766283663834933488}
   _data: {fileID: 11400000, guid: c3e326724b66b26489e66577a858bca0, type: 2}
+  _hitboxManager: {fileID: 6134240118273279565}
 --- !u!114 &52360731402102546
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -443,7 +444,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.PlayerAttackHitboxManager
   _hitboxes:
-  - {fileID: 4043584976900314135}
+  - {fileID: 1852811069793712602}
+  - {fileID: 1852811069793712602}
+  - {fileID: 1852811069793712602}
   _enemyLayer:
     serializedVersion: 2
     m_Bits: 1048576

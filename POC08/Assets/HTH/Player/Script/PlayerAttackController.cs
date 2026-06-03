@@ -1,25 +1,30 @@
 ﻿// ============================================================
-// PlayerAttackController.cs  v2.0
+// PlayerAttackController.cs  v2.1
 // 플레이어 A키 공격 컨트롤러
 //
+// [v2.1 변경 — 히트박스 판정 경로 통합]
+//   기존 두 경로 (OverlapCircle / Collider2D) 가 독립적으로 존재하던 구조를
+//   PlayerAttackHitboxManager 단일 경로로 통합.
+//
+//   [제거]
+//     _activeHitboxRadius  : OverlapCircle 반경 (사용 안 함)
+//     _hitProcessed        : 중복 판정 방지 플래그 (HitboxManager 내부로 이전)
+//     OnSwingHitCallback() : onHit 콜백 핸들러
+//     ProcessHitCheck()    : OverlapCircle 판정 함수
+//     Update() 판정 루프  : _activeHitboxRadius > 0 체크
+//
+//   [추가]
+//     _hitboxManager 참조 (Awake 자동 탐색)
+//     Start() 에서 _hitboxManager.OnHit 구독
+//     HandleHitboxHit(Collider2D, float) : OnHit 수신 → OnHitTarget 발행
+//
+//   [PlaySwing / PlayChargeSwing 시그니처 변경]
+//     기존: (combo, dir, Action<float> onHit)
+//     변경: (combo, dir, float sealAmount)
+//     → SwingController 내부에서 HitboxManager 직접 제어
+//
 // [v2.0 변경 — 무기 연출 분리]
-//   기존: 이동만 존재하는 단순한 DOLocalMove → 역동성 없음
-//   변경: PlayerWeaponSwingController 로 무기 연출 완전 위임
-//         이 스크립트는 입력/콤보/히트박스 판정 흐름만 담당
-//
-// [책임 분리]
-//   PlayerAttackController     : 입력 수신, 콤보 관리, 히트박스 판정, 이벤트 발행
-//   PlayerWeaponSwingController: 무기 DOTween 연출 (위치+Z회전 Sequence)
-//   PlayerAttackDataSO         : 모든 수치 보관
-//
-// [공격 흐름]
-//   A 탭 → ExecuteComboAttack(현재 콤보 단계)
-//     → PlayerWeaponSwingController.PlaySwing(combo, dir, onHit)
-//     → onHit 콜백 → CheckHit → 히트스톱 + OnHitTarget 발행
-//
-//   A 홀드 릴리즈 → ExecuteChargeAttack()
-//     → PlayerWeaponSwingController.PlayChargeSwing(dir, onHit)
-//     → onHit 콜백 → CheckHit(더 큰 반경)
+//   PlayerWeaponSwingController 로 무기 연출 완전 위임.
 //
 // [네임스페이스]
 //   namespace : SEAL
@@ -145,31 +150,20 @@ namespace SEAL
         private bool _isChargeHolding;
 
         // ──────────────────────────────────────────
-        // 히트박스 활성 상태
+        // 히트박스 참조
         // ──────────────────────────────────────────
 
         /// <summary>
-        /// 현재 히트박스 활성 반경.
-        /// SwingController 의 onHit 콜백에서 설정.
-        /// 0이면 비활성.
+        /// 히트박스 관리 컴포넌트.
+        /// OnHit 이벤트를 구독하여 적중 시 OnHitTarget 발행.
+        /// Awake 에서 GetComponent 로 자동 탐색.
         /// </summary>
-        private float _activeHitboxRadius;
+        private PlayerAttackHitboxManager _hitboxManager;
 
         /// <summary>
-        /// 현재 공격 방향. 히트박스 판정 위치 계산에 사용.
+        /// 현재 공격 방향. Lunge 연출 + Gizmos 표시에 사용.
         /// </summary>
         private Vector2 _currentAttackDir;
-
-        /// <summary>
-        /// 현재 콤보의 봉인도 누적량.
-        /// </summary>
-        private float _currentSealAmount;
-
-        /// <summary>
-        /// 이번 공격에서 이미 히트 처리했는지 여부.
-        /// 같은 스윙에서 중복 히트 방지.
-        /// </summary>
-        private bool _hitProcessed;
 
         // ──────────────────────────────────────────
         // 이벤트
@@ -207,9 +201,13 @@ namespace SEAL
             _moveController = GetComponent<PlayerMoveController>();
             _swingController = GetComponent<PlayerWeaponSwingController>();
             _rigid2D = GetComponent<Rigidbody2D>();
+            _hitboxManager = GetComponent<PlayerAttackHitboxManager>();
 
             if (_visualTransform == null)
                 _visualTransform = transform;
+
+            if (_hitboxManager == null)
+                Debug.LogWarning("[PlayerAttackController] PlayerAttackHitboxManager 미연결.");
 
             if (_data == null)
             {
@@ -227,17 +225,21 @@ namespace SEAL
                 return;
             }
 
+            PlayerInputHandler.Instance.OnAttack -= HandleAttackPress;
             PlayerInputHandler.Instance.OnAttack += HandleAttackPress;
+            PlayerInputHandler.Instance.OnAttackReleased -= HandleAttackRelease;
             PlayerInputHandler.Instance.OnAttackReleased += HandleAttackRelease;
+
+            // HitboxManager.OnHit 구독 → 적중 시 OnHitTarget 발행
+            if (_hitboxManager != null)
+            {
+                _hitboxManager.OnHit -= HandleHitboxHit;
+                _hitboxManager.OnHit += HandleHitboxHit;
+            }
         }
 
-        private void Update()
-        {
-            // 히트박스 활성 중 매 프레임 판정 체크
-            // (SwingController onHit 콜백으로 반경이 설정된 경우)
-            if (_activeHitboxRadius > 0f && !_hitProcessed)
-                ProcessHitCheck();
-        }
+        // Update() 제거 — ProcessHitCheck OverlapCircle 경로 삭제
+        // 히트박스 판정은 PlayerAttackHitboxManager.Update() 가 전담
 
         private void OnDestroy()
         {
@@ -246,6 +248,9 @@ namespace SEAL
                 PlayerInputHandler.Instance.OnAttack -= HandleAttackPress;
                 PlayerInputHandler.Instance.OnAttackReleased -= HandleAttackRelease;
             }
+
+            if (_hitboxManager != null)
+                _hitboxManager.OnHit -= HandleHitboxHit;
         }
 
         // ══════════════════════════════════════════════════════
@@ -338,26 +343,19 @@ namespace SEAL
 
             OnAttackStarted?.Invoke();
 
-            // 현재 공격 방향 + 봉인도 설정
             _currentAttackDir = GetAttackDirection();
-            _currentSealAmount = GetComboSealAmount();
-            _hitProcessed = false;
-            _activeHitboxRadius = 0f;
 
-            // 이동 잠금 (공격 중 미끄러짐 방지)
             _moveController.SetMoveLocked(true);
 
-            // 무기 연출 위임 (콤보 단계 → ComboIndex 변환)
+            // 콤보 인덱스 변환 + 봉인도 직접 전달
             var comboIndex = (PlayerWeaponSwingController.ComboIndex)
                 Mathf.Clamp(_currentCombo, 0, 2);
+            float sealAmount = GetComboSealAmount();
 
-            _swingController.PlaySwing(comboIndex, _currentAttackDir, OnSwingHitCallback);
-
-            // 공격 전진 연출
+            // SwingController 가 내부에서 HitboxManager 직접 제어
+            _swingController.PlaySwing(comboIndex, _currentAttackDir, sealAmount);
             PlayLunge(_currentAttackDir);
 
-            // SwingController 완료 대기 (IsSwinging 이 false 될 때까지)
-            // + 최대 대기 시간 안전장치 (무한 루프 방지)
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 2f;
             float elapsed = 0f;
             while (_swingController.IsSwinging && elapsed < maxWait)
@@ -379,10 +377,8 @@ namespace SEAL
             }
 
             _comboWindowOpen = false;
-            _activeHitboxRadius = 0f;
             _isAttacking = false;
 
-            // 콤보 진행 or 리셋
             if (_comboInputQueued && _currentCombo < _data.MaxComboCount - 1)
             {
                 _comboInputQueued = false;
@@ -400,7 +396,7 @@ namespace SEAL
 
         /// <summary>
         /// 강공격 코루틴.
-        /// SwingController.PlayChargeSwing 위임 + 완료 대기.
+        /// v2.1: sealAmount 직접 전달 → SwingController 내부에서 HitboxManager 제어.
         /// </summary>
         private IEnumerator ChargeAttackRoutine()
         {
@@ -408,13 +404,10 @@ namespace SEAL
             OnChargeAttackStarted?.Invoke();
 
             _currentAttackDir = GetAttackDirection();
-            _currentSealAmount = _data.ChargeSealAmount;
-            _hitProcessed = false;
-            _activeHitboxRadius = 0f;
 
             _moveController.SetMoveLocked(true);
 
-            _swingController.PlayChargeSwing(_currentAttackDir, OnSwingHitCallback);
+            _swingController.PlayChargeSwing(_currentAttackDir, _data.ChargeSealAmount);
             PlayLunge(_currentAttackDir);
 
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 3f;
@@ -425,7 +418,6 @@ namespace SEAL
                 yield return null;
             }
 
-            _activeHitboxRadius = 0f;
             _currentCombo = 0;
             _isAttacking = false;
             _moveController.SetMoveLocked(false);
@@ -433,49 +425,27 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 히트박스 판정
+        // 히트박스 적중 처리
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// SwingController InsertCallback 타이밍에 호출되는 콜백.
-        /// radius > 0: 히트박스 활성 / radius == 0: 비활성.
-        /// </summary>
-        private void OnSwingHitCallback(float radius)
-        {
-            _activeHitboxRadius = radius;
-            _hitProcessed = false; // 새 히트박스 활성 시 판정 초기화
-        }
-
-        /// <summary>
-        /// 매 프레임 히트박스 판정.
-        /// _activeHitboxRadius > 0 이고 아직 히트 처리 안 됐을 때 실행.
+        /// PlayerAttackHitboxManager.OnHit 수신 핸들러.
+        /// 히트박스가 적 콜라이더에 Overlap 되면 이 함수가 호출됨.
         ///
-        /// [판정 방식]
-        ///   플레이어 위치 + 공격 방향 * HitboxOffset 을 중심으로
-        ///   OverlapCircleNonAlloc (GC 방지).
-        ///
-        /// README: 공격 성공 → 히트스톱 / 봉인 파편 / 타격음
-        ///         공격 실패 → 히트스톱 없음 / 봉인 파편 없음
+        /// [v2.1 — OnSwingHitCallback + ProcessHitCheck 대체]
+        ///   기존: SwingController onHit 콜백 → _activeHitboxRadius 설정
+        ///         → Update() 매 프레임 OverlapCircle 판정
+        ///   변경: HitboxManager.OnHit 이벤트 → 이 함수에서 OnHitTarget 발행
+        ///         → 중복 판정 방지는 HitboxManager 내부 _hitTargets HashSet 이 담당
+        ///         → ProcessHitCheck() 완전 제거
         /// </summary>
-        private void ProcessHitCheck()
+        private void HandleHitboxHit(Collider2D hitCol, float sealAmount)
         {
-            Vector2 hitCenter = (Vector2)transform.position
-                                + _currentAttackDir * _data.HitboxOffset;
+            Vector2 hitPos = hitCol.bounds.center;
+            OnHitTarget?.Invoke(hitPos, sealAmount);
 
-            Collider2D[] results = new Collider2D[8];
-            int count = Physics2D.OverlapCircleNonAlloc(
-                hitCenter, _activeHitboxRadius, results, _data.HitLayer);
-
-            if (count == 0) return;
-
-            // 첫 번째 적 적중 처리 (추후 관통 어빌리티로 복수 적중 확장 가능)
-            _hitProcessed = true;
-
-            Vector2 hitPos = results[0].ClosestPoint(hitCenter);
-            OnHitTarget?.Invoke(hitPos, _currentSealAmount);
-
-            Debug.Log($"[PlayerAttackController] 적중: {results[0].name} | " +
-                      $"봉인도 +{_currentSealAmount:F1} | 콤보: {_currentCombo + 1}");
+            Debug.Log($"[PlayerAttackController] 적중: {hitCol.name} | " +
+                      $"봉인도 +{sealAmount:F1} | 콤보: {_currentCombo + 1}");
         }
 
         // ══════════════════════════════════════════════════════
