@@ -1254,11 +1254,11 @@ BossWardenCoreSealGauge.cs  (v1.0)
 
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
-| `BossWardenCore.cs` | 양팔 봉인 완료 감지 → EnterGroggy() | ⬜ 미구현 |
-| `BossWardenCore.cs` | 그로기 진입 → 코어 SetActive(true) | ⬜ 미구현 |
-| `BossWardenCore.cs` | 그로기 타이머 + OnGroggyExit (실패 처리) | ⬜ 미구현 |
-| `BossWardenFeedback.cs` | 그로기 노란 Pulse + 코어 노란 Pulse | ⬜ 미구현 |
-| `BossWardenAttackRange.cs` | 코어 해제 범위 점선 원 표시 | ⬜ 미구현 |
+| `BossWardenCore.cs` | 양팔 봉인 완료 감지 → EnterGroggy() | ✅ 구현 완료 |
+| `BossWardenCore.cs` | 그로기 진입 → 코어 SetActive(true) | ✅ 구현 완료 |
+| `BossWardenCore.cs` | 그로기 타이머 + OnGroggyExit (실패 처리) | ✅ 구현 완료 |
+| `BossWardenFeedback.cs` | 그로기 노란 Pulse + 코어 노란 Pulse | ✅ STEP02 완료 |
+| `BossWardenAttackRange.cs` | 코어 해제 범위 점선 원 표시 | ✅ STEP03 완료 |
 
 **완료 조건:** 양팔 봉인 → Warden 정지 + 노란 Pulse + 코어 표시 확인 / 5초 후 해제 확인
 
@@ -1270,11 +1270,11 @@ BossWardenCoreSealGauge.cs  (v1.0)
 
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
-| `BossWardenSealExecutor.cs` | 코어 해제 범위 감지 + S키 홀드 + 슬로우 | ⬜ 미구현 |
-| `BossWardenCore.cs` | 딜 페이즈 진입 → OnDilPhaseEnter 발행 | ⬜ 미구현 |
-| `BossWardenCoreSealGauge.cs` | 딜 페이즈 중 공격 수신 → 코어 봉인도 누적 | ⬜ 미구현 |
-| `BossWardenCoreSealGauge.cs` | 50% / 100% 도달 이벤트 발행 | ⬜ 미구현 |
-| `BossWardenFeedback.cs` | 딜 페이즈 밝은 주황 + 코어 흰 Pulse | ⬜ 미구현 |
+| `BossWardenSealExecutor.cs` | 코어 해제 범위 감지 + S키 홀드 + 슬로우 | ✅ STEP04 완료 |
+| `BossWardenCore.cs` | 딜 페이즈 진입 → OnDilPhaseEnter 발행 | ✅ 구현 완료 |
+| `BossWardenCoreSealGauge.cs` | 딜 페이즈 중 공격 수신 → 코어 봉인도 누적 | ✅ STEP04 완료 |
+| `BossWardenCoreSealGauge.cs` | 50% / 100% 도달 이벤트 발행 | ✅ STEP04 완료 |
+| `BossWardenFeedback.cs` | 딜 페이즈 밝은 주황 + 코어 흰 Pulse | ✅ STEP02 완료 |
 
 **완료 조건:** 코어 해제 → 딜 페이즈 진입 → 코어 공격 → 봉인도 증가 확인
 
@@ -1286,12 +1286,12 @@ BossWardenCoreSealGauge.cs  (v1.0)
 
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
-| `BossWardenCore.cs` | 딜 페이즈 종료 조건 판정 (시간 / 봉인도) | ⬜ 미구현 |
+| `BossWardenCore.cs` | 딜 페이즈 종료 조건 판정 (시간 / 봉인도) | ✅ 구현 완료 |
 | `BossWardenShockwave.cs` | 충격파 범위 + 플레이어 넉백 + 연출 | ⬜ 미구현 |
-| `BossWardenCore.cs` | 부위 봉인 해제 + 봉인도 초기화 | ⬜ 미구현 |
-| `BossWardenCore.cs` | OnPhaseChanged(2) 발행 → AI 2페이즈 강화 | ⬜ 미구현 |
-| `BossWardenAI.cs` | 2페이즈 패턴 강화 적용 + RageCharge 추가 | ⬜ 미구현 |
-| `BossPattern_RageCharge.cs` | 3연 돌진 패턴 구현 | ⬜ 미구현 |
+| `BossWardenCore.cs` | 부위 봉인 해제 + 봉인도 초기화 | ✅ 구현 완료 |
+| `BossWardenCore.cs` | OnPhaseChanged(2) 발행 → AI 2페이즈 강화 | ✅ 구현 완료 |
+| `BossWardenAI.cs` | 2페이즈 패턴 강화 적용 + RageCharge 추가 | ✅ STEP02 완료 |
+| `BossPattern_RageCharge.cs` | 3연 돌진 패턴 구현 | ✅ STEP03 완료 |
 
 **완료 조건:** 딜 페이즈 종료 → 충격파 → 부위 해제 → 2페이즈 패턴 변화 확인
 
@@ -1303,12 +1303,45 @@ BossWardenCoreSealGauge.cs  (v1.0)
 
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
-| `BossWardenSealExecutor.cs` | 최종 봉인 S키 홀드 + 강한 슬로우 + 연출 | ⬜ 미구현 |
-| `BossWardenCore.cs` | OnFinalSealCompleted 수신 → Die() | ⬜ 미구현 |
-| `BossWardenFeedback.cs` | 처치 연출 (DOScale 0 + 검정 DOColor) | ⬜ 미구현 |
-| `BossWardenCore.cs` | OnDead 발행 → BattleManager 연결 | ⬜ 미구현 |
+| `BossWardenSealExecutor.cs` | 최종 봉인 S키 홀드 + 강한 슬로우 + 연출 | ✅ STEP04 완료 |
+| `BossWardenCore.cs` | OnFinalSealCompleted 수신 → Die() | ✅ 구현 완료 |
+| `BossWardenFeedback.cs` | 처치 연출 (DOScale 0 + 검정 DOColor) | ✅ STEP02 완료 |
+| `BossWardenCore.cs` | OnDead 발행 → BattleManager 연결 | ✅ 구현 완료 |
 
 **완료 조건:** 코어 봉인도 100% → 최종 봉인 실행 → Warden 축소 소멸 확인
+
+### STEP 05~08 구현 노트
+
+```
+BossWardenCore.cs  (v1.0)
+  - POC07 TestBossCore 전체 구조 계승 — HP 제거, 2페이즈 + 최종봉인 추가
+  - RequireComponent: BossWardenAI / BossWardenFeedback / BossWardenSealExecutor / AttackRange
+  - Start(): DataSO 를 모든 하위 컴포넌트에 주입하는 단일 연결 지점
+  - SubscribeAll(): 모든 이벤트 구독을 한 함수에 집약 (중복 방지 -= 후 +=)
+  - 그로기 흐름:
+      CheckGroggyCondition() → armL.IsSealed && armR.IsSealed → EnterGroggy()
+      EnterGroggy(): ActivateCore() + OnGroggyEnter 발행 + GroggyRoutine 시작
+      GroggyRoutine(): WaitForSecondsRealtime(groggyDuration) → ExitGroggyFailure()
+      ExitGroggyFailure(): 코어 비활성 + ForceRelease(resetSealCount:false) + OnGroggyExit
+  - 코어 해제 흐름:
+      HandleCoreUnlocked() → GroggyCoroutine Stop → EnterDilPhase()
+  - 딜 페이즈 흐름:
+      EnterDilPhase(): ActivateGauge(true) + OnDilPhaseEnter + DilPhaseRoutine 시작
+      DilPhaseRoutine(): WaitForSecondsRealtime(dilPhaseDuration) → ExitDilPhase(false)
+      HandlePhase1TargetReached() → ExitDilPhase(false) → 페이즈 전환
+      HandlePhase2TargetReached() → ExitDilPhase(true) → OnFinalSealReady
+  - ExitDilPhase(false): 코어 비활성 + ForceRelease + 충격파 + OnDilPhaseExit + OnPhaseChanged(2)
+  - ExitDilPhase(true): OnFinalSealReady 발행 (최종 봉인 진입)
+  - HandleFinalSealCompleted() → Die()
+  - Die(): StopAllCoroutines + 물리 정지 + 코어 정리 + AttackRange.HideAll + OnDead
+  - DEBUG ContextMenu: 그로기/딜페이즈 강제 진입 / 봉인도 즉시 채우기
+  - WaitForSecondsRealtime: 슬로우 모션 중에도 타이머 정상 동작
+
+  [봉인 카운트 중복 방지 설계]
+    BossWardenArmPart.OnPartSealed (SealGaugeComponent.OnSealed 래핑) → HandlePartSealed
+    BossWardenSealExecutor.OnPartSealed → HandleExecutorPartSealed (카운트 없음)
+    카운트는 HandlePartSealed 에서만 증가 → 중복 카운트 방지
+```
 
 ---
 
