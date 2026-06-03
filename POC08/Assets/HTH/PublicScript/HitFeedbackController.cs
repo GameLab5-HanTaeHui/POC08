@@ -1,84 +1,134 @@
 ﻿// ============================================================
-// HitFeedbackController.cs  v1.1
-// 피격 파티클 재생 전담 싱글턴 컴포넌트
+// HitFeedbackController.cs  v2.0
+// 피격 파티클 Dynamic Pool 재생 전담 싱글턴
 //
-// [v1.1 변경 — 시뮬레이션 공간 검증 추가]
-//   ValidateVfx() 에 SimulationSpace.World 체크 추가.
+// [v2.0 변경 — Dynamic Object Pool 방식으로 전면 재설계]
 //
-//   [문제]
-//     파티클 SimulationSpace = Local 이면
-//     transform.position 으로 월드 위치 이동 시
-//     파티클이 부모(HitFeedbackController) 기준 로컬로 해석되어
-//     재생 중 파티클이 부모와 함께 이동하거나 위치가 틀어짐.
+//   [기존 v1.x 문제]
+//     단일 인스턴스 방식:
+//       씬에 배치된 ParticleSystem 1개를 재사용
+//       → 동시에 여러 곳에서 피격 발생 시 1개만 재생
+//       → isPlaying 인 인스턴스를 Stop() 후 재사용 → 연출 끊김
 //
-//   [해결]
-//     파티클 Main.SimulationSpace = World 로 설정 필수.
-//     ValidateVfx() 에서 경고 로그로 안내.
+//   [v2.0 해결 — Dynamic Pool]
+//     Pool 에서 isPlaying=false 인 인스턴스를 찾아 반환.
+//     Pool 에 사용 가능한 인스턴스가 없으면 새로 Instantiate 후 Pool 추가.
+//     isPlaying=true 인 인스턴스는 절대 재사용하지 않음.
+//     Destroy 없음 → GC 부담 없음.
+//     동시 피격 수만큼 Pool 이 자동으로 늘어남 (최초 1회만 Instantiate).
+//
+//   [Pool 규칙]
+//     Get():
+//       List 순회 → isPlaying=false 인 인스턴스 반환
+//       없으면 → Instantiate → List 추가 → 반환
+//     isPlaying=true 인 인스턴스 Stop()/재사용 절대 금지
+//     반환(Return) 개념 없음 — isPlaying=false 가 되면 자동으로 재사용 가능
+//
+//   [Inspector 연결]
+//     _enemyHitVfxPrefab  → EnemyHitParticle.prefab (Project 에셋 직접 연결)
+//     _playerHitVfxPrefab → HitParticle.prefab      (Project 에셋 직접 연결)
+//     _poolRoot           → Pool 인스턴스 부모 오브젝트 (EffectRoot 하위 권장)
+//
+//   [씬 배치]
+//     EffectRoot
+//       └─ HitFeedbackController  [이 컴포넌트]
+//            └─ PoolRoot          [Pool 인스턴스 정리용 부모 — 선택]
 //
 // [누락 연결 항목 — POC08 프로젝트 파일에서 직접 추가 필요]
-//   BossPattern_Slam.ExecuteThrow()     → PlayPlayerHit(hit.bounds.center)
-//   BossPattern_Sweep.CheckSweepHit()   → PlayPlayerHit(hit.bounds.center)
-//   BossPattern_GuardBreak.CheckHit()   → PlayPlayerHit(hit.bounds.center)
-//   BossPattern_RageCharge.OnActive()   → PlayPlayerHit(hit.bounds.center)
+//   BossPattern_Slam       → HitFeedbackController.Instance.PlayPlayerHit(pos)
+//   BossPattern_Sweep      → HitFeedbackController.Instance.PlayPlayerHit(pos)
+//   BossPattern_GuardBreak → HitFeedbackController.Instance.PlayPlayerHit(pos)
+//   BossPattern_RageCharge → HitFeedbackController.Instance.PlayPlayerHit(pos)
 //
-// [씬 배치]
-//   EffectRoot 하위 HitFeedbackController 오브젝트.
-//   Inspector 에서 _playerHitVfx, _enemyHitVfx 연결.
-//   파티클 Main.SimulationSpace = World 필수.
+// [파티클 Prefab 설정 필수]
+//   playOnAwake      = false
+//   looping          = false
+//   Simulation Space = World
+//
+// [네임스페이스]
+//   namespace : SEAL
 // ============================================================
 
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace SEAL
 {
     /// <summary>
-    /// 피격 파티클 재생 전담 싱글턴. (v1.0)
+    /// 피격 파티클 Dynamic Pool 재생 싱글턴. (v2.0)
     ///
     /// ────────────────────────────────────────────────────
-    /// [Hierarchy 배치]
-    ///   EffectRoot
-    ///     └─ HitFeedbackController  [이 컴포넌트]
-    ///          [PlayerHitEffect]    ← HitParticle.prefab 인스턴스
-    ///          [EnemyHitEffect]     ← EnemyHitParticle.prefab 인스턴스
-    ///
-    /// [연결 필드]
-    ///   _playerHitVfx : PlayerHitEffect 의 ParticleSystem
-    ///   _enemyHitVfx  : EnemyHitEffect  의 ParticleSystem
+    /// [Pool 동작 원칙]
+    ///   isPlaying=false 인 인스턴스만 재사용.
+    ///   isPlaying=true 인 인스턴스는 절대 건드리지 않음.
+    ///   Pool 이 부족하면 Instantiate 로 자동 확장.
+    ///   Destroy 없음.
     /// ────────────────────────────────────────────────────
     /// </summary>
     public class HitFeedbackController : MonoBehaviour
     {
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // 싱글턴
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 전역 단일 인스턴스.
-        /// 씬 전환 시 파괴되면 null 초기화.
-        /// </summary>
+        /// <summary>전역 단일 인스턴스.</summary>
         public static HitFeedbackController Instance { get; private set; }
 
-        // ──────────────────────────────────────────
-        // Inspector — 파티클 연결
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // Inspector
+        // ══════════════════════════════════════════════════════
 
-        [Header("── 파티클 연결 ──────────────────────")]
-
-        /// <summary>
-        /// 플레이어 피격 파티클.
-        /// HitParticle.prefab 인스턴스의 ParticleSystem 연결.
-        /// playOnAwake = false 필수.
-        /// </summary>
-        [Tooltip("플레이어 피격 파티클. HitParticle.prefab 인스턴스 연결.")]
-        [SerializeField] private ParticleSystem _playerHitVfx;
+        [Header("── Prefab 연결 ──────────────────────")]
 
         /// <summary>
-        /// 적 피격 파티클 (봉인 부위 피격).
-        /// EnemyHitParticle.prefab 인스턴스의 ParticleSystem 연결.
-        /// playOnAwake = false 필수.
+        /// 적 피격 파티클 Prefab.
+        /// EnemyHitParticle.prefab 을 Project 에서 직접 연결.
+        /// playOnAwake=false / looping=false / SimulationSpace=World 필수.
         /// </summary>
-        [Tooltip("적 피격 파티클. EnemyHitParticle.prefab 인스턴스 연결.")]
-        [SerializeField] private ParticleSystem _enemyHitVfx;
+        [Tooltip("EnemyHitParticle.prefab 연결. Project 에셋 직접 참조.")]
+        [SerializeField] private ParticleSystem _enemyHitVfxPrefab;
+
+        /// <summary>
+        /// 플레이어 피격 파티클 Prefab.
+        /// HitParticle.prefab 을 Project 에서 직접 연결.
+        /// playOnAwake=false / looping=false / SimulationSpace=World 필수.
+        /// </summary>
+        [Tooltip("HitParticle.prefab 연결. Project 에셋 직접 참조.")]
+        [SerializeField] private ParticleSystem _playerHitVfxPrefab;
+
+        [Header("── Pool 설정 ──────────────────────")]
+
+        /// <summary>
+        /// Pool 인스턴스들의 부모 Transform.
+        /// 미연결 시 HitFeedbackController 자신이 부모가 됨.
+        /// Hierarchy 정리 목적.
+        /// </summary>
+        [Tooltip("Pool 인스턴스 부모 오브젝트. 미연결 시 자신이 부모.")]
+        [SerializeField] private Transform _poolRoot;
+
+        /// <summary>
+        /// 초기 Pool 크기.
+        /// 씬 시작 시 각 Prefab 을 이 수만큼 미리 Instantiate.
+        /// 부족하면 자동 확장.
+        /// </summary>
+        [Tooltip("초기 Pool 크기. 부족하면 자동 확장됨.")]
+        [SerializeField] private int _initialPoolSize = 3;
+
+        // ══════════════════════════════════════════════════════
+        // 내부 Pool
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 적 피격 파티클 Pool.
+        /// isPlaying=false 인 인스턴스를 꺼내 쓰고 재생 완료 후 자동 반환 가능 상태.
+        /// </summary>
+        private List<ParticleSystem> _enemyHitPool;
+
+        /// <summary>
+        /// 플레이어 피격 파티클 Pool.
+        /// 동일 규칙 적용.
+        /// </summary>
+        private List<ParticleSystem> _playerHitPool;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -95,7 +145,18 @@ namespace SEAL
 
             Instance = this;
 
-            ValidateVfx();
+            // Pool Root 미연결 시 자신으로 설정
+            if (_poolRoot == null)
+                _poolRoot = transform;
+
+            // 초기 Pool 생성
+            _enemyHitPool = new List<ParticleSystem>(_initialPoolSize);
+            _playerHitPool = new List<ParticleSystem>(_initialPoolSize);
+
+            PrewarmPool(_enemyHitVfxPrefab, _enemyHitPool, _initialPoolSize);
+            PrewarmPool(_playerHitVfxPrefab, _playerHitPool, _initialPoolSize);
+
+            ValidatePrefabs();
         }
 
         private void OnDestroy()
@@ -105,104 +166,147 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 외부 API — 각 피격 처리 컴포넌트에서 호출
+        // 외부 API
         // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 적 피격 파티클 재생.
+        /// 플레이어 공격이 적에 적중했을 때 호출.
+        ///
+        /// [호출 위치]
+        ///   PlayerAttackController.HandleHitboxHit()
+        ///   BossWardenArmPart.HandlePlayerHit()
+        /// </summary>
+        /// <param name="worldPosition">피격 월드 좌표.</param>
+        public void PlayEnemyHit(Vector2 worldPosition)
+        {
+            if (_enemyHitVfxPrefab == null)
+            {
+                Debug.LogWarning("[HitFeedbackController] _enemyHitVfxPrefab 미연결.");
+                return;
+            }
+
+            ParticleSystem ps = GetFromPool(_enemyHitPool, _enemyHitVfxPrefab);
+            PlayAt(ps, worldPosition);
+        }
 
         /// <summary>
         /// 플레이어 피격 파티클 재생.
-        /// 보스 패턴이 플레이어를 감지했을 때 호출.
+        /// 보스 패턴이 플레이어에 적중했을 때 호출.
         ///
-        /// [호출 위치 예시]
-        ///   BossPattern_Charge.CheckChargeHit() 내부
-        ///   BossPattern_Slam.ExecuteSlam() 내부
-        ///   추후 PlayerHealth.TakeDamage() 에서 통합 호출 예정.
+        /// [호출 위치]
+        ///   BossPattern_Charge.CheckChargeHit()
+        ///   BossPattern_Slam / Sweep / GuardBreak / RageCharge
         /// </summary>
-        /// <param name="worldPosition">파티클 재생 위치 (월드 좌표).</param>
+        /// <param name="worldPosition">피격 월드 좌표.</param>
         public void PlayPlayerHit(Vector2 worldPosition)
         {
-            if (_playerHitVfx == null)
+            if (_playerHitVfxPrefab == null)
             {
-                Debug.LogWarning("[HitFeedbackController] PlayPlayerHit — _playerHitVfx 미연결.");
+                Debug.LogWarning("[HitFeedbackController] _playerHitVfxPrefab 미연결.");
                 return;
             }
 
-            Debug.Log($"[HitFeedbackController] PlayPlayerHit 호출 " +
-                      $"| 목표위치: {worldPosition} " +
-                      $"| SimSpace: {_playerHitVfx.main.simulationSpace} " +
-                      $"| isPlaying: {_playerHitVfx.isPlaying}");
-
-            _playerHitVfx.transform.position = worldPosition;
-
-            Debug.Log($"[HitFeedbackController] transform.position 설정 후 실제위치: " +
-                      $"{_playerHitVfx.transform.position}");
-
-            if (_playerHitVfx.isPlaying)
-                _playerHitVfx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-
-            _playerHitVfx.Play();
-
-            Debug.Log($"[HitFeedbackController] Play() 완료 | isPlaying: {_playerHitVfx.isPlaying}");
-        }
-
-        public void PlayEnemyHit(Vector2 worldPosition)
-        {
-            if (_enemyHitVfx == null)
-            {
-                Debug.LogWarning("[HitFeedbackController] PlayEnemyHit — _enemyHitVfx 미연결.");
-                return;
-            }
-
-            Debug.Log($"[HitFeedbackController] PlayEnemyHit 호출 " +
-                      $"| 목표위치: {worldPosition} " +
-                      $"| SimSpace: {_enemyHitVfx.main.simulationSpace} " +
-                      $"| isPlaying: {_enemyHitVfx.isPlaying}");
-
-            _enemyHitVfx.transform.position = worldPosition;
-
-            Debug.Log($"[HitFeedbackController] transform.position 설정 후 실제위치: " +
-                      $"{_enemyHitVfx.transform.position}");
-
-            if (_enemyHitVfx.isPlaying)
-                _enemyHitVfx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-
-            _enemyHitVfx.Play();
-
-            Debug.Log($"[HitFeedbackController] Play() 완료 | isPlaying: {_enemyHitVfx.isPlaying}");
+            ParticleSystem ps = GetFromPool(_playerHitPool, _playerHitVfxPrefab);
+            PlayAt(ps, worldPosition);
         }
 
         // ══════════════════════════════════════════════════════
-        // 내부 유틸리티
+        // Pool 내부 로직
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// Inspector 연결 누락 경고.
-        /// Awake 에서 1회 호출.
+        /// Pool 에서 사용 가능한 인스턴스를 반환.
+        ///
+        /// [규칙]
+        ///   isPlaying=false 인 인스턴스만 반환.
+        ///   isPlaying=true 인 인스턴스는 절대 반환하지 않음.
+        ///   Pool 이 모두 isPlaying=true 이면 새로 Instantiate → Pool 추가 → 반환.
         /// </summary>
-        private void ValidateVfx()
+        private ParticleSystem GetFromPool(List<ParticleSystem> pool, ParticleSystem prefab)
         {
-            if (_playerHitVfx == null)
-                Debug.LogWarning("[HitFeedbackController] _playerHitVfx 미연결 — Inspector 에서 HitParticle.prefab 인스턴스 연결 필요.");
-            if (_enemyHitVfx == null)
-                Debug.LogWarning("[HitFeedbackController] _enemyHitVfx 미연결 — Inspector 에서 EnemyHitParticle.prefab 인스턴스 연결 필요.");
+            // Pool 순회 — isPlaying=false 인 것 반환
+            for (int i = 0; i < pool.Count; i++)
+            {
+                if (pool[i] != null && !pool[i].isPlaying)
+                    return pool[i];
+            }
 
-            // playOnAwake 검증
-            if (_playerHitVfx != null && _playerHitVfx.main.playOnAwake)
-                Debug.LogWarning("[HitFeedbackController] _playerHitVfx.playOnAwake = true — false 로 변경 필요.");
-            if (_enemyHitVfx != null && _enemyHitVfx.main.playOnAwake)
-                Debug.LogWarning("[HitFeedbackController] _enemyHitVfx.playOnAwake = true — false 로 변경 필요.");
+            // Pool 에 사용 가능한 인스턴스 없음 → 새로 생성 후 Pool 에 추가
+            ParticleSystem newPs = CreateInstance(prefab);
+            pool.Add(newPs);
 
-            // [v1.1] SimulationSpace 검증
-            // Local 이면 transform.position 으로 위치 이동 시 파티클이 부모 기준으로
-            // 해석되어 재생 중 위치가 틀어지거나 부모와 함께 이동하는 문제 발생.
-            // 반드시 World 로 설정해야 월드 좌표 기반 재생이 정상 동작.
-            if (_playerHitVfx != null &&
-                _playerHitVfx.main.simulationSpace != ParticleSystemSimulationSpace.World)
-                Debug.LogWarning("[HitFeedbackController] _playerHitVfx.SimulationSpace ≠ World " +
-                                 "— Particle System > Main > Simulation Space 를 World 로 변경 필요.");
+            Debug.Log($"[HitFeedbackController] Pool 확장 — {prefab.name} | 현재 Pool 크기: {pool.Count}");
 
-            if (_enemyHitVfx != null &&
-                _enemyHitVfx.main.simulationSpace != ParticleSystemSimulationSpace.World)
-                Debug.LogWarning("[HitFeedbackController] _enemyHitVfx.SimulationSpace ≠ World " +
+            return newPs;
+        }
+
+        /// <summary>
+        /// 파티클 인스턴스를 월드 위치에서 재생.
+        /// </summary>
+        private void PlayAt(ParticleSystem ps, Vector2 worldPosition)
+        {
+            if (ps == null) return;
+
+            ps.transform.position = worldPosition;
+            ps.Play(true);  // withChildren=true — 자식 ParticleSystem 포함 재생
+        }
+
+        /// <summary>
+        /// Prefab 으로부터 새 인스턴스 생성.
+        /// _poolRoot 하위에 배치 후 반환.
+        /// </summary>
+        private ParticleSystem CreateInstance(ParticleSystem prefab)
+        {
+            ParticleSystem ps = Instantiate(prefab, _poolRoot);
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            return ps;
+        }
+
+        /// <summary>
+        /// 초기 Pool 워밍업.
+        /// Awake 시 _initialPoolSize 만큼 미리 Instantiate.
+        /// </summary>
+        private void PrewarmPool(ParticleSystem prefab, List<ParticleSystem> pool, int count)
+        {
+            if (prefab == null) return;
+
+            for (int i = 0; i < count; i++)
+                pool.Add(CreateInstance(prefab));
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 검증
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// Prefab 설정 검증.
+        /// playOnAwake / looping / SimulationSpace 확인.
+        /// </summary>
+        private void ValidatePrefabs()
+        {
+            ValidateSingle(_enemyHitVfxPrefab, "EnemyHitVfx");
+            ValidateSingle(_playerHitVfxPrefab, "PlayerHitVfx");
+        }
+
+        private void ValidateSingle(ParticleSystem prefab, string label)
+        {
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[HitFeedbackController] {label} Prefab 미연결.");
+                return;
+            }
+
+            var main = prefab.main;
+
+            if (main.playOnAwake)
+                Debug.LogWarning($"[HitFeedbackController] {label}.playOnAwake = true — false 로 변경 필요.");
+
+            if (main.loop)
+                Debug.LogWarning($"[HitFeedbackController] {label}.looping = true — false 로 변경 필요.");
+
+            if (main.simulationSpace != ParticleSystemSimulationSpace.World)
+                Debug.LogWarning($"[HitFeedbackController] {label}.SimulationSpace ≠ World " +
                                  "— Particle System > Main > Simulation Space 를 World 로 변경 필요.");
         }
     }

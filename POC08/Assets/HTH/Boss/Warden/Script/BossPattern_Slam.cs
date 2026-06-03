@@ -529,4 +529,4 @@ namespace SEAL
                 : (_rigid2D != null ? _rigid2D.position : (Vector2)transform.position);
         }
     }
-}
+}   
