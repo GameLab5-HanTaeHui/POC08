@@ -1,6 +1,22 @@
 ﻿// ============================================================
-// BossPattern_Slam.cs  v3.0
+// BossPattern_Slam.cs  v3.2
 // Boss_Warden 내려치기 패턴 — 팔 던지기 + 공략 타임
+//
+// [v3.2 수정]
+//   🔴 팔이 플레이어를 바라보지 않는 문제
+//
+//   수정 1 — 백스윙 시 팔 회전 추가:
+//     기존: 팔 위치(DOLocalMove)만 이동, 회전 없음
+//     수정: DOLocalRotate 추가 → Vector.Down 이 플레이어를 향함
+//           lookAngle = Atan2(toPlayer) × Rad2Deg + 90f
+//
+//   수정 2 — 날아갈 때 회전 오프셋 수정:
+//     기존: targetAngle - 90f → Vector.Up 기준 (잘못된 방향)
+//     수정: targetAngle + 90f → Vector.Down 기준 (손바닥이 아래를 향하는 이미지)
+//
+//   [오프셋 원칙]
+//     + 90f : Vector.Down 이 목표 방향 (손 이미지 아래 방향 기준)
+//     - 90f : Vector.Up  이 목표 방향 (손 이미지 위 방향 기준)
 //
 // [v3.0 핵심 변경]
 //   기존: 팔이 Y축 수직으로만 ±0.3~0.5 유닛 이동. 판정 위치와 팔 위치 불일치.
@@ -227,14 +243,11 @@ namespace SEAL
             Vector2 bossPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;
             Vector2 toPlayer = (_slamTarget0 - bossPos).normalized;
 
-            // ④ 팔 백스윙: 플레이어 반대 방향으로 당기기
+            // ④ 팔 백스윙: 플레이어 반대 방향으로 위치 당기기 + 플레이어를 향해 회전
             // ✅ v3.1 수정: 월드 방향을 로컬로 변환하여 적용
-            // bossTransform.InverseTransformDirection 으로 월드 방향 → 로컬 방향 변환
-            // flipX 상태에 관계없이 항상 정확한 로컬 오프셋 계산
             Vector3 windupLocalDir = Vector3.zero;
             if (_bossTransform != null)
             {
-                // 플레이어 반대 방향을 로컬로 변환
                 Vector3 worldBackDir = new Vector3(-toPlayer.x, -toPlayer.y, 0f);
                 windupLocalDir = _bossTransform.InverseTransformDirection(worldBackDir);
             }
@@ -248,8 +261,17 @@ namespace SEAL
 
             if (_armLTransform != null)
             {
+                // 위치: 플레이어 반대로 당기기
                 _armLTransform
                     .DOLocalMove(_armOriginLocalPos + windupOffset, _warningDuration * 0.4f)
+                    .SetEase(Ease.OutBack);
+
+                // ✅ v3.2 추가: 백스윙 시 팔이 플레이어를 바라보도록 Z 회전
+                // Vector.Down 이 플레이어 방향을 향함 → + 90f 오프셋
+                // (- 90f 는 Vector.Up 기준 / + 90f 는 Vector.Down 기준)
+                float lookAngle = Mathf.Atan2(toPlayer.y, toPlayer.x) * Mathf.Rad2Deg + 90f;
+                _armLTransform
+                    .DOLocalRotate(new Vector3(0f, 0f, lookAngle), _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
             }
 
@@ -321,21 +343,21 @@ namespace SEAL
             _isArmDetached = true;
 
             // ──────────────────────────────────────────
-            // ② 팔 → 목표 위치로 꽂기 DOMove
-            //    ✅ v3.1 추가: DOMove 와 함께 팔이 날아가는 방향으로 Z축 회전
-            //    → 팔이 "통짜로" 날아가지 않고 방향을 향해 회전하며 이동
+            // ② 팔 → 목표 위치로 꽂기 DOMove + 방향 회전
+            //    ✅ v3.2 수정: + 90f 오프셋 (Vector.Down 이 목표 방향)
+            //    손바닥 이미지가 아래를 향하는 구조에 맞게 조정.
+            //    - 90f = Vector.Up 기준 / + 90f = Vector.Down 기준
             // ──────────────────────────────────────────
             Vector2 flyDir = (targetWorldPos - (Vector2)_armLTransform.position).normalized;
-            float targetAngle = Mathf.Atan2(flyDir.y, flyDir.x) * Mathf.Rad2Deg;
+            float targetAngle = Mathf.Atan2(flyDir.y, flyDir.x) * Mathf.Rad2Deg + 90f;
 
-            // DOMove + DORotate 병행 (Sequence 사용하지 않고 동시 실행)
             _armLTransform
                 .DOMove(new Vector3(targetWorldPos.x, targetWorldPos.y, _armLTransform.position.z),
                         _slamMoveDuration)
                 .SetEase(Ease.OutExpo);
 
             _armLTransform
-                .DORotate(new Vector3(0f, 0f, targetAngle - 90f), _slamMoveDuration * 0.5f)
+                .DORotate(new Vector3(0f, 0f, targetAngle), _slamMoveDuration * 0.5f)
                 .SetEase(Ease.OutQuart);
 
             yield return new WaitForSecondsRealtime(_slamMoveDuration);
