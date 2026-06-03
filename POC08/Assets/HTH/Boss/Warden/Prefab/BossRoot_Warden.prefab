@@ -237,7 +237,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4394930287480848199}
-  _isPhase2Only: 0
+  _isPhase2Only: 1
   _attackRange: {fileID: 5447584045039922449}
   _rigid2D: {fileID: 4286929433610807207}
   _ai: {fileID: 1531737997866146852}
@@ -246,7 +246,7 @@ MonoBehaviour:
   _armRRenderer: {fileID: 667973993591523152}
   _playerLayer:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 256
   _windupPullAmount: 0.5
   _thrustAmount: 0.4
 --- !u!114 &8732218318763563352
@@ -266,7 +266,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 0
+  _isPhase2Only: 1
   _attackRange: {fileID: 5447584045039922449}
   _ai: {fileID: 1531737997866146852}
   _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
@@ -274,7 +274,7 @@ MonoBehaviour:
   _armLRenderer: {fileID: 3641258697330880272}
   _playerLayer:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 256
   _windupPullAmount: 0.3
   _windupLiftAmount: 0.3
   _slamMoveDuration: 0.15
@@ -298,7 +298,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 0
+  _isPhase2Only: 1
   _attackRange: {fileID: 5447584045039922449}
   _ai: {fileID: 1531737997866146852}
   _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
@@ -309,7 +309,7 @@ MonoBehaviour:
   _bodyRenderer: {fileID: 3534132678184260611}
   _playerLayer:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 4194304
   _armSpreadAmount: 0.5
   _flyDistance: 1.5
   _flyDuration: 0.2
@@ -343,8 +343,7 @@ MonoBehaviour:
   _bodyRenderer: {fileID: 3534132678184260611}
   _playerLayer:
     serializedVersion: 2
-    m_Bits: 64
-  _guardLocalForward: {x: 0, y: 1, z: 0}
+    m_Bits: 256
   _guardForwardAmount: 0.4
   _windupPullAmount: 0.5
   _thrustDistance: 1
@@ -378,7 +377,7 @@ MonoBehaviour:
   _armRRenderer: {fileID: 667973993591523152}
   _playerLayer:
     serializedVersion: 2
-    m_Bits: 64
+    m_Bits: 256
   _windupPullAmount: 0.4
   _thrustAmount: 0.3
 --- !u!1 &1363196833203789610

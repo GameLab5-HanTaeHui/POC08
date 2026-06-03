@@ -139,6 +139,14 @@ namespace SEAL
         /// <summary> 색상 Tween 핸들. </summary>
         private Tweener _armColorTween;
 
+        /// <summary>
+        /// Boss_Warden 본체 Transform.
+        /// ✅ v2.1 추가: DOScale / DOShakePosition 의 올바른 대상.
+        /// transform.parent = Patterns 오브젝트 → 잘못된 DOScale 대상.
+        /// _rigid2D.transform = Boss_Warden 본체 → 올바른 대상.
+        /// </summary>
+        private Transform _bossTransform;
+
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
         // ══════════════════════════════════════════════════════
@@ -152,12 +160,15 @@ namespace SEAL
             if (_ai == null)
                 _ai = GetComponentInParent<BossWardenAI>();
 
+            // ✅ v2.1 추가: Boss_Warden 본체 Transform 캐싱
+            // transform.parent 는 Patterns 오브젝트 → DOScale 대상 오류
+            // _rigid2D.transform 이 Boss_Warden 본체 → 올바른 DOScale 대상
+            _bossTransform = _rigid2D != null ? _rigid2D.transform : transform.parent;
+
             if (_armRTransform != null)
                 _armOriginLocalPos = _armRTransform.localPosition;
             if (_armRRenderer != null)
                 _armOriginColor = _armRRenderer.color;
-
-            // ✅ v1.1 에서 수정: Awake 강제설정 제거 — Inspector 직렬화값 사용
         }
 
         private void OnDestroy()
@@ -198,21 +209,23 @@ namespace SEAL
             _attackRange?.ShowChargeLine(bossPos, _chargeDirection, _data.chargeWarningSize.y);
 
             // ③ 오른팔 백스윙: 돌진 반대 방향으로 당기기
+            // ✅ v2.1 수정: InverseTransformDirection 으로 월드 방향 → 로컬 변환
+            // flipX 상태에 관계없이 항상 정확한 로컬 오프셋 계산
             if (_armRTransform != null)
             {
-                Vector3 backswingOffset = new Vector3(
-                    -_chargeDirection.x * _windupPullAmount,
-                    -_chargeDirection.y * _windupPullAmount,
-                    0f);
+                Vector3 worldBackDir = new Vector3(-_chargeDirection.x, -_chargeDirection.y, 0f);
+                Vector3 localBackDir = _bossTransform != null
+                    ? _bossTransform.InverseTransformDirection(worldBackDir)
+                    : worldBackDir;
 
                 _armRTransform
-                    .DOLocalMove(_armOriginLocalPos + backswingOffset,
+                    .DOLocalMove(_armOriginLocalPos + localBackDir * _windupPullAmount,
                                  _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
             }
 
-            // ④ 본체 웅크리기 (힘 모으기 느낌)
-            transform.parent?.DOScale(1.1f, _warningDuration * 0.4f)
+            // ④ 본체 웅크리기 — ✅ v2.1 수정: _bossTransform.DOScale (Boss_Warden 본체 대상)
+            _bossTransform?.DOScale(1.1f, _warningDuration * 0.4f)
                 .SetEase(Ease.OutBack);
 
             // ⑤ 오른팔 + 본체 주황 Pulse
@@ -375,16 +388,12 @@ namespace SEAL
                     .SetEase(Ease.OutBack);
             }
 
-            // ③ 본체 크기 복귀
-            if (transform.parent != null)
-            {
-                transform.parent
-                    .DOScale(1.0f, _recoveryDuration * 0.3f)
-                    .SetEase(Ease.OutBack);
-            }
+            // ③ 본체 크기 복귀 — ✅ v2.1 수정: _bossTransform.DOScale
+            _bossTransform?.DOScale(1.0f, _recoveryDuration * 0.3f)
+                .SetEase(Ease.OutBack);
 
-            // ④ 충격 흔들림
-            transform.parent?.DOShakePosition(
+            // ④ 충격 흔들림 — ✅ v2.1 수정: _bossTransform.DOShakePosition
+            _bossTransform?.DOShakePosition(
                 duration: 0.3f,
                 strength: 0.25f,
                 vibrato: 10,
@@ -427,8 +436,8 @@ namespace SEAL
             if (_armRRenderer != null)
                 _armRRenderer.DOColor(_armOriginColor, 0.1f).SetUpdate(true);
 
-            // 본체 크기 복귀
-            transform.parent?.DOScale(1.0f, 0.1f).SetEase(Ease.OutQuart);
+            // 본체 크기 복귀 — ✅ v2.1 수정: _bossTransform.DOScale
+            _bossTransform?.DOScale(1.0f, 0.1f).SetEase(Ease.OutQuart);
 
             base.Interrupt();
         }

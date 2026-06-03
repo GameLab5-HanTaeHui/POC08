@@ -376,17 +376,21 @@ namespace SEAL
             Vector3 armLFlyTarget = armLCurrentWorldPos + new Vector3(flyDirL.x, flyDirL.y, 0f) * actualFlyDist;
             Vector3 armRFlyTarget = armRCurrentWorldPos + new Vector3(flyDirR.x, flyDirR.y, 0f) * actualFlyDist;
 
+            // ✅ v3.1 추가: 팔이 날아가는 방향으로 Z축 회전
+            float armLAngle = Mathf.Atan2(flyDirL.y, flyDirL.x) * Mathf.Rad2Deg;
+            float armRAngle = Mathf.Atan2(flyDirR.y, flyDirR.x) * Mathf.Rad2Deg;
+
             if (_armLTransform != null)
             {
-                _armLTransform
-                    .DOMove(armLFlyTarget, _flyDuration)
-                    .SetEase(Ease.OutCubic);
+                _armLTransform.DOMove(armLFlyTarget, _flyDuration).SetEase(Ease.OutCubic);
+                _armLTransform.DORotate(new Vector3(0f, 0f, armLAngle - 90f), _flyDuration * 0.5f)
+                    .SetEase(Ease.OutQuart);
             }
             if (_armRTransform != null)
             {
-                _armRTransform
-                    .DOMove(armRFlyTarget, _flyDuration)
-                    .SetEase(Ease.OutCubic);
+                _armRTransform.DOMove(armRFlyTarget, _flyDuration).SetEase(Ease.OutCubic);
+                _armRTransform.DORotate(new Vector3(0f, 0f, armRAngle - 90f), _flyDuration * 0.5f)
+                    .SetEase(Ease.OutQuart);
             }
 
             yield return new WaitForSecondsRealtime(_flyDuration);
@@ -468,11 +472,14 @@ namespace SEAL
                 _armRTransform.DOLocalMove(_armROriginLocalPos, _recoveryDuration * 0.3f).SetEase(Ease.OutBack);
 
             // 본체 Z각도 복구 — 플레이어 방향으로 정렬
-            if (_bossTransform != null && _ai != null)
+            // ✅ v3.1 수정: Z각도를 0으로 단순 초기화
+            // 기존: FacingDir 기반 targetAngle 계산 → 좌표계 불일치로 오류 가능
+            // 수정: Vector3.zero 로 회전 초기화 (가장 안전한 방식)
+            //       보스가 플레이어를 향한 방향은 BossWardenAI 가 이후 정상 갱신함
+            if (_bossTransform != null)
             {
-                float targetAngle = Mathf.Atan2(_ai.FacingDir.y, _ai.FacingDir.x) * Mathf.Rad2Deg - 90f;
                 _bossTransform
-                    .DORotate(new Vector3(0f, 0f, targetAngle), _recoveryDuration * 0.5f)
+                    .DORotate(Vector3.zero, _recoveryDuration * 0.5f)
                     .SetEase(Ease.OutCubic);
             }
 
@@ -534,6 +541,8 @@ namespace SEAL
                 _armLTransform.DOKill();
                 _armLTransform.SetParent(_bossTransform, worldPositionStays: true);
                 _armLTransform.localPosition = _armLOriginLocalPos;
+                // ✅ v3.1 추가: 재부착 시 로컬 회전 초기화
+                _armLTransform.localRotation = Quaternion.identity;
                 if (_armLRenderer != null) _armLRenderer.color = _armLOriginColor;
 
                 var armLPart = _armLTransform.GetComponent<BossWardenArmPart>();
@@ -545,6 +554,8 @@ namespace SEAL
                 _armRTransform.DOKill();
                 _armRTransform.SetParent(_bossTransform, worldPositionStays: true);
                 _armRTransform.localPosition = _armROriginLocalPos;
+                // ✅ v3.1 추가: 재부착 시 로컬 회전 초기화
+                _armRTransform.localRotation = Quaternion.identity;
                 if (_armRRenderer != null) _armRRenderer.color = _armROriginColor;
 
                 var armRPart = _armRTransform.GetComponent<BossWardenArmPart>();
@@ -552,7 +563,6 @@ namespace SEAL
             }
 
             _isArmsDetached = false;
-
             Debug.Log("[BossPattern_Sweep] 양팔 재부착 완료");
         }
 

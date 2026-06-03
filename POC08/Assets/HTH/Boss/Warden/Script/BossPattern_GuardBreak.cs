@@ -1,6 +1,24 @@
 ﻿// ============================================================
-// BossPattern_GuardBreak.cs  v3.0
-// Boss_Warden 가드 → 강타 패턴 — 로컬 오프셋 정확화 + IsGuarding 연동 + WaitForSecondsRealtime
+// BossPattern_GuardBreak.cs  v3.1
+// Boss_Warden 가드 → 강타 패턴
+//
+// [v3.1 수정]
+//   🔴 컴파일 오류 수정: facingDir / thrustLocalOff 미선언 문제
+//       원인: OnWarning() 지역변수를 OnActive() 에서 참조 → 코루틴 간 공유 불가
+//       수정: _facingDir / _thrustLocalOff 멤버 필드로 선언
+//             OnWarning() 에서 할당 → OnActive() 에서 재사용
+//
+//   🔴 구조적 문제 수정: 팔 방향이 플레이어를 향하지 않음
+//       원인: _guardLocalForward (0,1,0) 로컬 고정값 사용
+//             flipX 상태에서 로컬 방향이 반전되어 엉뚱한 방향으로 팔이 이동
+//       수정: _rigid2D.transform.InverseTransformDirection(AI.FacingDir)
+//             월드 방향을 로컬로 정확히 변환 → flipX 무관하게 항상 플레이어 방향
+//
+//   ✅ _guardLocalForward Inspector 필드 제거
+//      InverseTransformDirection 이 자동으로 정확한 방향 계산
+//
+// [v3.0 유지]
+//   Rigidbody2D Awake 캐싱 / WaitForSecondsRealtime / Recovery DOShakePosition
 //
 // [v3.0 변경]
 //   기존(v2.0) 문제점:
@@ -109,20 +127,6 @@ namespace SEAL
         [Tooltip("플레이어 HurtBox 레이어. PlayerAttackHitBox 레이어 선택.")]
         [SerializeField] private LayerMask _playerLayer;
 
-        [Header("── 로컬 오프셋 방향 ──────────────────────")]
-
-        /// <summary>
-        /// 팔 "정면" 로컬 방향 벡터.
-        /// 기본값 = (0, 1, 0) = 로컬 Y+ 방향.
-        /// Boss_Warden 의 정면이 Y+ 가 아닌 경우 Inspector 에서 조정.
-        ///
-        /// [설정 방법]
-        ///   Boss_Warden 정면이 로컬 Y+ → (0, 1, 0) (기본)
-        ///   Boss_Warden 정면이 로컬 X+ → (1, 0, 0) 으로 변경
-        /// </summary>
-        [Tooltip("팔 정면 로컬 방향. 기본 (0,1,0). Boss_Warden 정면 방향에 맞게 조정.")]
-        [SerializeField] private Vector3 _guardLocalForward = new Vector3(0f, 1f, 0f);
-
         [Header("── 연출 수치 ──────────────────────")]
 
         /// <summary>가드 자세 시 팔이 앞으로 이동하는 거리 (로컬 기준).</summary>
@@ -176,6 +180,21 @@ namespace SEAL
         /// BossWardenArmPart._guardBreakPattern 연동으로 체크.
         /// </summary>
         public bool IsGuarding { get; private set; }
+
+        /// <summary>
+        /// Warning 시 계산한 보스 정면 방향 (월드 기준).
+        /// Active 에서 OverlapBox 방향 계산에 재사용.
+        /// OnWarning() → OnActive() 코루틴 간 공유를 위해 멤버 필드로 선언.
+        /// </summary>
+        private Vector2 _facingDir;
+
+        /// <summary>
+        /// Warning 시 계산한 찌르기 로컬 오프셋.
+        /// InverseTransformDirection 적용된 값.
+        /// Active 에서 DOLocalMove 에 재사용.
+        /// OnWarning() → OnActive() 코루틴 간 공유를 위해 멤버 필드로 선언.
+        /// </summary>
+        private Vector3 _thrustLocalOff;
 
         private Tweener _bodyColorTween;
         private Tweener _armRColorTween;
@@ -231,10 +250,18 @@ namespace SEAL
             // ──────────────────────────────────────────
             IsGuarding = true;
 
-            // ✅ v3.0 수정: 로컬 Y+ 고정 오프셋 사용 (월드 dir 미적용)
-            // 이유: 월드 방향을 로컬 오프셋에 그대로 더하면
-            //       보스가 회전했을 때 의도와 다른 방향으로 팔이 이동함.
-            Vector3 guardOffset = _guardLocalForward.normalized * _guardForwardAmount;
+            // ✅ v3.1 수정: 멤버 필드에 저장 → OnActive 에서 재사용
+            // facingDir, thrustLocalOff 를 OnWarning → OnActive 코루틴 간 공유
+            _facingDir = _ai != null ? _ai.FacingDir : Vector2.up;
+
+            Vector3 worldFacingDir = new Vector3(_facingDir.x, _facingDir.y, 0f);
+            Vector3 localFacingDir = _rigid2D != null
+                ? _rigid2D.transform.InverseTransformDirection(worldFacingDir)
+                : worldFacingDir;
+
+            Vector3 guardOffset = localFacingDir.normalized * _guardForwardAmount;
+            Vector3 backswingOff = -localFacingDir.normalized * _windupPullAmount;
+            _thrustLocalOff = localFacingDir.normalized * _thrustDistance;
 
             if (_armRTransform != null)
                 _armRTransform
@@ -282,13 +309,10 @@ namespace SEAL
             // ──────────────────────────────────────────
             IsGuarding = false;
 
-            // ✅ v3.0 수정: 로컬 Y- 백스윙 (로컬 정면 반대 방향)
-            Vector3 backswingOffset = -_guardLocalForward.normalized * _windupPullAmount;
-
-            // 오른팔만 뒤로 당김 (왼팔은 가드 유지)
+            // 오른팔만 뒤로 당김 (왼팔은 가드 유지) — backswingOff 사용
             if (_armRTransform != null)
                 _armRTransform
-                    .DOLocalMove(_armROriginLocalPos + backswingOffset, 0.15f)
+                    .DOLocalMove(_armROriginLocalPos + backswingOff, 0.15f)
                     .SetEase(Ease.OutBack);
 
             // 왼팔은 원위치 (가드 해제)
@@ -320,17 +344,16 @@ namespace SEAL
                     .SetUpdate(true);
             }
 
-            // 예고 디스크 표시 (보스 정면 방향)
+            // 예고 디스크 표시 (_facingDir 멤버 필드 재사용)
             Vector2 bossWorldPos = _rigid2D != null
                 ? _rigid2D.position
                 : (Vector2)transform.position;
 
-            Vector2 facingDir = _ai != null ? _ai.FacingDir : Vector2.up;
             Vector2 warningSize = _isPhase2
                 ? new Vector2(1.8f, 1.0f)
                 : _data.guardBreakWarningSize;
 
-            _attackRange?.ShowGuardBreakDisc(bossWorldPos, facingDir, warningSize);
+            _attackRange?.ShowGuardBreakDisc(bossWorldPos, _facingDir, warningSize);
 
             yield return StartCoroutine(WaitForPattern(Mathf.Max(0f, remainingWarning)));
         }
@@ -353,48 +376,42 @@ namespace SEAL
                 _armRRenderer.color = Color.white;
             }
 
-            // ✅ v3.0 수정: 로컬 Y+ 방향 찌르기 (_guardLocalForward 기준)
-            // 이유: 보스가 회전해도 로컬 방향은 항상 정면을 가리킴.
-            Vector3 thrustOffset = _guardLocalForward.normalized * _thrustDistance;
-
+            // ✅ v3.1 수정: _thrustLocalOff 사용 (OnWarning 에서 계산한 멤버 필드)
+            // OnWarning → OnActive 코루틴 간 공유 가능
             if (_armRTransform != null)
             {
                 _armRTransform
-                    .DOLocalMove(_armROriginLocalPos + thrustOffset, _thrustDuration)
+                    .DOLocalMove(_armROriginLocalPos + _thrustLocalOff, _thrustDuration)
                     .SetEase(Ease.OutExpo);
             }
 
-            // ✅ v3.0 수정: WaitForSeconds → WaitForSecondsRealtime
-            // 이유: 슬로우 모션 중 WaitForSeconds 는 늘어나서 찌르기 타이밍이 왜곡됨.
             yield return new WaitForSecondsRealtime(_thrustDuration);
             if (_isInterrupted) yield break;
 
-            // OverlapBox 히트박스 — 보스 정면 방향 기준
+            // OverlapBox 히트박스 — _facingDir (OnWarning 에서 계산한 멤버 필드)
             Vector2 bossWorldPos = _rigid2D != null
                 ? _rigid2D.position
                 : (Vector2)transform.position;
 
-            Vector2 facingDir = _ai != null ? _ai.FacingDir : Vector2.up;
-            float angle = Mathf.Atan2(facingDir.y, facingDir.x) * Mathf.Rad2Deg;
+            float angle = Mathf.Atan2(_facingDir.y, _facingDir.x) * Mathf.Rad2Deg;
 
             Vector2 boxSize = _isPhase2
                 ? new Vector2(1.2f, 0.8f)
                 : _data.guardBreakHitboxSize;
 
-            Vector2 boxCenter = bossWorldPos + facingDir * (boxSize.y * 0.5f);
+            Vector2 boxCenter = bossWorldPos + _facingDir * (boxSize.y * 0.5f);
 
             Collider2D hit = Physics2D.OverlapBox(boxCenter, boxSize, angle, _playerLayer);
             if (hit != null)
                 Debug.Log("[BossPattern_GuardBreak] 찌르기 피격!");
 
-            // 타격 여운: 0.05초 유지 후 60% 위치로 복귀
             yield return new WaitForSecondsRealtime(0.05f);
             if (_isInterrupted) yield break;
 
             if (_armRTransform != null)
             {
                 _armRTransform
-                    .DOLocalMove(_armROriginLocalPos + thrustOffset * 0.6f, 0.1f)
+                    .DOLocalMove(_armROriginLocalPos + _thrustLocalOff * 0.6f, 0.1f)
                     .SetEase(Ease.OutQuart);
             }
         }

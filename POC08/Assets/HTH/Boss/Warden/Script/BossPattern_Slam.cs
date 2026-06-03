@@ -223,16 +223,28 @@ namespace SEAL
             // ② 예고 디스크를 플레이어 위치에 정확히 배치
             _attackRange?.ShowSlamDisc(_slamTarget0, _data.slamWarningRadius, 0);
 
-            // ③ 보스→플레이어 방향 계산
+            // ③ 보스→플레이어 방향 계산 (월드 기준)
             Vector2 bossPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;
             Vector2 toPlayer = (_slamTarget0 - bossPos).normalized;
 
-            // ④ 팔 백스윙: 반대 방향 + 들어올리기
-            //    로컬 좌표에 월드 방향 반영 (보스 회전 없는 탑뷰 기준 적용)
-            Vector3 windupOffset = new Vector3(
-                -toPlayer.x * _windupPullAmount,
-                -toPlayer.y * _windupPullAmount + _windupLiftAmount,
-                0f);
+            // ④ 팔 백스윙: 플레이어 반대 방향으로 당기기
+            // ✅ v3.1 수정: 월드 방향을 로컬로 변환하여 적용
+            // bossTransform.InverseTransformDirection 으로 월드 방향 → 로컬 방향 변환
+            // flipX 상태에 관계없이 항상 정확한 로컬 오프셋 계산
+            Vector3 windupLocalDir = Vector3.zero;
+            if (_bossTransform != null)
+            {
+                // 플레이어 반대 방향을 로컬로 변환
+                Vector3 worldBackDir = new Vector3(-toPlayer.x, -toPlayer.y, 0f);
+                windupLocalDir = _bossTransform.InverseTransformDirection(worldBackDir);
+            }
+            else
+            {
+                windupLocalDir = new Vector3(-toPlayer.x, -toPlayer.y, 0f);
+            }
+
+            Vector3 windupOffset = windupLocalDir * _windupPullAmount
+                                 + new Vector3(0f, _windupLiftAmount, 0f);
 
             if (_armLTransform != null)
             {
@@ -304,19 +316,27 @@ namespace SEAL
 
             // ──────────────────────────────────────────
             // ① 팔 분리
-            // worldPositionStays = true → 분리 시 월드 위치 유지
             // ──────────────────────────────────────────
             _armLTransform.SetParent(null, worldPositionStays: true);
             _isArmDetached = true;
 
             // ──────────────────────────────────────────
             // ② 팔 → 목표 위치로 꽂기 DOMove
-            // OutExpo: 처음에 느리다가 빠르게 꽂히는 느낌
+            //    ✅ v3.1 추가: DOMove 와 함께 팔이 날아가는 방향으로 Z축 회전
+            //    → 팔이 "통짜로" 날아가지 않고 방향을 향해 회전하며 이동
             // ──────────────────────────────────────────
+            Vector2 flyDir = (targetWorldPos - (Vector2)_armLTransform.position).normalized;
+            float targetAngle = Mathf.Atan2(flyDir.y, flyDir.x) * Mathf.Rad2Deg;
+
+            // DOMove + DORotate 병행 (Sequence 사용하지 않고 동시 실행)
             _armLTransform
                 .DOMove(new Vector3(targetWorldPos.x, targetWorldPos.y, _armLTransform.position.z),
                         _slamMoveDuration)
                 .SetEase(Ease.OutExpo);
+
+            _armLTransform
+                .DORotate(new Vector3(0f, 0f, targetAngle - 90f), _slamMoveDuration * 0.5f)
+                .SetEase(Ease.OutQuart);
 
             yield return new WaitForSecondsRealtime(_slamMoveDuration);
             if (_isInterrupted) { ReattachArm(); yield break; }
@@ -332,11 +352,9 @@ namespace SEAL
 
             // ──────────────────────────────────────────
             // ④ 공략 타임 — 팔이 꽂힌 채 대기
-            //    봉인도 배율 SetRecoveryVuln 대신 별도 배율 직접 설정
             // ──────────────────────────────────────────
             float vulnDuration = _isPhase2 ? _slamVulnDuration * 0.6f : _slamVulnDuration;
 
-            // 팔 꽂힌 진동 연출 (살아있는 느낌)
             _armLTransform
                 .DOPunchPosition(
                     new Vector3(0.05f, 0.05f, 0f),
@@ -345,7 +363,6 @@ namespace SEAL
                     elasticity: 0.5f)
                 .SetUpdate(true);
 
-            // 팔 색상 → 파랑 Pulse (공략 가능 강조)
             if (_armLRenderer != null && _data != null)
             {
                 _armColorTween?.Kill();
@@ -355,14 +372,11 @@ namespace SEAL
                     .SetUpdate(true);
             }
 
-            // 공략 타임 BossWardenArmPart 에 배율 전달
-            // BossWardenArmPart 의 SetSlamVuln API 를 통해 배율 적용
             var armPart = _armLTransform.GetComponent<BossWardenArmPart>();
             armPart?.SetSlamVuln(true, _slamVulnMultiplier);
 
             yield return new WaitForSecondsRealtime(vulnDuration);
 
-            // 공략 타임 종료
             armPart?.SetSlamVuln(false, 1f);
             _armColorTween?.Kill();
 
@@ -370,24 +384,25 @@ namespace SEAL
 
             // ──────────────────────────────────────────
             // ⑤ 팔 귀환 — 보스 현재 위치로 DOMove
-            // InBack: 당겨지듯 되돌아오는 느낌
+            //    ✅ v3.1 추가: 귀환 시 회전도 원위치로 복구
             // ──────────────────────────────────────────
             Vector3 bossCurrentPos = _bossTransform != null
                 ? _bossTransform.position
                 : Vector3.zero;
 
-            // 귀환 목표: 보스 위치 + 팔의 원래 로컬 오프셋 (월드 변환)
             Vector3 returnWorldPos = bossCurrentPos + _armOriginLocalPos;
 
             _armLTransform
                 .DOMove(returnWorldPos, _returnDuration)
                 .SetEase(Ease.InBack);
 
+            // 귀환 중 회전 초기화 (원래 각도로 복구)
+            _armLTransform
+                .DORotate(Vector3.zero, _returnDuration * 0.7f)
+                .SetEase(Ease.OutQuart);
+
             yield return new WaitForSecondsRealtime(_returnDuration);
 
-            // ──────────────────────────────────────────
-            // ⑥ 팔 재부착
-            // ──────────────────────────────────────────
             ReattachArm();
         }
 
@@ -464,25 +479,20 @@ namespace SEAL
             if (!_isArmDetached || _armLTransform == null) return;
             if (_bossTransform == null) return;
 
-            // 현재 진행 중인 Tween 중단
             _armLTransform.DOKill();
-
-            // 재부착 (worldPositionStays: true → 월드 위치 유지)
             _armLTransform.SetParent(_bossTransform, worldPositionStays: true);
-
-            // localPosition 원위치로 즉시 보정
             _armLTransform.localPosition = _armOriginLocalPos;
 
-            // 색상 복귀
+            // ✅ v3.1 추가: 재부착 시 로컬 회전도 초기화
+            _armLTransform.localRotation = Quaternion.identity;
+
             if (_armLRenderer != null)
                 _armLRenderer.color = _armOriginColor;
 
-            // BossWardenArmPart Slam Vuln 해제 보호
             var armPart = _armLTransform.GetComponent<BossWardenArmPart>();
             armPart?.SetSlamVuln(false, 1f);
 
             _isArmDetached = false;
-
             Debug.Log("[BossPattern_Slam] 팔 재부착 완료");
         }
 
