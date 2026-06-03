@@ -1,6 +1,18 @@
 ﻿// ============================================================
-// PlayerInputHandler.cs  v1.1
+// PlayerInputHandler.cs  v1.2
 // 탑뷰 플레이어 입력 통합 관리 컴포넌트
+//
+// [v1.2 변경 — IsSealHeld 프로퍼티 추가]
+//   _isSealHeld 내부 상태 변수 추가.
+//   RegisterCallbacks() 봉인 콜백에 performed/canceled 로 갱신.
+//   IsSealHeld 프로퍼티 추가.
+//
+//   [추가 이유]
+//     BossWardenSealExecutor 가 S키 홀드 상태를 매 프레임 폴링해야 함.
+//     IsAttackHeld 와 동일한 방식으로 구현.
+//     OnSeal 이벤트(1회 발행)와 IsSealHeld(지속 상태) 는 용도가 다름:
+//       OnSeal      = 눌린 순간 트리거 (기존 유지)
+//       IsSealHeld  = 현재 누르고 있는지 여부 (신규, BossWardenSealExecutor 폴링용)
 //
 // [v1.1 변경]
 //   SEAL_README 키 할당 기준으로 전면 수정.
@@ -250,6 +262,18 @@ namespace SEAL
         /// </summary>
         private bool _isAttackHeld;
 
+        /// <summary>
+        /// 봉인 버튼(S) 현재 홀드 여부.
+        /// performed = true / canceled = false.
+        /// BossWardenSealExecutor 에서 매 프레임 폴링하여 홀드 시간 누적.
+        /// _isAttackHeld 와 동일한 방식으로 관리.
+        ///
+        /// [OnSeal 이벤트와의 차이]
+        ///   OnSeal       = 눌린 순간 1회 발행 (트리거)
+        ///   IsSealHeld   = 현재 누르고 있는지 여부 (지속 상태 폴링)
+        /// </summary>
+        private bool _isSealHeld;
+
         // ──────────────────────────────────────────
         // 이벤트 — 외부 구독
         // ──────────────────────────────────────────
@@ -329,6 +353,18 @@ namespace SEAL
         /// 강공격 홀드 시간 계산에 사용.
         /// </summary>
         public bool IsAttackHeld => _isAttackHeld;
+
+        /// <summary>
+        /// 봉인 버튼(S) 현재 홀드 여부.
+        /// BossWardenSealExecutor 에서 매 프레임 폴링하여 홀드 시간 누적.
+        ///
+        /// [사용 예시 — BossWardenSealExecutor]
+        ///   if (PlayerInputHandler.Instance.IsSealHeld)
+        ///       _holdTimer += Time.unscaledDeltaTime;
+        ///   else
+        ///       ResetHoldTimer();
+        /// </summary>
+        public bool IsSealHeld => _isSealHeld;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -467,10 +503,17 @@ namespace SEAL
                 OnAttackReleased?.Invoke(); // 차단 무관
             };
 
-            // 봉인 / 코어 해제 — 차단 가능
+            // 봉인 / 코어 해제 — 차단 가능 (OnSeal 이벤트)
+            // _isSealHeld 는 차단 무관 항상 갱신
+            // (BossWardenSealExecutor 가 홀드 여부를 직접 폴링하므로)
             _actionSeal.performed += _ =>
             {
+                _isSealHeld = true;
                 if (!_actionBlocked) OnSeal?.Invoke();
+            };
+            _actionSeal.canceled += _ =>
+            {
+                _isSealHeld = false;
             };
 
             // 상호작용 — 차단 가능
