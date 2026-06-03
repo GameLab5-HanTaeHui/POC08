@@ -736,17 +736,39 @@ BossWardenCore.OnPhaseChanged(int phase)
 
 > Sprite 에셋 없음. 모든 오브젝트는 Unity 기본 프리미티브로 생성한다.
 
-| 오브젝트 | 프리미티브 형태 | 생성 방법 |
-|---|---|---|
-| Boss_Warden 본체 | Capsule (2D) | `GameObject → 2D Object → Sprites → Circle` 또는 Scale 조정 |
-| LeftArm / RightArm | Rectangle | `2D Object → Sprites → Square`, X축 축소 |
-| Core | Circle | `2D Object → Sprites → Circle`, 소형 Scale |
-| HurtBox | 본체와 동일 크기 Collider만 | SpriteRenderer 없음 또는 투명 처리 |
-| DiscSlam / DiscSweep | Circle (Scale 조정) | SpriteRenderer + Color 반투명 |
-| DiscGuardBreak | Square (Scale 조정) | SpriteRenderer + Color 반투명 |
-| 예고선 | LineRenderer | 별도 프리미티브 불필요 |
+**[README #1, #2, #10 시점 정의]**
 
-모든 SpriteRenderer 는 Sprite를 Unity 내장 `Knob` 또는 `UISprite` 로 설정한다.  
+이 게임의 시점은 **완전 수직 정수리 탑뷰가 아니다.**  
+이동/판정 구조는 탑다운이지만, 캐릭터·보스의 **비주얼 표현은 비스듬한 탑뷰 / 쿼터뷰**에 가깝다.  
+캐릭터의 상체, 팔, 무기, 부위 방향성이 보여야 한다.  
+순수 원형 탑뷰 스프라이트가 아니라, **2D 사이드뷰처럼 실루엣이 읽히는** 세로형 프리미티브를 사용한다.
+
+이 시점을 사용하는 이유:
+- 열쇠 무기의 실루엣을 명확하게 보여주기 위해
+- 정면 / 측면 / 후방 공략을 시각적으로 구분하기 위해 (GuardBreak 정면 가드 → 측면 공략)
+- 보스의 팔, 머리, 부위를 식별하기 위해
+- 봉인 집행 시 열쇠를 꽂는 연출을 보여주기 위해
+
+| 오브젝트 | 프리미티브 형태 | 비율 / 생성 방법 | 비고 |
+|---|---|---|---|
+| Boss_Warden 본체 | **세로 직사각형** | Scale (0.8, 1.4, 1) | 쿼터뷰 상체 실루엣 — 세로로 긴 형태 |
+| LeftArm | **가로 직사각형** | Scale (0.7, 0.25, 1) | 왼쪽 팔 — 가로로 뻗은 형태 |
+| RightArm | **가로 직사각형** | Scale (0.7, 0.25, 1) | 오른쪽 팔 |
+| Core | **소형 원형** | Scale (0.35, 0.35, 1) | 등 중앙 발광체 |
+| HurtBox | 본체와 동일 크기 Collider만 | SpriteRenderer 없음 | 충돌 감지 전용 |
+| DiscSlam / DiscSweep | **원형** | radius × 2 Scale | 바닥 표시 — SortingLayer = Ground |
+| DiscGuardBreak | **직사각형** | guardBreakWarningSize | 바닥 표시 — SortingLayer = Ground |
+| 예고선 | **LineRenderer** | width 0.08 | 별도 프리미티브 불필요 |
+
+**SortingLayer 설정 기준:**
+
+| SortingLayer | 대상 |
+|---|---|
+| `Ground` | 공격 예고 디스크 (바닥 표시 — 캐릭터 아래) |
+| `Enemy` | 보스 본체 / 부위 / 코어 |
+| `Effect` | 봉인 범위 점선 LineRenderer |
+
+모든 SpriteRenderer 는 Sprite 를 Unity 내장 `Knob` 으로 설정한다.  
 색상은 SpriteRenderer.color 로만 제어하며, 모든 시각 피드백은 DOTween DOColor 로 처리한다.
 
 ---
@@ -1117,13 +1139,63 @@ BossWardenFeedback.cs  (v1.0)
 
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
-| `BossWardenAttackRange.cs` | LineRenderer / Disc 표시 제어 공용 API | ⬜ 미구현 |
-| `BossPattern_Charge.cs` | Warning(예고선) + Active(돌진) + Recovery | ⬜ 미구현 |
-| `BossPattern_Slam.cs` | Warning(원형 디스크) + Active(히트) + Recovery | ⬜ 미구현 |
-| `BossPattern_Sweep.cs` | Warning(반원 디스크) + Active(회전 히트) + Recovery | ⬜ 미구현 |
-| `BossPattern_GuardBreak.cs` | Warning(가드 자세 → 예고) + Active(강타) + Recovery | ⬜ 미구현 |
+| `BossWardenAttackRange.cs` | LineRenderer / Disc 표시 제어 공용 API | ✅ 구현 완료 |
+| `BossPattern_Charge.cs` | Warning(예고선) + Active(돌진) + Recovery | ✅ 구현 완료 |
+| `BossPattern_Slam.cs` | Warning(원형 디스크) + Active(히트) + Recovery | ✅ 구현 완료 |
+| `BossPattern_Sweep.cs` | Warning(반원 디스크) + Active(회전 히트) + Recovery | ✅ 구현 완료 |
+| `BossPattern_GuardBreak.cs` | Warning(가드 자세 → 예고) + Active(강타) + Recovery | ✅ 구현 완료 |
+| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) Warning 순차 예고선 | ✅ 구현 완료 |
 
 **완료 조건:** 4개 패턴이 예고 범위 표시 → 실제 히트박스 순서로 정상 동작 확인
+
+### STEP 03 구현 노트
+
+```
+BossWardenAttackRange.cs  (v1.0)
+  - 공격 예고 범위 표시 전담 분리 — 패턴 스크립트가 직접 그리지 않음
+  - ShowChargeLine: LineRenderer 직선 예고 (방향 × 길이)
+  - ShowSlamDisc: SpriteRenderer 원형 디스크 월드좌표 이동 (SortingLayer=Ground)
+  - FlashAndHideSlamDisc: Active 히트 시 흰 플래시 후 비활성 DOTween
+  - ShowSweepDisc + UpdateSweepDiscPosition: 보스와 함께 회전
+  - ShowGuardBreakDisc: 방향 각도로 직사각형 디스크 Z회전
+  - ShowRageChargeLine: 인덱스별 순차 밝기 감소 (1.0 / 0.75 / 0.5)
+  - ShowSealRange / ShowCoreRange: DrawDashedCircle (32점 LineRenderer)
+  - HideAll(): Awake 초기화 + 그로기/DilPhase 진입 시 일괄 숨김
+  - 쿼터뷰 고려: SortingLayer=Ground 권장 (캐릭터 아래에 예고 디스크 표시)
+
+BossPattern_Charge.cs  (v1.0)
+  - Warning: FacingDir 방향 고정 + ShowChargeLine
+  - Active: linearVelocity 직접 제어 + OverlapBox 히트박스
+  - Recovery: DOShakePosition + triggerGroggyOnRecovery = true
+  - 2페이즈: phase2ChargeSpeed + Recovery 스킵 (Slam 연계)
+  - Interrupt 오버라이드: linearVelocity 즉시 0 + HideChargeLine
+
+BossPattern_Slam.cs  (v1.0)
+  - Warning: 플레이어 위치 스냅 + ShowSlamDisc + DOLocalMoveY 팔 들어올림
+  - Active: ExecuteSlam 코루틴 (팔 내려침 + FlashAndHide + OverlapCircle)
+  - 2페이즈: 0.5초 후 두 번째 디스크 + 두 번째 내려치기
+  - triggerGroggyOnRecovery = false (Charge와 역할 분리)
+
+BossPattern_Sweep.cs  (v1.0)
+  - Warning: ShowSweepDisc (보스 위치)
+  - Active: DORotate FastBeyond360 + 매 프레임 UpdateSweepDiscPosition + OverlapCircle
+  - 2페이즈: 2회전 + sweepWarningRadius 확장
+  - Interrupt 오버라이드: Kill + HideSweepDisc
+
+BossPattern_GuardBreak.cs  (v1.0)
+  - Warning 전반부: IsGuarding = true (정면 봉인도 무효 신호)
+  - Warning 후반부: ShowGuardBreakDisc (방향 계산 직사각형)
+  - Active: DOLocalMove 전방 타격 + OverlapBox
+  - triggerGroggyOnRecovery = true (Recovery 완료 시 그로기 유발)
+  - 2페이즈: guardDuration 0.5초 + 히트박스 확장
+
+BossPattern_RageCharge.cs  (v1.0)
+  - _isPhase2Only = true (1페이즈에서 CanExecute 차단)
+  - Warning: 붉은 Pulse DOColor + 0.3초 간격 3개 예고선 순차 표시
+  - Active: 3회 순차 돌진 (direction 배열 유지) + 간격 0.2초
+  - Recovery: DOShakePosition 피로감 연출
+  - Interrupt: Pulse Kill + linearVelocity 즉시 0
+```
 
 ---
 
@@ -1133,13 +1205,46 @@ BossWardenFeedback.cs  (v1.0)
 
 | 파일 | 작업 내용 | 상태 |
 |---|---|---|
-| `BossWardenArmPart.cs` | 피격 수신 → SealGaugeComponent 전달 | ⬜ 미구현 |
-| `SealGaugeComponent.cs` | 봉인도 단계별 색상 자동 전환 (DOTween) | ⬜ 미구현 |
-| `BossWardenSealExecutor.cs` | 봉인 집행 가능 범위 감지 + S키 홀드 처리 | ⬜ 미구현 |
-| `BossWardenSealExecutor.cs` | 집행 완료 → OnPartSealed 이벤트 발행 | ⬜ 미구현 |
-| `BossWardenAttackRange.cs` | 봉인 가능 범위 점선 원 표시 | ⬜ 미구현 |
+| `BossWardenArmPart.cs` | 피격 수신 → SealGaugeComponent 전달 | ✅ STEP01 완료 |
+| `SealGaugeComponent.cs` | 봉인도 단계별 색상 전환 이벤트 → BossWardenFeedback 처리 | ✅ STEP01 완료 |
+| `BossWardenSealExecutor.cs` | S키 봉인 집행 / 코어 해제 / 최종 봉인 3단계 구조 | ✅ 구현 완료 |
+| `BossWardenCoreSealGauge.cs` | 코어 봉인도 누적 + 페이즈별 목표 도달 이벤트 | ✅ 구현 완료 |
+| `BossWardenAttackRange.cs` | 봉인 가능 범위 점선 원 + 코어 해제 범위 점선 원 | ✅ STEP03 완료 |
 
 **완료 조건:** 공격 → 봉인도 색상 변화 → 100% 도달 → S키 집행 → 부위 파랑 고정 확인
+
+### STEP 04 구현 노트
+
+```
+BossWardenSealExecutor.cs  (v1.0)
+  - POC07 TestBossExecution (v1.1) 구조 계승
+  - 핵심 차이: A키 자동이동 제거 → S키 홀드 + 범위 내 접근 방식
+  - 3단계 집행 구조:
+      ① PartSeal  : SealGauge.IsSealReady + sealExecutionRange 내 + S키 홀드
+      ② CoreUnlock: _isCoreUnlockActive + coreUnlockRange 내 + S키 홀드
+      ③ FinalSeal : _isFinalSealActive + coreUnlockRange 내 + S키 홀드
+  - 우선순위: FinalSeal > CoreUnlock > PartSeal
+  - 슬로우 모션: CoreUnlock = 0.3 / FinalSeal = 0.1 (Time.timeScale)
+  - 홀드 시간: Time.unscaledDeltaTime 사용 (슬로우 중에도 일정 속도)
+  - 중단 조건: S키 해제 or 범위 이탈 → 즉시 취소 + TimeScale 복구
+  - 재집행 방지: _mustReleaseKey (S키 뗀 후 재누름 확인)
+  - BlockAll / UnblockAll: 집행 중 플레이어 이동/대시/공격 차단
+  - OnDestroy: Time.timeScale = 1.0f 보호 처리
+  - 이벤트: OnPartSealed / OnCoreUnlocked / OnFinalSealCompleted
+
+BossWardenCoreSealGauge.cs  (v1.0)
+  - 딜 페이즈 전용 코어 봉인도 누적 컴포넌트
+  - PlayerAttackHitboxManager.OnHit 구독 방식 (BossWardenArmPart 와 동일)
+  - ActivateGauge(bool): 딜 페이즈 진입/종료 시 BossWardenCore 에서 호출
+  - 강/약 공격 구분: sealAmount >= 25 → coreChargeAttackGain / 미만 → coreBasicAttackGain
+  - 페이즈별 목표 이벤트: OnPhase1TargetReached / OnPhase2TargetReached (각 1회)
+  - 코어 봉인도는 페이즈 전환 후에도 초기화되지 않음
+  - 피격 점멸: DOColor 흰색 → _baseColor (SetUpdate=true)
+
+⚠️ PlayerInputHandler 추가 필요 항목:
+  IsSealHeld 프로퍼티 (bool) — S키 홀드 상태 폴링
+  _isAttackHeld 와 동일한 방식으로 _isSealHeld 추가 필요
+```
 
 ---
 
