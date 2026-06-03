@@ -788,11 +788,11 @@ GroggyRoutine 완료 → ExitGroggyFailure()
 
 | 파일명 | 역할 | 연결 부위 | 특이사항 |
 |---|---|---|---|
-| `BossPattern_Charge.cs` | 돌진 / 2페이즈 Recovery 스킵 + Slam 연계 | 오른팔 | v1.3 — `_rigid2D.position` 수정 + 타임아웃/속도감지 안전장치 3종 추가 |
+| `BossPattern_Charge.cs` | 돌진 / 2페이즈 Recovery 스킵 + Slam 연계 | 오른팔 | **v2.0** — 팔 백스윙 + 웅크리기 + 뻗기 연출 추가 / 안전장치 3종 유지 |
 | `BossPattern_Slam.cs` | 내려치기 / 팔 분리 + 공략 타임 / 2페이즈 2연속 | 왼팔 | **v3.0** — 팔 SetParent 분리 → 플레이어 위치 꽂기 → 공략 타임 → 귀환 |
 | `BossPattern_Sweep.cs` | 360° 회전 스윕 / 원심력 팔 날리기 / 2페이즈 2회전 | 왼팔 | **v3.0** — DORotate 대상 수정 + 회전 완료 후 원심력 팔 분리 + 공략 타임 |
-| `BossPattern_GuardBreak.cs` | 가드 자세 → 찌르기 / 2페이즈 가드 단축 | 오른팔 | **v2.0** — 가드 자세 DOLocalMove + 백스윙 + 방향 찌르기 |
-| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 | `_isPhase2Only = true` / `_rigid2D.position` 수정 완료 |
+| `BossPattern_GuardBreak.cs` | 가드 자세 → 찌르기 / 2페이즈 가드 단축 | 오른팔 | **v3.0** — 로컬 Y+ 오프셋 정확화 + Rigidbody2D 캐싱 + WaitForSecondsRealtime + 반동 추가 |
+| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 | **v2.0** — 예고선 위치 수정 + 안전장치 3종 + 팔 연출 + 색상 복귀 + 벽충돌 추가 경직 |
 
 ### 팔 던지기(분리) 메카닉 설계
 
