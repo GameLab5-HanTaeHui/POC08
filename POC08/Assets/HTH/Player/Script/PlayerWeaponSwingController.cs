@@ -1,9 +1,26 @@
 ﻿// ============================================================
-// PlayerWeaponSwingController.cs  v1.2
+// PlayerWeaponSwingController.cs  v1.3
 // 탑뷰 무기 스윙 연출 전담 컴포넌트
 //
-// [v1.2 변경 — UpdatePivotToFacing() 추가]
-//   이동 방향 → WeaponPivot 실시간 동기화 지원.
+// [v1.3 변경 — DOLocalPath 곡선 이동 도입]
+//   타격 구간 이동: DOLocalMove (직선) → DOLocalPath (호 궤적)
+//   PlayerAttackDataSO 의 ArcHeight 값으로 호의 볼록함 제어.
+//
+//   [ArcPath 계산 원리]
+//     BackPos 와 AttackPos 의 중점(mid)에서
+//     두 점을 잇는 벡터의 수직 방향으로 ArcHeight 만큼 오프셋.
+//     → 3점 배열 [backPos, controlPoint, attackPos] 을 DOLocalPath 에 전달.
+//     → PathType.CatmullRom 으로 부드러운 호 보간.
+//
+//   [ArcHeight = 0 처리]
+//     제어점이 중점과 동일 → 직선과 동일.
+//     DOLocalMove 를 별도 호출할 필요 없이 DOLocalPath 로 통일.
+//
+//   [Combo3 (찌르기) 예외]
+//     직선이 컨셉 → ArcHeight 없음 → DOLocalMove 유지.
+//
+// [v1.2 변경 — UpdatePivotToFacing() + HitboxManager 직접 제어]
+// [v1.1 변경 — CalcSwingDelta + RotateWeaponDelta]
 //
 //   [추가 이유]
 //     기존: WeaponPivot 은 공격 시 RotatePivotToAttackDir() 에서만 회전.
@@ -77,7 +94,6 @@
 //   namespace : SEAL
 // ============================================================
 
-using System;
 using System.Collections;
 using UnityEngine;
 using DG.Tweening;
@@ -528,11 +544,11 @@ namespace SEAL
                     // ② 백스윙 완료 직후 → 히트박스 활성 (타격 Append 시작 전 보장)
                     seq.AppendCallback(() => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
 
-                    // ③ 타격
+                    // ③ 타격 — 호(arc) 궤적 이동 + CalcSwingDelta 회전
                     {
                         float delta1 = PlayerAttackDataSO.CalcSwingDelta(
                             rotBack, rotAtk, _data.Combo1Clockwise);
-                        seq.Append(_weapon.DOLocalMove(atkPos, aD).SetEase(Ease.InOutCubic));
+                        seq.Append(ArcPath(backPos, atkPos, _data.Combo1ArcHeight, aD, Ease.InOutCubic));
                         seq.Join(RotateWeaponDelta(delta1, aD, Ease.InOutCubic));
                     }
 
@@ -558,11 +574,11 @@ namespace SEAL
                     // ② 백스윙 완료 직후 → 히트박스 활성
                     seq.AppendCallback(() => _hitboxManager?.EnableHitbox(hitboxIndex, sealAmount));
 
-                    // ③ 타격
+                    // ③ 타격 — 호(arc) 궤적 이동
                     {
                         float delta2 = PlayerAttackDataSO.CalcSwingDelta(
                             rotBack, rotAtk, _data.Combo2Clockwise);
-                        seq.Append(_weapon.DOLocalMove(atkPos, aD).SetEase(Ease.InCubic));
+                        seq.Append(ArcPath(backPos, atkPos, _data.Combo2ArcHeight, aD, Ease.InCubic));
                         seq.Join(RotateWeaponDelta(delta2, aD, Ease.InCubic));
                     }
 
@@ -639,11 +655,11 @@ namespace SEAL
             seq.AppendCallback(() =>
                 _hitboxManager?.EnableHitbox(PlayerAttackHitboxManager.HitboxCharge, sealAmount));
 
-            // ③ 타격
+            // ③ 타격 — 호(arc) 궤적 이동 (원호 스윙 느낌)
             {
                 float chargeDelta = PlayerAttackDataSO.CalcSwingDelta(
                     rotBack, rotAtk, _data.ChargeClockwise);
-                seq.Append(_weapon.DOLocalMove(atkPos, aD).SetEase(Ease.InOutQuart));
+                seq.Append(ArcPath(backPos, atkPos, _data.ChargeArcHeight, aD, Ease.InOutQuart));
                 seq.Join(RotateWeaponDelta(chargeDelta, aD, Ease.InOutQuart));
             }
 
@@ -766,9 +782,62 @@ namespace SEAL
 
         /// <summary>
         /// Vector2 → Vector3 변환 (z=0 고정).
-        /// DataSO 의 Vector2 위치값을 DOLocalMove 에 전달할 때 사용.
+        /// DataSO 의 Vector2 위치값을 DOLocalMove/DOLocalPath 에 전달할 때 사용.
         /// </summary>
         private static Vector3 ToV3(Vector2 v) => new Vector3(v.x, v.y, 0f);
+
+        /// <summary>
+        /// 타격 구간 호(arc) 궤적 Tween 생성.
+        /// DOLocalPath + CatmullRom 으로 backPos → 제어점 → attackPos 곡선 이동.
+        ///
+        /// [제어점 계산]
+        ///   mid         = (backPos + attackPos) / 2
+        ///   dir         = (attackPos - backPos).normalized
+        ///   perp        = Vector3.Cross(dir, Vector3.forward) → 수직 벡터
+        ///   controlPoint = mid + perp * arcHeight
+        ///
+        /// [arcHeight = 0]
+        ///   controlPoint = mid → 직선과 동일한 궤적 (DOLocalPath 로 통일)
+        ///
+        /// [권장 arcHeight]
+        ///   Combo1 횡베기  : +0.8 (위볼록 — 호를 그리며 휩쓸기)
+        ///   Combo2 내리찍기: -0.6 (아래볼록 — 포물선 내리찍기)
+        ///   Charge 강타    : +1.5 (크게 볼록 — 원호 스윙)
+        ///   Combo3 찌르기  : 직선 컨셉 → ArcPath 미사용 (DOLocalMove 유지)
+        /// </summary>
+        private Tweener ArcPath(Vector3 backPos, Vector3 attackPos, float arcHeight,
+                                float duration, Ease ease)
+        {
+            // ──────────────────────────────────────────────────────
+            // [8방향 대응 원리]
+            //   backPos / attackPos 는 WeaponPivot 로컬 좌표 (+X = 공격 방향).
+            //   WeaponPivot 이 공격 방향으로 Z회전한 상태에서
+            //   자식인 Weapon 의 로컬 좌표계도 함께 회전.
+            //   → backPos/attackPos 그대로 사용하면 8방향 자동 대응.
+            //
+            //   controlPoint 도 같은 로컬 좌표계에서 계산.
+            //   수직 벡터(perp) = Vector3.Cross(dir, Vector3.forward)
+            //     → 로컬 +X 방향의 수직 = 로컬 +Y/-Y 방향
+            //     → WeaponPivot 회전과 함께 월드에서도 올바른 방향으로 변환됨.
+            //
+            //   DOLocalPath 는 반드시 PathMode.Ignore 로 설정해야
+            //   경유점을 로컬 좌표로 해석. 기본값은 월드 경유점.
+            // ──────────────────────────────────────────────────────
+
+            // 로컬 좌표계 기준 중점 + 수직 오프셋으로 제어점 계산
+            Vector3 mid = (backPos + attackPos) * 0.5f;
+            Vector3 dir = (attackPos - backPos);
+            // 로컬 이동방향의 수직 벡터 (Z=forward 기준 2D 평면)
+            Vector3 perp = Vector3.Cross(dir.normalized, Vector3.forward);
+            Vector3 controlPoint = mid + perp * arcHeight;
+
+            // [backPos, controlPoint, attackPos] 로컬 3점 곡선
+            Vector3[] path = { backPos, controlPoint, attackPos };
+
+            return _weapon
+                .DOLocalPath(path, duration, PathType.CatmullRom, PathMode.Ignore)
+                .SetEase(ease);
+        }
 
         // ══════════════════════════════════════════════════════
         // Gizmos — 에디터 디버그

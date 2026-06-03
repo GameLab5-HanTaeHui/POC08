@@ -1,6 +1,23 @@
 ﻿// ============================================================
-// PlayerAttackDataSO.cs  v2.1
+// PlayerAttackDataSO.cs  v2.2
 // 플레이어 공격 수치 ScriptableObject
+//
+// [v2.2 변경 — 콤보별 ArcHeight 추가 (DOPath 곡선 이동)]
+//   각 콤보 타격 구간에 ArcHeight(float) 필드 추가.
+//   DOLocalMove (직선) → DOLocalPath (곡선) 으로 교체.
+//
+//   [ArcHeight 원리]
+//     BackPos 와 AttackPos 의 중점(mid)에서
+//     수직 방향(perpendicular)으로 ArcHeight 만큼 오프셋한 점이 제어점.
+//     DOLocalPath([backPos, controlPoint, attackPos], CatmullRom) 으로
+//     부드러운 호(arc) 궤적 생성.
+//
+//     ArcHeight > 0 : 호가 수직 방향으로 볼록
+//     ArcHeight < 0 : 호가 반대 방향으로 볼록
+//     ArcHeight = 0 : 직선 (기존 DOLocalMove 와 동일)
+//
+//   [Combo3 (찌르기)]
+//     직선 움직임이 컨셉 → ArcHeight 없음 (기존 DOLocalMove 유지)
 //
 // [v2.1 변경 — 콤보/강공격 회전 방향 bool 추가]
 //   각 콤보와 강공격에 SwingClockwise(bool) 필드 추가.
@@ -192,6 +209,25 @@ namespace SEAL
         [Min(1f)]
         public float Combo1SealAmount = 10f;
 
+        /// <summary>
+        /// Combo1 타격 구간 호(arc) 높이.
+        /// BackPos → AttackPos 이동 시 곡선의 볼록함을 결정.
+        ///
+        /// [원리]
+        ///   BackPos 와 AttackPos 의 중점에서 수직 방향으로 이 값만큼 오프셋한
+        ///   점을 DOLocalPath 의 중간 제어점으로 사용.
+        ///   → 반원 궤적 느낌의 자연스러운 호 이동.
+        ///
+        /// [설정 가이드]
+        ///   0.0  : 직선 이동 (기존 DOLocalMove 와 동일)
+        ///   +값  : 수직 기준 위쪽으로 볼록한 호
+        ///   -값  : 수직 기준 아래쪽으로 볼록한 호
+        ///   권장: 0.5 ~ 1.5 (횡베기는 위쪽 볼록)
+        /// </summary>
+        [Tooltip("Combo1 타격 호(arc) 높이. 0=직선 / +값=위볼록 / -값=아래볼록. 권장: 0.5~1.5.")]
+        [Range(-3f, 3f)]
+        public float Combo1ArcHeight = 0.8f;
+
         // ──────────────────────────────────────────
         // Combo2 — 내리찍기 (위→아래 수직 스윙)
         // ──────────────────────────────────────────
@@ -249,6 +285,15 @@ namespace SEAL
         [Tooltip("Combo2 봉인도 누적량.")]
         [Min(1f)]
         public float Combo2SealAmount = 12f;
+
+        /// <summary>
+        /// Combo2 타격 구간 호(arc) 높이.
+        /// 내리찍기 궤적 — 위에서 아래로 떨어지는 자연스러운 호.
+        /// 권장: -0.5 ~ -1.0 (아래쪽으로 볼록한 호, 내리찍기 느낌 강화)
+        /// </summary>
+        [Tooltip("Combo2 타격 호(arc) 높이. 0=직선 / +값=위볼록 / -값=아래볼록. 권장: -0.5~-1.0.")]
+        [Range(-3f, 3f)]
+        public float Combo2ArcHeight = -0.6f;
 
         // ──────────────────────────────────────────
         // Combo3 — 찌르기 피니셔 (직선 돌진)
@@ -382,6 +427,15 @@ namespace SEAL
         [Tooltip("강공격 홀드 맥동 주기 (초). 권장: 0.2~0.35.")]
         [Range(0.1f, 1f)]
         public float ChargePulsePeriod = 0.25f;
+
+        /// <summary>
+        /// 강공격 타격 구간 호(arc) 높이.
+        /// 원호 스윙 궤적 — 크게 한 바퀴 돌아치는 느낌.
+        /// 권장: 1.0 ~ 2.0 (크게 볼록한 호)
+        /// </summary>
+        [Tooltip("강공격 타격 호(arc) 높이. 0=직선 / +값=위볼록 / -값=아래볼록. 권장: 1.0~2.0.")]
+        [Range(-3f, 3f)]
+        public float ChargeArcHeight = 1.5f;
 
         // ──────────────────────────────────────────
         // 히트박스

@@ -444,6 +444,9 @@ namespace SEAL
             Vector2 hitPos = hitCol.bounds.center;
             OnHitTarget?.Invoke(hitPos, sealAmount);
 
+            // 적 피격 파티클 재생
+            HitFeedbackController.Instance?.PlayEnemyHit(hitPos);
+
             Debug.Log($"[PlayerAttackController] 적중: {hitCol.name} | " +
                       $"봉인도 +{sealAmount:F1} | 콤보: {_currentCombo + 1}");
         }
