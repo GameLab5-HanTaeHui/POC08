@@ -522,6 +522,12 @@ namespace SEAL
             _isMoveLocked = true;
 
             OnDashStarted?.Invoke();
+            // [7단계 연동]
+            // OnDashStarted 를 구독한 PlayerAttackController.CancelAttack() 이
+            // SetMoveLocked(false) 를 호출하여 _isMoveLocked 를 false 로 변경할 수 있음.
+            // 대시 종료 후 복원할 상태를 OnDashStarted 발행 이후 다시 읽어야
+            // 공격 캔슬로 인해 변경된 잠금 상태가 정확히 반영됨.
+            wasMoveLocked = _isMoveLocked;  // 캔슬 후 상태 재캐싱 (false 유지 보장)
 
             // DOTween 대시 시작 스케일 펀치
             PlayDashPunch();
