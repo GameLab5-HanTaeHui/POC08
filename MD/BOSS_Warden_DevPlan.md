@@ -459,8 +459,39 @@ S키 최종 봉인 (홀드 2초)
 
 **Recovery 처리:**
 - 긴 후딜 (공략 기회)
-- 봉인도 누적 ×1.5 적용 (취약 구간)
+- 봉인도 누적 ×1.5 적용 (취약 구간 — BossWardenAI.SetArmsRecoveryVuln 이 처리)
 - OnPatternGroggy 발행 → 그로기 진입 유도
+
+**`IsGuarding` 플래그 연동 — 구현 방식:**
+
+```
+BossPattern_GuardBreak.IsGuarding (public bool)
+  - Warning 전반부 진입 시: IsGuarding = true
+  - Warning 후반부 진입 시: IsGuarding = false
+  - Interrupt() 호출 시:    IsGuarding = false (강제 해제)
+
+BossWardenArmPart.HandlePlayerHit()
+  현재 구현: IsGuarding 체크 없음 → 정면 피격도 봉인도 누적됨
+  
+[STEP 09 전 수정 필요]
+  BossWardenArmPart.HandlePlayerHit() 에 가드 체크 추가:
+  
+  // RightArm (오른팔) 에만 적용
+  if (_partType == WardenPartType.RightArm)
+  {
+      var gb = GetComponentInParent<BossPatternBase>() 로 탐색 불가
+      → BossWardenArmPart 에 [SerializeField] BossPattern_GuardBreak _guardBreakPattern 추가
+      → HandlePlayerHit 내에서:
+         if (_guardBreakPattern != null && _guardBreakPattern.IsGuarding)
+         {
+             // 정면 방향 체크 — 플레이어가 보스 정면에 있으면 봉인도 무효
+             // 측면/후방은 정상 누적
+             return;
+         }
+  }
+
+  임시 처리 (STEP 09 테스트): IsGuarding 체크 없이 전방향 봉인도 누적 허용
+```
 
 ---
 
@@ -608,89 +639,177 @@ S키 최종 봉인 (홀드 2초)
 
 ## 11. 이벤트 흐름
 
+> 아래는 실제 구현된 코드 기준의 이벤트 흐름이다.
+> 기획서 초안과 다른 부분은 **[구현 변경]** 으로 표시한다.
+
 ```
-[부위 봉인 흐름]
-SealGaugeComponent.OnGaugeFull
-  → BossWardenSealExecutor: 집행 가능 상태 전환 + 범위 피드백 표시
+[봉인도 누적 흐름 — PlayerAttackHitboxManager 기반]
+PlayerAttackHitboxManager.OnHit(Collider2D col, float sealAmount)
+  → BossWardenArmPart.HandlePlayerHit(col, sealAmount)
+      col == _ownCollider 확인 후
+      Recovery 취약 구간 배율 적용
+      → SealGaugeComponent.AddGauge(rawAmount)
+        → OnStageChanged(int stage) → BossWardenFeedback: 봉인도 단계 색상 전환
+        → OnSealReady() → BossWardenSealExecutor: 집행 가능 등록 + ShowSealRange()
 
-BossWardenSealExecutor.OnPartSealed(PartType)
-  → BossWardenCore: 봉인 완료 수신 → 그로기 조건 체크
-  → BossWardenFeedback: 해당 부위 파랑 고정 색상
+[부위 봉인 집행 흐름]
+BossWardenSealExecutor.DetectSealInput() 루프
+  → DetermineTarget() → PartSeal 집행 대상 확인
+  → S키 홀드 완료 (sealExecutionHoldTime)
+  → SealGaugeComponent.ExecuteSeal()
+    → OnSealed() → BossWardenArmPart.HandleSealed()
+      → OnPartSealed(WardenPartType) → BossWardenCore.HandlePartSealed()
+        → _sealedArmCount++
+        → CheckGroggyCondition() : armL.IsSealed && armR.IsSealed 확인
+          → EnterGroggy()
+  → BossWardenFeedback.HandleArmLSealed / HandleArmRSealed: 파랑 고정 색상
 
-[그로기 / 코어 흐름]
-BossWardenCore.OnBothArmsSealed
-  → BossWardenCore: 정식 그로기 진입
-  → Core.SetActive(true)
+[그로기 흐름]
+BossWardenCore.EnterGroggy()
+  → ActivateCore() : _coreObject.SetActive(true)
+  → OnGroggyEnter 발행
+    → BossWardenAI.HandleGroggyEnter(): _isStopped = true + InterruptCurrentPattern()
+    → BossWardenFeedback.HandleGroggyEnter(): 노란 빠른 Pulse + 코어 노란 Pulse
+    → BossWardenSealExecutor.HandleGroggyEnter(): _isCoreUnlockActive = true + ShowCoreRange()
+  → GroggyRoutine(groggyDuration) 시작
 
-BossWardenCore.OnGroggyEnter
-  → BossWardenAI: 이동/패턴 완전 정지
-  → BossWardenFeedback: 노란 Pulse 연출
-  → BossWardenSealExecutor: 코어 해제 감지 활성
-
-BossWardenSealExecutor.OnCoreUnlocked
-  → BossWardenCore: 딜 페이즈 진입
+[코어 해제 흐름]
+BossWardenSealExecutor.DetectSealInput() 루프
+  → DetermineTarget() → CoreUnlock 집행 대상 확인
+  → S키 홀드 + Time.timeScale 슬로우 (dilPhaseSlowTimeScale)
+  → 홀드 완료 → CompleteExecution()
+    → OnCoreUnlocked 발행
+      → BossWardenCore.HandleCoreUnlocked()
+        → GroggyCoroutine Stop (타이머 취소)
+        → _isGroggy = false
+        → EnterDilPhase()
 
 [딜 페이즈 흐름]
-BossWardenCore.OnDilPhaseEnter
-  → BossWardenAI: 완전 정지
-  → BossWardenFeedback: 밝은 주황 Pulse 연출
-  → BossWardenCoreSealGauge: 공격 수신 활성
+BossWardenCore.EnterDilPhase()
+  → BossWardenCoreSealGauge.ActivateGauge(true)
+  → OnDilPhaseEnter 발행
+    → BossWardenAI.HandleDilPhaseEnter(): _isStopped = true
+    → BossWardenFeedback.HandleDilPhaseEnter(): 밝은 주황 Pulse + 코어 흰 Pulse
+    → BossWardenSealExecutor.HandleGroggyExit() 수신으로 코어 해제 감지 비활성
+  → DilPhaseRoutine(dilPhaseDuration) 시작
 
-BossWardenCoreSealGauge.OnCoreSealGaugeChanged(float ratio)
-  → UI: 코어 봉인도 게이지 갱신
+BossWardenCoreSealGauge.OnPhase1TargetReached
+  → BossWardenCore.HandlePhase1TargetReached() → ExitDilPhase(false)
 
-BossWardenCore.OnDilPhaseExit(bool isFinalSeal)
-  → isFinalSeal = false: 충격파 + 부위 해제 + 루프 재시작
-  → isFinalSeal = true : 최종 봉인 진입
+BossWardenCoreSealGauge.OnPhase2TargetReached
+  → BossWardenCore.HandlePhase2TargetReached() → ExitDilPhase(true)
 
-[최종 봉인 / 처치]
-BossWardenSealExecutor.OnFinalSealCompleted
-  → BossWardenCore: 처치 처리
+[딜 페이즈 종료 — 일반 (isFinalSeal = false)]
+BossWardenCore.ExitDilPhase(false)
+  → ActivateGauge(false)
+  → DeactivateCore()
+  → _armL.ForceRelease(false) + _armR.ForceRelease(false)
+  → _shockwave.Trigger(transform.position)   ← [구현 변경] 이벤트 구독 아님, 직접 호출
+      → BossWardenShockwave: OverlapCircleNonAlloc → ApplyKnockbackRoutine()
+  → OnDilPhaseExit 발행   ← [구현 변경] bool 파라미터 없음, Action 타입
+    → BossWardenAI.HandleDilPhaseExit(): _isStopped = false + Idle 복귀
+    → BossWardenFeedback.HandleDilPhaseExit(): Idle 색상 복귀
+    → BossWardenSealExecutor.HandleDilPhaseExit(): _isFinalSealActive = false
+  → _currentPhase == 1 → OnPhaseChanged(2) 발행
+    → BossWardenAI.HandlePhaseChanged(2): phase2MoveSpeed + UnlockPhase2() 전체
+    → BossWardenFeedback.HandlePhaseChanged(2): 진한 붉은 전환 연출
 
-BossWardenCore.OnDead
-  → BattleManager: 전투 종료 + 보상 발생
+[딜 페이즈 종료 — 최종 봉인 (isFinalSeal = true)]
+BossWardenCore.ExitDilPhase(true)
+  → ActivateGauge(false)
+  → OnFinalSealReady 발행
+    → BossWardenSealExecutor.HandleFinalSealReady(): _isFinalSealActive = true
 
-[페이즈 전환]
-BossWardenCore.OnPhaseChanged(int phase)
-  → BossWardenAI: 2페이즈 패턴 강화 적용 + RageCharge 패턴 추가
-  → BossWardenFeedback: 진한 붉은 전환 연출
-  → BossWardenShockwave: 충격파 발동
+[최종 봉인 흐름]
+BossWardenSealExecutor.DetectSealInput() 루프
+  → DetermineTarget() → FinalSeal 집행 대상 확인
+  → S키 홀드 + 강한 슬로우 (finalSealSlowTimeScale)
+  → 홀드 완료 → CompleteExecution()
+    → OnFinalSealCompleted 발행
+      → BossWardenCore.HandleFinalSealCompleted() → Die()
+
+[처치 흐름]
+BossWardenCore.Die()
+  → StopAllCoroutines()
+  → _rigid2D.linearVelocity = 0
+  → DeactivateCore() + ActivateGauge(false)
+  → _attackRange.HideAll()
+  → OnDead 발행
+    → BossWardenAI.HandleDead(): enabled = false
+    → BossWardenFeedback.HandleDead(): 검정 DOColor + DOScale 0
+
+[그로기 실패 흐름 — 타이머 만료]
+GroggyRoutine 완료 → ExitGroggyFailure()
+  → DeactivateCore()
+  → _armL.ForceRelease(false) + _armR.ForceRelease(false)
+  → OnGroggyExit 발행
+    → BossWardenAI.HandleGroggyExit(): _isStopped = false + Idle 복귀
+    → BossWardenFeedback.HandleGroggyExit(): Idle 색상 복귀
+    → BossWardenSealExecutor.HandleGroggyExit(): _isCoreUnlockActive = false
 ```
 
 ---
 
 ## 12. 스크립트 목록 및 역할
 
+### 플레이어 측 연동 스크립트 (POC08 기존 구현)
+
+| 파일명 | 버전 | 역할 | 보스 연동 내용 |
+|---|---|---|---|
+| `PlayerInputHandler.cs` | v1.2 | 키 입력 통합 관리 | `IsSealHeld` 프로퍼티 추가 — BossWardenSealExecutor 가 S키 홀드 폴링 |
+| `PlayerAttackHitboxManager.cs` | v1.0 | 무기 히트박스 관리 | `OnHit(Collider2D col, float sealAmount)` — BossWardenArmPart / CorsSealGauge 가 구독 |
+| `PlayerMoveController.cs` | v1.0 | 8방향 이동 + 대시 | BossWardenShockwave 넉백 시 BlockAll / UnblockAll 연동 |
+
+> `PlayerAttackHitboxManager.OnHit` 이벤트가 보스 봉인도 누적의 유일한 진입점이다.
+> 패턴 히트박스(OverlapXX)는 플레이어 피격 감지 전용이며 봉인도와 무관하다.
+
 ### 공용 (재사용 가능)
 
 | 파일명 | 역할 | 위치 |
 |---|---|---|
-| `SealGaugeComponent.cs` | 부위 봉인도 누적 / 100% 이벤트 발행 / 봉인 저항 적용 | Assets/SEAL/Shared/ |
-| `BossPatternBase.cs` | 패턴 추상 베이스 (Warning/Active/Recovery/Interrupt) | Assets/SEAL/Boss/Pattern/ |
+| `SealGaugeComponent.cs` | 부위 봉인도 수치 관리 / 단계별 이벤트 발행 / 봉인 저항 배율 적용 | Assets/SEAL/Shared/ |
+| `BossPatternBase.cs` | 패턴 추상 베이스 (Warning/Active/Recovery/Interrupt/Phase2) | Assets/SEAL/Boss/Pattern/ |
 
 ### Warden 전용
 
-| 파일명 | 역할 | 위치 |
+| 파일명 | 역할 | 주요 특이사항 |
 |---|---|---|
-| `BossWardenDataSO.cs` | 모든 수치 ScriptableObject | Assets/SEAL/Boss/Warden/Data/ |
-| `BossWardenCore.cs` | 루트 — 그로기/코어/딜페이즈/페이즈/최종봉인/처치 통합 | Assets/SEAL/Boss/Warden/ |
-| `BossWardenAI.cs` | 탑뷰 AI — Idle/Chase/Warning/Active/Recovery + 페이즈 강화 | Assets/SEAL/Boss/Warden/ |
-| `BossWardenFeedback.cs` | 상태별 DOTween 색상/연출 전담 (Sprite/Particle 없음) | Assets/SEAL/Boss/Warden/ |
-| `BossWardenArmPart.cs` | 팔 부위 — 봉인 집행 수신 + 저항 관리 | Assets/SEAL/Boss/Warden/ |
-| `BossWardenSealExecutor.cs` | S키 봉인 집행 / 코어 해제 / 최종 봉인 처리 | Assets/SEAL/Boss/Warden/ |
-| `BossWardenCoreSealGauge.cs` | 코어 봉인도 누적 전담 (딜 페이즈 전용) | Assets/SEAL/Boss/Warden/ |
-| `BossWardenShockwave.cs` | 페이즈 전환 충격파 발동 + 범위 연출 | Assets/SEAL/Boss/Warden/ |
-| `BossWardenAttackRange.cs` | 공격 예고 범위 표시 전담 (LineRenderer / Disc 관리) | Assets/SEAL/Boss/Warden/ |
+| `BossWardenDataSO.cs` | 모든 수치 + 색상 ScriptableObject. 모든 컴포넌트의 단일 수치 소스 | BossWardenCore.Start() 에서 전체 주입 |
+| `BossWardenCore.cs` | 루트 통합 관리 — 그로기/코어 활성/딜페이즈/페이즈전환/최종봉인/처치 | RequireComponent 5종. DEBUG ContextMenu 포함 |
+| `BossWardenAI.cs` | 탑뷰 8방향 AI — Idle/Chase/Warning/Active/Recovery + 2페이즈 강화 | OnFacingChanged(Vector2) 이벤트로 방향 외부 위임 |
+| `BossWardenFeedback.cs` | 상태별 DOTween 색상/연출 전담. SpriteRenderer 점멸 포함 | SetUpdate(true) 전체 적용 — 슬로우 중 연출 유지 |
+| `BossWardenArmPart.cs` | 팔 부위 — `PlayerAttackHitboxManager.OnHit` 구독으로 피격 감지 → SealGaugeComponent.AddGauge() | 히트 점멸 / Recovery 배율 / UpdateBaseColor() 포함 |
+| `BossWardenSealExecutor.cs` | S키 봉인 집행(3단계) — 부위봉인 / 코어해제 / 최종봉인 | 슬로우 Time.timeScale 제어. UnscaledDeltaTime 홀드 측정 |
+| `BossWardenCoreSealGauge.cs` | 코어 봉인도 누적 전담 — 딜 페이즈 중만 활성. ActivateGauge(bool) | PlayerAttackHitboxManager.OnHit 구독 방식 (ArmPart 와 동일) |
+| `BossWardenShockwave.cs` | 딜 페이즈 종료 시 BossWardenCore 에서 직접 호출 — OverlapCircleNonAlloc + 넉백 코루틴 | WaitForFixedUpdate 후 velocity 설정 (POC07 v1.3 교훈 적용) |
+| `BossWardenAttackRange.cs` | 공격 예고 범위 / 봉인 집행 범위 / 코어 해제 범위 표시 전담 | HideAll() — 그로기/딜페이즈 진입 시 일괄 정리 |
 
 ### 패턴 스크립트
 
-| 파일명 | 역할 | 연결 부위 |
-|---|---|---|
-| `BossPattern_Charge.cs` | 돌진 / 2페이즈 Slam 연계 | 오른팔 |
-| `BossPattern_Slam.cs` | 내려치기 / 2페이즈 2연속 | 왼팔 |
-| `BossPattern_Sweep.cs` | 스윕 / 2페이즈 2회전 | 왼팔 |
-| `BossPattern_GuardBreak.cs` | 강타 / 2페이즈 가드 단축 | 오른팔 |
-| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 |
+| 파일명 | 역할 | 연결 부위 | 특이사항 |
+|---|---|---|---|
+| `BossPattern_Charge.cs` | 돌진 / 2페이즈 Recovery 스킵 + Slam 연계 | 오른팔 | Interrupt 오버라이드 — linearVelocity 즉시 0 |
+| `BossPattern_Slam.cs` | 내려치기 / 2페이즈 2연속 (0.5초 간격) | 왼팔 | Warning 시 플레이어 위치 스냅 (이후 고정) |
+| `BossPattern_Sweep.cs` | 360° 회전 스윕 / 2페이즈 2회전 | 왼팔 | DORotate FastBeyond360 + 매 프레임 UpdateSweepDiscPosition |
+| `BossPattern_GuardBreak.cs` | 가드 자세 → 정면 강타 / 2페이즈 가드 단축 | 오른팔 | `IsGuarding` public — 가드 중 봉인도 누적 무효 신호 |
+| `BossPattern_RageCharge.cs` | 3연 돌진 (2페이즈 전용) | 없음 | `_isPhase2Only = true` 자체 설정. 0.3초 간격 순차 예고선 |
+
+### 플레이어 피격 처리 — 현재 구현 상태
+
+> 보스 패턴이 플레이어를 감지해도 실제 피격 처리 컴포넌트가 아직 구현되지 않았다.
+> 각 패턴의 OverlapXX 에서 플레이어 감지 시 현재는 `Debug.Log` 만 출력한다.
+> STEP 09 테스트 시 플레이어 피격 처리는 다음 방식으로 임시 처리한다.
+
+```
+임시 처리 방안 (STEP 09):
+  패턴 OverlapXX 감지 시 → Debug.Log("[패턴명] 플레이어 피격!")
+  플레이어 넉백은 BossWardenShockwave 의 넉백 코루틴 구조를 참조하여
+  별도 테스트 스크립트로 임시 구현 가능.
+  
+정식 구현 예정 (이후 단계):
+  PlayerHealth.cs — 체력 / 피격 무적 / 넉백 처리
+  각 패턴 Active 구간에서 OnHitPlayer 이벤트 발행 → PlayerHealth.TakeDamage() 호출
+```
 
 ---
 
@@ -820,7 +939,8 @@ BossRoot                                    Layer: Default
    │      _armL            → LeftArm.BossWardenArmPart (Inspector 연결)
    │      _armR            → RightArm.BossWardenArmPart (Inspector 연결)
    │      _coreObject      → Core GameObject (Inspector 연결)
-   │      _shockwave       → BossWardenShockwave (GetComponent)
+   │      _coreSealGauge   → Core.BossWardenCoreSealGauge (Inspector 연결)
+   │      _shockwave       → BossWardenShockwave (GetComponent — 동일 오브젝트)
    │
    │  [BossWardenAI]
    │      _data            → BossWardenDataSO (Inspector 연결)
@@ -850,8 +970,9 @@ BossRoot                                    Layer: Default
    │
    │  [BossWardenShockwave]
    │      _data            → BossWardenDataSO (Inspector 연결)
-   │      _playerTransform → Player Transform (Inspector 연결)
+   │      _playerLayer     → Player 레이어 마스크 (Inspector 설정)
    │      _discRenderer    → ShockwaveDisc.SpriteRenderer (Inspector 연결)
+   │      _cameraTransform → Main Camera Transform (선택, 미연결 시 셰이크 스킵)
    │
    │  [BossWardenAttackRange]
    │      _chargeLineRenderer  → AttackRangeVisuals/ChargeLine.LineRenderer (Inspector)
@@ -929,37 +1050,73 @@ BossRoot                                    Layer: Default
    ├─ AttackRangeVisuals                   Layer: Default (충돌 없음)
    │   │  ※ 모든 자식 오브젝트는 기본 SetActive = false
    │   │  ※ 각 패턴 Warning 시작 시 BossWardenAttackRange 가 활성화
+   │   │  ※ SortingLayer = Ground (캐릭터 아래 바닥에 표시)
    │   │
    │   ├─ ChargeLine                       LineRenderer 전용 오브젝트
    │   │      [LineRenderer]
    │   │          Color = #FF000066 (붉은 반투명)
-   │   │          Width = 0.8
+   │   │          Width = 0.08
    │   │          UseWorldSpace = true
    │   │
-   │   ├─ DiscSlam                         Slam 원형 예고 디스크
+   │   ├─ DiscSlam0                        Slam 원형 예고 디스크 (1페이즈 단일 / 2페이즈 첫 번째)
    │   │      [SpriteRenderer]
    │   │          Sprite = Unity 내장 Knob (Circle)
    │   │          Color = #FF000066 (붉은 반투명)
    │   │          Scale = (6.0, 6.0, 1)    ← 반경 3.0 units 시각화
-   │   │          SortingLayer = UI (바닥에 깔리도록)
+   │   │          SortingLayer = Ground
    │   │
-   │   ├─ DiscSweep                        Sweep 반원 예고 디스크
+   │   ├─ DiscSlam1                        Slam 원형 예고 디스크 (2페이즈 두 번째)
+   │   │      [SpriteRenderer]
+   │   │          Sprite = Unity 내장 Knob (Circle)
+   │   │          Color = #FF000066
+   │   │          Scale = (6.0, 6.0, 1)
+   │   │          SortingLayer = Ground
+   │   │
+   │   ├─ DiscSweep                        Sweep 원형 예고 디스크 (회전)
    │   │      [SpriteRenderer]
    │   │          Sprite = Unity 내장 Knob (Circle)
    │   │          Color = #FF000066
    │   │          Scale = (7.0, 7.0, 1)    ← 반경 3.5 units
-   │   │          SortingLayer = UI
-   │   │      [LineRenderer]               ← 회전 방향 화살표
+   │   │          SortingLayer = Ground
    │   │
-   │   └─ DiscGuardBreak                   GuardBreak 직사각형 예고
-   │          [SpriteRenderer]
-   │              Sprite = Unity 내장 Knob (Square)
-   │              Color = #FF000066
-   │              Scale = (1.5, 1.0, 1)
-   │              SortingLayer = UI
+   │   ├─ DiscGuardBreak                   GuardBreak 직사각형 예고
+   │   │      [SpriteRenderer]
+   │   │          Sprite = Unity 내장 Knob (Square)
+   │   │          Color = #FF000066
+   │   │          Scale = (1.5, 1.0, 1)
+   │   │          SortingLayer = Ground
+   │   │
+   │   ├─ RageChargeLine0                  RageCharge 예고선 1번 (가장 밝음)
+   │   │      [LineRenderer] Width = 0.08 / UseWorldSpace = true
+   │   │
+   │   ├─ RageChargeLine1                  RageCharge 예고선 2번
+   │   │      [LineRenderer] Width = 0.08 / UseWorldSpace = true
+   │   │
+   │   ├─ RageChargeLine2                  RageCharge 예고선 3번
+   │   │      [LineRenderer] Width = 0.08 / UseWorldSpace = true
+   │   │
+   │   ├─ SealRangeCircle                  봉인 집행 가능 범위 점선 원
+   │   │      [LineRenderer]
+   │   │          Color = #0088FF (파랑)
+   │   │          Width = 0.05 / Loop = true
+   │   │          SortingLayer = Effect
+   │   │
+   │   └─ CoreRangeCircle                  코어 해제 가능 범위 점선 원
+   │          [LineRenderer]
+   │              Color = #FFEE00 (노랑)
+   │              Width = 0.05 / Loop = true
+   │              SortingLayer = Effect
    │
-   └─ Patterns                             Layer: Default
-         ※ 패턴 스크립트만 부착 — SpriteRenderer / Collider 없음
+   ├─ ShockwaveDisc                        충격파 확장 디스크 (BossWardenShockwave 연출용)
+   │      Layer: Default
+   │      [SpriteRenderer]
+   │          Sprite = Unity 내장 Knob (Circle)
+   │          Color = #FF333366 (붉은 반투명)
+   │          SetActive = false           ← 기본 비활성. 충격파 발동 시 DOScale 확장
+   │          SortingLayer = Ground
+   │      ※ BossWardenShockwave._discRenderer 에 Inspector 연결
+   │
+   └─ Patterns                             Layer: Default — SpriteRenderer / Collider 없음
          ※ 히트박스는 각 패턴이 런타임에 Physics2D.OverlapXX 로 직접 처리
          ※ Awake 에서 BossWardenAI._patterns 리스트에 자동 등록
 
@@ -1369,31 +1526,234 @@ BossWardenShockwave.cs  (v1.0)
 | 예고 범위 피드백 전체 확인 | 5개 패턴 예고 범위 모두 정상 표시 확인 | ⬜ 미완료 |
 | 색상 상태 전환 전체 확인 | 모든 상태의 색상이 혼동 없이 구분되는지 확인 | ⬜ 미완료 |
 
-### ⚠️ Unity 씬 설정 체크리스트 (STEP 09 진입 전 필수)
+### 씬 조립 순서 절차 (STEP 09 진입 전)
+
+**1단계 — Project Settings 설정**
 
 ```
-[ ] Project Settings → Tags and Layers:
-      Enemy / Player / BossHitbox / Ground 레이어 등록
+Project Settings → Tags and Layers:
+  Layer 9  : Enemy
+  Layer 10 : Player
+  Layer 11 : BossHitbox
+  Layer 12 : Ground  (예고 디스크 SortingLayer 용)
 
-[ ] Physics2D Layer Collision Matrix:
-      Player ↔ BossHitbox: 충돌 ON
-      Enemy ↔ Player: 충돌 OFF
+Physics2D → Layer Collision Matrix:
+  Enemy    ↔ Player     : OFF  (보스 본체가 플레이어를 밀치지 않음)
+  Enemy    ↔ BossHitbox : OFF
+  Player   ↔ BossHitbox : ON   (보스 패턴이 플레이어를 감지)
+  Player   ↔ Enemy      : OFF
+```
 
-[ ] Boss_Warden 오브젝트 구성:
-      BossWardenCore 연결: _data, _armL, _armR, _coreObject, _coreSealGauge
-      BossWardenAI 연결: _data, _patterns, _armL, _armR
-      BossWardenFeedback 연결: _data, _bodyRenderer, _armLRenderer, _armRRenderer, _coreRenderer
-      BossWardenSealExecutor 연결: _data, _armL, _armR, _coreObject, _coreSealGauge
-      BossWardenShockwave 연결: _data, _discRenderer, _playerLayer
+**2단계 — BossWardenDataSO 에셋 생성**
 
-[ ] PlayerInputHandler:
-      IsSealHeld 프로퍼티 추가 (S키 홀드 상태)
+```
+Assets 우클릭 → Create → SEAL/Boss → BossWardenDataSO
+파일명: BossWardenDataSO_Default
 
-[ ] BossWardenDataSO 에셋 생성 후 수치 설정
+수치 설정 (13. DataSO 수치표 참조):
+  armSealGaugeMax = 200
+  coreSealGaugeMax = 500
+  groggyDuration = 5.0
+  dilPhaseDuration = 10.0
+  (나머지 기본값 유지)
+```
 
-[ ] 각 패턴 스크립트 _data, _ai, _attackRange, _playerLayer 연결
+**3단계 — Hierarchy 오브젝트 생성 순서**
 
-[ ] DEBUG ContextMenu 로 그로기/딜페이즈 강제 진입 테스트
+```
+① BossRoot (빈 GameObject)
+
+② BossRoot 하위에 Boss_Warden (빈 GameObject)
+   컴포넌트 부착 순서:
+   1. Rigidbody2D       GravityScale=0 / FreezeRotation Z=true / Continuous
+   2. CapsuleCollider2D Size=(0.8, 1.4) / Layer=Enemy
+   3. SpriteRenderer    Sprite=Knob / Color=#888888 / Scale=(0.8,1.4,1)
+   4. BossWardenAttackRange    ← 패턴 전에 먼저 부착 (패턴 스크립트가 참조)
+   5. BossWardenFeedback
+   6. BossWardenAI
+   7. BossWardenSealExecutor
+   8. BossWardenShockwave
+   9. BossWardenCore      ← 반드시 마지막 (RequireComponent 로 위 컴포넌트 필요)
+
+③ Boss_Warden 하위에 LeftArm
+   컴포넌트: SpriteRenderer(Knob, #AAAAAA, Scale=(0.7,0.25,1))
+             CapsuleCollider2D(isTrigger=true, Layer=Enemy)
+             SealGaugeComponent
+             BossWardenArmPart  (PartType=LeftArm, Layer=Enemy)
+   위치: (-0.6, 0, 0)
+
+④ Boss_Warden 하위에 RightArm (LeftArm 과 동일, PartType=RightArm)
+   위치: (0.6, 0, 0)
+
+⑤ Boss_Warden 하위에 Core
+   컴포넌트: SpriteRenderer(Knob, #FFEE00, Scale=(0.35,0.35,1))
+             CircleCollider2D(isTrigger=true, Layer=Enemy)
+             BossWardenCoreSealGauge
+   SetActive: false  ← 반드시
+   위치: (0, -0.5, 0)
+
+⑥ Boss_Warden 하위에 HurtBox
+   컴포넌트: CapsuleCollider2D(isTrigger=true, Size=(0.8,1.4), Layer=Enemy)
+   SpriteRenderer 없음
+
+⑦ Boss_Warden 하위에 AttackRangeVisuals (빈 GameObject, Layer=Default)
+   하위에 다음 자식 생성 (기본 SetActive=false):
+   - ChargeLine        [LineRenderer] Color=#FF000066, Width=0.08
+   - DiscSlam0         [SpriteRenderer] Knob/Circle, #FF000066
+   - DiscSlam1         [SpriteRenderer] Knob/Circle, #FF000066
+   - DiscSweep         [SpriteRenderer] Knob/Circle, #FF000066
+   - DiscGuardBreak    [SpriteRenderer] Knob/Square, #FF000066
+   - RageChargeLine0/1/2  [LineRenderer] 각각
+   - SealRangeCircle   [LineRenderer] Color=#0088FF
+   - CoreRangeCircle   [LineRenderer] Color=#FFEE00
+   - ShockwaveDisc     [SpriteRenderer] Knob/Circle (충격파 연출용)
+
+⑧ Boss_Warden 하위에 Patterns (빈 GameObject)
+   하위에 패턴 스크립트 부착:
+   - BossPattern_Charge
+   - BossPattern_Slam
+   - BossPattern_Sweep
+   - BossPattern_GuardBreak
+   - BossPattern_RageCharge
+```
+
+**4단계 — Inspector 연결**
+
+```
+BossWardenCore:
+  _data          → BossWardenDataSO 에셋
+  _armL          → LeftArm.BossWardenArmPart
+  _armR          → RightArm.BossWardenArmPart
+  _coreObject    → Core GameObject
+  _coreSealGauge → Core.BossWardenCoreSealGauge
+  _shockwave     → Boss_Warden.BossWardenShockwave
+
+BossWardenAI:
+  _data          → BossWardenDataSO 에셋
+  _patterns      → [Charge, Slam, Sweep, GuardBreak, RageCharge] 리스트
+  _armL          → LeftArm.BossWardenArmPart
+  _armR          → RightArm.BossWardenArmPart
+
+BossWardenFeedback:
+  _data          → BossWardenDataSO 에셋
+  _bodyRenderer  → Boss_Warden.SpriteRenderer
+  _armLRenderer  → LeftArm.SpriteRenderer
+  _armRRenderer  → RightArm.SpriteRenderer
+  _coreRenderer  → Core.SpriteRenderer
+  _armLPart      → LeftArm.BossWardenArmPart
+  _armRPart      → RightArm.BossWardenArmPart
+
+BossWardenSealExecutor:
+  _data          → BossWardenDataSO 에셋
+  _armL          → LeftArm.BossWardenArmPart
+  _armR          → RightArm.BossWardenArmPart
+  _coreObject    → Core GameObject
+  _coreSealGauge → Core.BossWardenCoreSealGauge
+  _attackRange   → Boss_Warden.BossWardenAttackRange
+
+BossWardenShockwave:
+  _data          → BossWardenDataSO 에셋
+  _playerLayer   → Player 레이어 마스크
+  _discRenderer  → AttackRangeVisuals/ShockwaveDisc.SpriteRenderer
+
+BossWardenAttackRange:
+  _data               → BossWardenDataSO 에셋
+  _chargeLineRenderer → AttackRangeVisuals/ChargeLine.LineRenderer
+  _slamDisc0          → AttackRangeVisuals/DiscSlam0.SpriteRenderer
+  _slamDisc1          → AttackRangeVisuals/DiscSlam1.SpriteRenderer
+  _sweepDisc          → AttackRangeVisuals/DiscSweep.SpriteRenderer
+  _guardBreakDisc     → AttackRangeVisuals/DiscGuardBreak.SpriteRenderer
+  _rageChargeLines    → [RageChargeLine0, 1, 2] LineRenderer 배열
+  _sealRangeCircle    → AttackRangeVisuals/SealRangeCircle.LineRenderer
+  _coreRangeCircle    → AttackRangeVisuals/CoreRangeCircle.LineRenderer
+
+각 패턴 스크립트:
+  _data          → BossWardenDataSO 에셋
+  _ai            → Boss_Warden.BossWardenAI
+  _attackRange   → Boss_Warden.BossWardenAttackRange
+  _playerLayer   → Player 레이어 마스크
+  _linkedArmPart → 해당 팔 BossWardenArmPart (Charge/GuardBreak=RightArm, Slam/Sweep=LeftArm)
+  팔 DOMove 패턴 (Slam/GuardBreak):
+    _armLTransform / _armRTransform → LeftArm / RightArm Transform
+
+BossWardenArmPart (LeftArm, RightArm 각각):
+  _data              → BossWardenDataSO 에셋
+  _playerAttackLayer → BossHitbox 레이어 마스크
+  ※ 플레이어의 무기 히트박스 Collider2D 가 BossHitbox 레이어에 있어야 함
+  ※ PlayerAttackHitboxManager 가 OverlapCollider 로 Enemy 레이어 감지 후
+     OnHit(col, sealAmount) 발행 → BossWardenArmPart 가 col 대조로 수신
+  ※ _playerAttackLayer 는 현재 BossWardenArmPart 에서 직접 사용하지 않음
+     (PlayerAttackHitboxManager.OnHit 구독 방식으로 피격 감지하므로)
+     — 레이어 마스크 필드는 향후 직접 감지 방식 전환 시를 위해 유지
+```
+
+**5단계 — 플레이어 씬 설정 확인**
+
+```
+Player 오브젝트:
+  Layer = Player
+  PlayerMoveController 부착 확인
+  PlayerAttackHitboxManager 부착 확인
+    → _enemyLayer 에 Enemy 레이어 선택
+    → 히트박스 Collider2D 들 Layer = BossHitbox 설정
+  PlayerInputHandler (Systems/InputSystem):
+    v1.2 확인 — IsSealHeld 프로퍼티 존재 여부 확인
+```
+
+**6단계 — DEBUG ContextMenu 로 구간별 테스트**
+
+```
+테스트 순서:
+
+① 패턴 단독 테스트
+   Boss_Warden 선택 → BossWardenAI 확인
+   Play 후 Warden 이 플레이어 추적 + 패턴 발동하는지 확인
+   예고 범위 표시 확인
+
+② 봉인도 누적 테스트
+   플레이어 공격으로 팔 봉인도 누적되는지 확인
+   팔 색상 단계 변화 확인 (회색→노랑→주황→빨강→파랑 Pulse)
+
+③ 봉인 집행 테스트
+   봉인도 100% 후 점선 원 표시 확인
+   S키 홀드로 봉인 집행 완료 확인
+   봉인 완료 시 해당 패턴 비활성 확인
+
+④ 그로기 강제 테스트 (DEBUG ContextMenu)
+   Boss_Warden 선택 → BossWardenCore → 우클릭
+   "DEBUG: 그로기 강제 진입" 클릭
+   → Warden 정지 + 노란 Pulse + 코어 활성 확인
+
+⑤ 딜 페이즈 강제 테스트 (DEBUG ContextMenu)
+   "DEBUG: 딜 페이즈 강제 진입" 클릭
+   → 코어 흰 Pulse + 밝은 주황 연출 확인
+   → 코어 공격으로 봉인도 증가 확인
+
+⑥ 전체 루프 완주 테스트
+   양팔 봉인 → 그로기 → S키 코어 해제 → 딜 페이즈 → 1페이즈 종료
+   → 충격파 확인 → 2페이즈 전환 → 동일 루프 반복
+   → 코어 봉인도 100% → 최종 봉인 S키 → Warden 소멸 확인
+```
+
+### ⚠️ 알려진 미구현 / 임시 처리 항목
+
+```
+[ ] 플레이어 피격 처리 미구현
+    현재: 보스 패턴 OverlapXX 감지 시 Debug.Log 만 출력
+    임시: 테스트 중 플레이어가 패턴에 맞아도 아무 반응 없음 (의도적 생략)
+
+[ ] GuardBreak IsGuarding 정면 봉인도 무효 미연동
+    현재: IsGuarding = true 여도 봉인도 정상 누적
+    임시: 테스트에서 측면/후방 공략 전략만 확인
+
+[ ] PlayerAttackHitboxManager.CurrentSealAmount 미정의
+    현재: BossWardenArmPart 폴백값 10f 사용
+    임시: 강공격/약공격 구분 없이 10f 고정 누적
+    수정: PlayerAttackHitboxManager 에 CurrentSealAmount 프로퍼티 추가 필요
+
+[ ] BattleManager 미구현
+    현재: OnDead 발행 후 연결 없음
+    임시: Debug.Log("[BossWardenCore] 보스 처치!") 로 확인
 ```
 
 ---

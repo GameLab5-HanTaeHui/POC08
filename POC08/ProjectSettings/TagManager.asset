@@ -44,5 +44,8 @@ TagManager:
   - name: Enemy
     uniqueID: 1771152523
     locked: 0
+  - name: Ground
+    uniqueID: 235576577
+    locked: 0
   m_RenderingLayers:
   - Default
