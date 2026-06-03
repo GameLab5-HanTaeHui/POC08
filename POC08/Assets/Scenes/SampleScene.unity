@@ -320,7 +320,7 @@ MonoBehaviour:
     CustomLookAtTarget: 0
   Lens:
     FieldOfView: 34
-    OrthographicSize: 10
+    OrthographicSize: 12
     NearClipPlane: 0.3
     FarClipPlane: 1000
     Dutch: 0
@@ -460,7 +460,7 @@ Camera:
   far clip plane: 1000
   field of view: 34
   orthographic: 1
-  orthographic size: 10
+  orthographic size: 12
   m_Depth: -1
   m_CullingMask:
     serializedVersion: 2
@@ -925,14 +925,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.ObjectDirectionController
   _sourceType: 0
-  _spriteRenderers:
-  - {fileID: 1782063204}
+  _spriteRenderers: []
   _invertFlipX: 0
   _swingController: {fileID: 697646373}
-  _cancelSwingOnDirectionChange: 0
+  _cancelSwingOnDirectionChange: 1
   _syncTargets:
+  - {fileID: 1791110184}
   - {fileID: 1782063203}
-  _syncInvertList: 00
+  _syncInvertList: 
 --- !u!1 &721661195
 GameObject:
   m_ObjectHideFlags: 0
