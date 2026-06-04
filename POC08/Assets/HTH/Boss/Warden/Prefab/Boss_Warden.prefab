@@ -237,7 +237,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4394930287480848199}
-  _isPhase2Only: 1
+  _isPhase2Only: 0
   _attackRange: {fileID: 5298859741369411445}
   _rigid2D: {fileID: 6556072117920470920}
   _ai: {fileID: 1510995343637259522}
@@ -247,6 +247,9 @@ MonoBehaviour:
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
+  _wallLayer:
+    serializedVersion: 2
+    m_Bits: 1073741824
   _windupPullAmount: 0.5
   _thrustAmount: 0.4
 --- !u!114 &8732218318763563352
@@ -266,7 +269,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 0
+  _isPhase2Only: 1
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}

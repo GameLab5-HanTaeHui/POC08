@@ -1,25 +1,26 @@
 ﻿// ============================================================
-// BossPattern_Charge.cs  v2.0
-// Boss_Warden 돌진 패턴 — 팔 모션 + 연출 추가
+// BossPattern_Charge.cs  v2.3
+// Boss_Warden 돌진 패턴 — 팔 방향 회전 + 벽 레이어 정확 감지
 //
-// [v2.0 변경]
-//   기존(v1.3): 팔 연출 없음. 예고선만 있고 본체가 그냥 돌진.
-//   추가:
-//     Warning:  오른팔 백스윙 DOLocalMove(반대방향 × pullAmount, OutBack)
-//               본체 DOScale(1.1f) 웅크리기 (힘 모으기)
-//               본체 + 오른팔 주황 Pulse DOColor
+// [v2.3 수정]
+//   🔴 벽 충돌 오인 감지 문제
+//       기존: linearVelocity < 0.5 만 체크 → Enemy / Ground / EnemyAttackHitBox 등
+//             다른 레이어 충돌 시에도 속도가 줄어 벽 충돌로 오인 → 조기 종료
+//       수정: ContactFilter2D + _rigid2D.OverlapCollider 로 Wall 레이어만 확인
+//             Wall 이 아닌 레이어 충돌 → 속도 재인가 후 계속 돌진
+//             Wall 레이어 충돌 확인 시에만 종료
 //
-//     Active:   예고선 제거
-//               오른팔 앞으로 뻗기 DOLocalMove(방향 × thrustAmount, OutExpo)
-//               linearVelocity 돌진 (기존 로직 유지)
-//               안전장치 3종 유지 (타임아웃 / 속도감지 / 거리도달)
+//   🔴 팔이 플레이어 방향을 바라보지 않음
+//       기존: 팔 위치(DOLocalMove)만 변경, 회전 없음
+//       수정: DOLocalRotate 추가 → Vector.Down 이 돌진 방향을 향함
+//             lookAngle = Atan2(chargeDir) × Rad2Deg + 90f (Slam 과 동일 원칙)
+//             Recovery / Interrupt 에서 DOLocalRotate(Vector3.zero) 로 회전 복귀
 //
-//     Recovery: linearVelocity = 0 명시
-//               오른팔 원위치 복귀 DOLocalMove(OutBack)
-//               본체 DOScale(1.0f) 크기 복귀
-//               DOShakePosition 충격 연출
-//               오른팔 색상 복귀
-//               [2페이즈] Recovery 스킵
+//   [Inspector 추가 필드]
+//     _wallLayer : Wall 레이어만 선택 (벽 충돌 정확 감지용)
+//
+// [v2.2 유지]
+//   DOScale 제거 / _bossTransform 캐싱 / InverseTransformDirection 백스윙
 //
 // [v1.3 유지]
 //   _rigid2D.position 기반 거리 계산 (transform.position 버그 수정 완료 상태 유지)
@@ -95,6 +96,15 @@ namespace SEAL
         /// </summary>
         [Tooltip("플레이어 HurtBox 레이어. PlayerAttackHitBox 레이어 선택.")]
         [SerializeField] private LayerMask _playerLayer;
+
+        /// <summary>
+        /// 벽 레이어 마스크.
+        /// Wall 레이어만 선택.
+        /// 속도 0 감지 시 이 레이어의 충돌인지 확인하여
+        /// Enemy / Ground 등 다른 레이어 충돌은 벽 충돌로 오인하지 않음.
+        /// </summary>
+        [Tooltip("벽 레이어. Wall 레이어만 선택.")]
+        [SerializeField] private LayerMask _wallLayer;
 
         [Header("── 연출 수치 ──────────────────────")]
 
@@ -210,7 +220,6 @@ namespace SEAL
 
             // ③ 오른팔 백스윙: 돌진 반대 방향으로 당기기
             // ✅ v2.1 수정: InverseTransformDirection 으로 월드 방향 → 로컬 변환
-            // flipX 상태에 관계없이 항상 정확한 로컬 오프셋 계산
             if (_armRTransform != null)
             {
                 Vector3 worldBackDir = new Vector3(-_chargeDirection.x, -_chargeDirection.y, 0f);
@@ -222,13 +231,17 @@ namespace SEAL
                     .DOLocalMove(_armOriginLocalPos + localBackDir * _windupPullAmount,
                                  _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
+
+                // ✅ v2.3 추가: 팔이 플레이어(돌진) 방향을 바라보도록 Z 회전
+                // Vector.Down 이 돌진 방향을 향함 → + 90f 오프셋 (Slam 과 동일 원칙)
+                float lookAngle = Mathf.Atan2(_chargeDirection.y, _chargeDirection.x)
+                                  * Mathf.Rad2Deg + 90f;
+                _armRTransform
+                    .DOLocalRotate(new Vector3(0f, 0f, lookAngle), _warningDuration * 0.4f)
+                    .SetEase(Ease.OutBack);
             }
 
-            // ④ 본체 웅크리기 — ✅ v2.1 수정: _bossTransform.DOScale (Boss_Warden 본체 대상)
-            _bossTransform?.DOScale(1.1f, _warningDuration * 0.4f)
-                .SetEase(Ease.OutBack);
-
-            // ⑤ 오른팔 + 본체 주황 Pulse
+            // ⑤ 오른팔 주황 Pulse
             if (_armRRenderer != null && _data != null)
             {
                 _armColorTween?.Kill();
@@ -316,12 +329,37 @@ namespace SEAL
                     break;
                 }
 
-                // 안전장치 ② 속도 0 감지 (벽 충돌)
+                // 안전장치 ② 벽 충돌 감지
+                // ✅ v2.3 수정: linearVelocity 속도0만 체크하면
+                //   Enemy / Ground / EnemyAttackHitBox 등 다른 레이어 충돌 시에도
+                //   오인 감지됨.
+                // 수정: CastContact로 Wall 레이어만 직접 확인
                 if (elapsed > 0.1f && currentSpeed < 0.5f)
                 {
-                    _rigid2D.linearVelocity = Vector2.zero;
-                    Debug.LogWarning($"[BossPattern_Charge] 종료 — 벽 충돌 추정 ({distanceTraveled:F2})");
-                    break;
+                    // Wall 레이어에 실제로 접촉 중인지 확인
+                    bool isWallContact = false;
+                    if (_rigid2D != null && _wallLayer != 0)
+                    {
+                        ContactFilter2D filter = new ContactFilter2D();
+                        filter.SetLayerMask(_wallLayer);
+                        filter.useTriggers = false;
+                        var contacts = new Collider2D[4];
+                        int count = _rigid2D.Overlap(filter, contacts);
+                        isWallContact = count > 0;
+                    }
+
+                    if (isWallContact)
+                    {
+                        _rigid2D.linearVelocity = Vector2.zero;
+                        Debug.LogWarning($"[BossPattern_Charge] 종료 — Wall 충돌 ({distanceTraveled:F2})");
+                        break;
+                    }
+                    // Wall 이 아닌 레이어 충돌(Enemy 등)이면 속도 재인가
+                    else if (currentSpeed < 0.5f)
+                    {
+                        // 속도가 줄었지만 벽이 아님 → 재가속
+                        _rigid2D.linearVelocity = _chargeDirection * speed;
+                    }
                 }
 
                 // 안전장치 ③ 타임아웃
@@ -380,19 +418,20 @@ namespace SEAL
             if (_rigid2D != null)
                 _rigid2D.linearVelocity = Vector2.zero;
 
-            // ② 오른팔 원위치 복귀
+            // ② 오른팔 원위치 복귀 (위치 + 회전 모두 초기화)
             if (_armRTransform != null)
             {
                 _armRTransform
                     .DOLocalMove(_armOriginLocalPos, _recoveryDuration * 0.35f)
                     .SetEase(Ease.OutBack);
+
+                // ✅ v2.3 추가: Warning 에서 DOLocalRotate 적용했으므로 회전도 복귀
+                _armRTransform
+                    .DOLocalRotate(Vector3.zero, _recoveryDuration * 0.35f)
+                    .SetEase(Ease.OutBack);
             }
 
-            // ③ 본체 크기 복귀 — ✅ v2.1 수정: _bossTransform.DOScale
-            _bossTransform?.DOScale(1.0f, _recoveryDuration * 0.3f)
-                .SetEase(Ease.OutBack);
-
-            // ④ 충격 흔들림 — ✅ v2.1 수정: _bossTransform.DOShakePosition
+            // ③ 충격 흔들림
             _bossTransform?.DOShakePosition(
                 duration: 0.3f,
                 strength: 0.25f,
@@ -428,16 +467,16 @@ namespace SEAL
             _armColorTween?.Kill();
             _attackRange?.HideChargeLine();
 
-            // 팔 즉시 원위치
+            // 팔 즉시 원위치 (위치 + 회전)
             if (_armRTransform != null)
+            {
                 _armRTransform.DOLocalMove(_armOriginLocalPos, 0.1f).SetEase(Ease.OutQuart);
+                _armRTransform.DOLocalRotate(Vector3.zero, 0.1f).SetEase(Ease.OutQuart);
+            }
 
             // 팔 색상 복귀
             if (_armRRenderer != null)
                 _armRRenderer.DOColor(_armOriginColor, 0.1f).SetUpdate(true);
-
-            // 본체 크기 복귀 — ✅ v2.1 수정: _bossTransform.DOScale
-            _bossTransform?.DOScale(1.0f, 0.1f).SetEase(Ease.OutQuart);
 
             base.Interrupt();
         }
