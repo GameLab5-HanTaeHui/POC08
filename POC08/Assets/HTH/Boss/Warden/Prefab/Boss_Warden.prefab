@@ -301,7 +301,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 1
+  _isPhase2Only: 0
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
@@ -335,7 +335,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4394930287480848199}
-  _isPhase2Only: 1
+  _isPhase2Only: 0
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}

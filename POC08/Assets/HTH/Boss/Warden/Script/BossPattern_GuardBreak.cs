@@ -1,9 +1,17 @@
 ﻿// ============================================================
-// BossPattern_GuardBreak.cs  v3.1
+// BossPattern_GuardBreak.cs  v3.2
 // Boss_Warden 가드 → 강타 패턴
 //
-// [v3.1 수정]
-//   🔴 컴파일 오류 수정: facingDir / thrustLocalOff 미선언 문제
+// [v3.2 수정]
+//   🔴 팔 방향 회전 추가 — 가드/백스윙/찌르기 전 구간에서 팔이 플레이어를 향함
+//       Vector.Down 이 플레이어 방향을 향함 → + 90f 오프셋
+//       Slam / Charge / Sweep 과 동일 원칙 적용
+//
+//       가드 자세  : 양팔 DOLocalRotate(lookAngle) — 플레이어 방향으로 겨눔
+//       백스윙 구간: 오른팔 lookAngle 유지 (플레이어 방향 유지)
+//       왼팔 복귀  : DOLocalRotate(Vector3.zero) — 원위치 회전 초기화
+//       Recovery   : 양팔 DOLocalRotate(Vector3.zero) — 회전 복귀
+//       Interrupt  : 양팔 즉시 DOLocalRotate(Vector3.zero) — 회전 초기화
 //       원인: OnWarning() 지역변수를 OnActive() 에서 참조 → 코루틴 간 공유 불가
 //       수정: _facingDir / _thrustLocalOff 멤버 필드로 선언
 //             OnWarning() 에서 할당 → OnActive() 에서 재사용
@@ -263,15 +271,29 @@ namespace SEAL
             Vector3 backswingOff = -localFacingDir.normalized * _windupPullAmount;
             _thrustLocalOff = localFacingDir.normalized * _thrustDistance;
 
+            // ✅ v3.2 추가: 가드/백스윙 시 팔 방향 회전
+            // Vector.Down 이 플레이어 방향을 향함 → + 90f (Slam/Charge/Sweep 동일 원칙)
+            float lookAngle = Mathf.Atan2(_facingDir.y, _facingDir.x) * Mathf.Rad2Deg + 90f;
+
             if (_armRTransform != null)
+            {
                 _armRTransform
                     .DOLocalMove(_armROriginLocalPos + guardOffset, guardDuration * 0.4f)
                     .SetEase(Ease.OutBack);
+                _armRTransform
+                    .DOLocalRotate(new Vector3(0f, 0f, lookAngle), guardDuration * 0.4f)
+                    .SetEase(Ease.OutBack);
+            }
 
             if (_armLTransform != null)
+            {
                 _armLTransform
                     .DOLocalMove(_armLOriginLocalPos + guardOffset, guardDuration * 0.4f)
                     .SetEase(Ease.OutBack);
+                _armLTransform
+                    .DOLocalRotate(new Vector3(0f, 0f, lookAngle), guardDuration * 0.4f)
+                    .SetEase(Ease.OutBack);
+            }
 
             // 양팔 + 본체 흰 발광 (단단한 가드)
             if (_bodyRenderer != null)
@@ -309,17 +331,25 @@ namespace SEAL
             // ──────────────────────────────────────────
             IsGuarding = false;
 
-            // 오른팔만 뒤로 당김 (왼팔은 가드 유지) — backswingOff 사용
+            // 오른팔만 뒤로 당김 (왼팔은 가드 유지)
+            // ✅ v3.2: 백스윙 시 팔이 반대 방향을 향하도록 회전 유지 (lookAngle 그대로)
             if (_armRTransform != null)
+            {
                 _armRTransform
                     .DOLocalMove(_armROriginLocalPos + backswingOff, 0.15f)
                     .SetEase(Ease.OutBack);
+            }
 
-            // 왼팔은 원위치 (가드 해제)
+            // 왼팔은 원위치 복귀 + 회전 초기화
             if (_armLTransform != null)
+            {
                 _armLTransform
                     .DOLocalMove(_armLOriginLocalPos, 0.15f)
                     .SetEase(Ease.OutQuart);
+                _armLTransform
+                    .DOLocalRotate(Vector3.zero, 0.15f)
+                    .SetEase(Ease.OutQuart);
+            }
 
             // 본체 + 오른팔 주황 전환
             if (_bodyRenderer != null)
@@ -424,16 +454,27 @@ namespace SEAL
         {
             if (_isInterrupted) yield break;
 
-            // 팔 원위치 복귀
+            // 팔 원위치 복귀 (위치 + 회전)
             if (_armRTransform != null)
+            {
                 _armRTransform
                     .DOLocalMove(_armROriginLocalPos, _recoveryDuration * 0.4f)
                     .SetEase(Ease.OutBack);
+                // ✅ v3.2 추가: 찌르기/가드 회전 복귀
+                _armRTransform
+                    .DOLocalRotate(Vector3.zero, _recoveryDuration * 0.4f)
+                    .SetEase(Ease.OutBack);
+            }
 
             if (_armLTransform != null)
+            {
                 _armLTransform
                     .DOLocalMove(_armLOriginLocalPos, _recoveryDuration * 0.4f)
                     .SetEase(Ease.OutBack);
+                _armLTransform
+                    .DOLocalRotate(Vector3.zero, _recoveryDuration * 0.4f)
+                    .SetEase(Ease.OutBack);
+            }
 
             // 오른팔 색상 복귀 (팔만 — 본체는 BossWardenFeedback 이 담당)
             if (_armRRenderer != null)
@@ -479,9 +520,15 @@ namespace SEAL
             _attackRange?.HideGuardBreakDisc();
 
             if (_armRTransform != null)
+            {
                 _armRTransform.DOLocalMove(_armROriginLocalPos, 0.1f).SetEase(Ease.OutQuart);
+                _armRTransform.DOLocalRotate(Vector3.zero, 0.1f).SetEase(Ease.OutQuart);
+            }
             if (_armLTransform != null)
+            {
                 _armLTransform.DOLocalMove(_armLOriginLocalPos, 0.1f).SetEase(Ease.OutQuart);
+                _armLTransform.DOLocalRotate(Vector3.zero, 0.1f).SetEase(Ease.OutQuart);
+            }
 
             // 색상 즉시 복귀
             if (_armRRenderer != null)

@@ -1,9 +1,20 @@
 ﻿// ============================================================
-// BossPattern_Sweep.cs  v3.0
+// BossPattern_Sweep.cs  v3.2
 // Boss_Warden 회전 스윕 패턴 — 원심력 팔 날리기 + 수거
 //
-// [v3.0 핵심 변경]
-//   기존: DORotate 대상이 Patterns 자신(오류). 팔 방향 X축 고정.
+// [v3.2 수정]
+//   🔴 팔 벌리기 방향 오프셋 InverseTransformDirection 적용
+//       기존: 월드 방향 벡터를 로컬 오프셋에 그대로 적용
+//             → flipX 상태에서 방향 반전 오류
+//       수정: _bossTransform.InverseTransformDirection → 로컬 방향 정확 변환
+//
+//   🔴 팔 벌릴 때 방향 회전 추가 (Warning)
+//       Vector.Down 이 팔 벌린 방향을 향함 → + 90f 오프셋
+//       Slam / Charge / GuardBreak 와 동일 원칙 적용
+//
+//   🔴 팔 날아갈 때 회전 오프셋 수정 (Active)
+//       기존: Atan2 - 90f → Vector.Up 기준 (잘못된 방향)
+//       수정: Atan2 + 90f → Vector.Down 기준 (손바닥 아래 이미지)
 //   변경:
 //     Warning:  FacingDir 기준 좌우 수직(perpendicular) 방향으로 양팔 벌리기
 //               예고 디스크 보스 중심
@@ -155,6 +166,12 @@ namespace SEAL
         private Rigidbody2D _rigid2D;
 
         /// <summary> 2페이즈 여부. </summary>
+        /// <summary> 왼팔 원래 로컬 스케일. SetParent 분리/재부착 시 복구용. </summary>
+        private Vector3 _armLOriginLocalScale;
+
+        /// <summary> 오른팔 원래 로컬 스케일. SetParent 분리/재부착 시 복구용. </summary>
+        private Vector3 _armROriginLocalScale;
+
         private bool _isPhase2;
 
         /// <summary>
@@ -182,8 +199,16 @@ namespace SEAL
             _rigid2D = GetComponentInParent<Rigidbody2D>();
             _bossTransform = _rigid2D != null ? _rigid2D.transform : transform.parent;
 
-            if (_armLTransform != null) _armLOriginLocalPos = _armLTransform.localPosition;
-            if (_armRTransform != null) _armROriginLocalPos = _armRTransform.localPosition;
+            if (_armLTransform != null)
+            {
+                _armLOriginLocalPos = _armLTransform.localPosition;
+                _armLOriginLocalScale = _armLTransform.localScale; // ✅ Scale 캐싱
+            }
+            if (_armRTransform != null)
+            {
+                _armROriginLocalPos = _armRTransform.localPosition;
+                _armROriginLocalScale = _armRTransform.localScale; // ✅ Scale 캐싱
+            }
             if (_armLRenderer != null) _armLOriginColor = _armLRenderer.color;
             if (_armRRenderer != null) _armROriginColor = _armRRenderer.color;
 
@@ -223,22 +248,45 @@ namespace SEAL
             // ② FacingDir 기준 좌우 수직 방향 계산
             //    perpL = 왼쪽 수직 / perpR = 오른쪽 수직
             Vector2 forward = _ai != null ? _ai.FacingDir : Vector2.right;
-            Vector2 perpL = new Vector2(-forward.y, forward.x); // 왼쪽 수직
-            Vector2 perpR = new Vector2(forward.y, -forward.x); // 오른쪽 수직
+            Vector2 perpL = new Vector2(-forward.y, forward.x);
+            Vector2 perpR = new Vector2(forward.y, -forward.x);
 
-            // 팔 벌리기: perpendicular 방향으로 로컬 오프셋 이동
+            // ✅ v3.2 수정: InverseTransformDirection 으로 월드 방향 → 로컬 변환
+            // 기존: 월드 방향 벡터를 로컬 오프셋에 그대로 적용
+            //       → flipX 상태에서 방향 반전 오류
+            // 수정: _bossTransform.InverseTransformDirection 으로 정확한 로컬 방향 변환
+            Vector3 localPerpL = _bossTransform != null
+                ? _bossTransform.InverseTransformDirection(new Vector3(perpL.x, perpL.y, 0f))
+                : new Vector3(perpL.x, perpL.y, 0f);
+            Vector3 localPerpR = _bossTransform != null
+                ? _bossTransform.InverseTransformDirection(new Vector3(perpR.x, perpR.y, 0f))
+                : new Vector3(perpR.x, perpR.y, 0f);
+
+            // 팔 벌리기: 로컬 수직 방향으로 이동
             if (_armLTransform != null)
             {
-                Vector3 spreadOffsetL = new Vector3(perpL.x, perpL.y, 0f) * _armSpreadAmount;
                 _armLTransform
-                    .DOLocalMove(_armLOriginLocalPos + spreadOffsetL, _warningDuration * 0.5f)
+                    .DOLocalMove(_armLOriginLocalPos + localPerpL * _armSpreadAmount,
+                                 _warningDuration * 0.5f)
+                    .SetEase(Ease.OutBack);
+
+                // ✅ v3.2 추가: Vector.Down 이 팔 벌린 방향을 향함 + 90f
+                float armLAngleW = Mathf.Atan2(perpL.y, perpL.x) * Mathf.Rad2Deg + 90f;
+                _armLTransform
+                    .DOLocalRotate(new Vector3(0f, 0f, armLAngleW), _warningDuration * 0.5f)
                     .SetEase(Ease.OutBack);
             }
             if (_armRTransform != null)
             {
-                Vector3 spreadOffsetR = new Vector3(perpR.x, perpR.y, 0f) * _armSpreadAmount;
                 _armRTransform
-                    .DOLocalMove(_armROriginLocalPos + spreadOffsetR, _warningDuration * 0.5f)
+                    .DOLocalMove(_armROriginLocalPos + localPerpR * _armSpreadAmount,
+                                 _warningDuration * 0.5f)
+                    .SetEase(Ease.OutBack);
+
+                // ✅ v3.2 추가: Vector.Down 이 팔 벌린 방향을 향함 + 90f
+                float armRAngleW = Mathf.Atan2(perpR.y, perpR.x) * Mathf.Rad2Deg + 90f;
+                _armRTransform
+                    .DOLocalRotate(new Vector3(0f, 0f, armRAngleW), _warningDuration * 0.5f)
                     .SetEase(Ease.OutBack);
             }
 
@@ -376,20 +424,21 @@ namespace SEAL
             Vector3 armLFlyTarget = armLCurrentWorldPos + new Vector3(flyDirL.x, flyDirL.y, 0f) * actualFlyDist;
             Vector3 armRFlyTarget = armRCurrentWorldPos + new Vector3(flyDirR.x, flyDirR.y, 0f) * actualFlyDist;
 
-            // ✅ v3.1 추가: 팔이 날아가는 방향으로 Z축 회전
-            float armLAngle = Mathf.Atan2(flyDirL.y, flyDirL.x) * Mathf.Rad2Deg;
-            float armRAngle = Mathf.Atan2(flyDirR.y, flyDirR.x) * Mathf.Rad2Deg;
+            // ✅ v3.2 수정: + 90f 오프셋 (Vector.Down 이 날아가는 방향)
+            // Slam / Charge 와 동일 원칙 — 손바닥 이미지가 아래를 향하는 구조
+            float armLAngle = Mathf.Atan2(flyDirL.y, flyDirL.x) * Mathf.Rad2Deg + 90f;
+            float armRAngle = Mathf.Atan2(flyDirR.y, flyDirR.x) * Mathf.Rad2Deg + 90f;
 
             if (_armLTransform != null)
             {
                 _armLTransform.DOMove(armLFlyTarget, _flyDuration).SetEase(Ease.OutCubic);
-                _armLTransform.DORotate(new Vector3(0f, 0f, armLAngle - 90f), _flyDuration * 0.5f)
+                _armLTransform.DORotate(new Vector3(0f, 0f, armLAngle), _flyDuration * 0.5f)
                     .SetEase(Ease.OutQuart);
             }
             if (_armRTransform != null)
             {
                 _armRTransform.DOMove(armRFlyTarget, _flyDuration).SetEase(Ease.OutCubic);
-                _armRTransform.DORotate(new Vector3(0f, 0f, armRAngle - 90f), _flyDuration * 0.5f)
+                _armRTransform.DORotate(new Vector3(0f, 0f, armRAngle), _flyDuration * 0.5f)
                     .SetEase(Ease.OutQuart);
             }
 
@@ -541,8 +590,8 @@ namespace SEAL
                 _armLTransform.DOKill();
                 _armLTransform.SetParent(_bossTransform, worldPositionStays: true);
                 _armLTransform.localPosition = _armLOriginLocalPos;
-                // ✅ v3.1 추가: 재부착 시 로컬 회전 초기화
                 _armLTransform.localRotation = Quaternion.identity;
+                _armLTransform.localScale = _armLOriginLocalScale; // ✅ Scale 복구
                 if (_armLRenderer != null) _armLRenderer.color = _armLOriginColor;
 
                 var armLPart = _armLTransform.GetComponent<BossWardenArmPart>();
@@ -554,8 +603,8 @@ namespace SEAL
                 _armRTransform.DOKill();
                 _armRTransform.SetParent(_bossTransform, worldPositionStays: true);
                 _armRTransform.localPosition = _armROriginLocalPos;
-                // ✅ v3.1 추가: 재부착 시 로컬 회전 초기화
                 _armRTransform.localRotation = Quaternion.identity;
+                _armRTransform.localScale = _armROriginLocalScale; // ✅ Scale 복구
                 if (_armRRenderer != null) _armRRenderer.color = _armROriginColor;
 
                 var armRPart = _armRTransform.GetComponent<BossWardenArmPart>();
