@@ -387,22 +387,25 @@ namespace SEAL
         ///   colorTransitionDuration 안에 목표색에 도달
         ///   다시 때리면 더 밝은 목표색으로 부드럽게 이어짐
         /// </summary>
-        private void ApplyArmGaugeColor(SpriteRenderer renderer, BossWardenArmPart armPart,
-                                         float uiPercent, ref Tween tween)
+        private void ApplyArmGaugeColor(SpriteRenderer renderer, BossWardenArmPart armPart, float uiPercent, ref Tween tween)
         {
             if (renderer == null || _data == null) return;
 
             float t = Mathf.Clamp01(uiPercent / 100f);
             Color targetColor = Color.Lerp(_data.colorArm0, _data.colorArm100, t);
 
-            // 이전 DOColor Kill → 새 목표색으로 부드럽게 보정
-            tween?.Kill();
-            tween = renderer
-                .DOColor(targetColor, _data.colorTransitionDuration)
-                .SetUpdate(true);
-
-            // 히트 점멸 복귀 색상 동기화
+            // 히트 점멸 복귀 색상 동기화 — 먼저 갱신
             armPart?.UpdateBaseColor(targetColor);
+
+            // 히트 점멸(hitFlashDuration) 완료 후 색상 보정 시작
+            // → PlayHitFlash의 DOColor와 충돌 방지
+            tween?.Kill();
+            tween = DOVirtual.DelayedCall(_data.hitFlashDuration, () =>
+            {
+                if (renderer == null) return;
+                renderer.DOColor(targetColor, _data.colorTransitionDuration)
+                        .SetUpdate(true);
+            }).SetUpdate(true);
         }
 
         /// <summary>
