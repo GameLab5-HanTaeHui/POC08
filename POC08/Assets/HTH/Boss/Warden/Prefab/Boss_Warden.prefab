@@ -241,7 +241,7 @@ MonoBehaviour:
   _attackRange: {fileID: 5298859741369411445}
   _rigid2D: {fileID: 6556072117920470920}
   _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armRTransform: {fileID: 3847391736941397255}
   _armRRenderer: {fileID: 667973993591523152}
   _playerLayer:
@@ -272,7 +272,7 @@ MonoBehaviour:
   _isPhase2Only: 0
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armLTransform: {fileID: 8941543154467429545}
   _armLRenderer: {fileID: 3641258697330880272}
   _playerLayer:
@@ -304,7 +304,7 @@ MonoBehaviour:
   _isPhase2Only: 1
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armLTransform: {fileID: 8941543154467429545}
   _armRTransform: {fileID: 3847391736941397255}
   _armLRenderer: {fileID: 3641258697330880272}
@@ -338,7 +338,7 @@ MonoBehaviour:
   _isPhase2Only: 1
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armRTransform: {fileID: 3847391736941397255}
   _armLTransform: {fileID: 8941543154467429545}
   _armRRenderer: {fileID: 667973993591523152}
@@ -372,7 +372,7 @@ MonoBehaviour:
   _attackRange: {fileID: 5298859741369411445}
   _rigid2D: {fileID: 6556072117920470920}
   _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _bodyRenderer: {fileID: 3534132678184260611}
   _armLTransform: {fileID: 8941543154467429545}
   _armRTransform: {fileID: 3847391736941397255}
@@ -712,7 +712,7 @@ MonoBehaviour:
   _partType: 0
   _spriteRenderer: {fileID: 3641258697330880272}
   _ownCollider: {fileID: 5469557703581780597}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
 --- !u!114 &794984356774534731
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -726,7 +726,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeComponent
   _maxGauge: 200
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
 --- !u!1 &2815818081025082498
 GameObject:
   m_ObjectHideFlags: 0
@@ -883,7 +883,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d6cbb54243677124c8cc16a45083ee17, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenCoreSealGauge
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 4626551619868309503}
 --- !u!1 &2927865824481869591
 GameObject:
@@ -1031,7 +1031,6 @@ GameObject:
   - component: {fileID: 5298859741369411445}
   - component: {fileID: 7116612192379757486}
   - component: {fileID: 6966774668998716745}
-  - component: {fileID: 7521844168521252568}
   m_Layer: 0
   m_Name: Boss_Warden
   m_TagString: Untagged
@@ -1160,7 +1159,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7b78b941911d90c4dac802f664aac94e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenAI
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _patterns:
   - {fileID: 2450433757874556660}
   - {fileID: 2450433757874556660}
@@ -1182,7 +1181,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d1a379aeae2763e4892c395f8c900b63, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenFeedback
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _bodyRenderer: {fileID: 3534132678184260611}
   _armLRenderer: {fileID: 3641258697330880272}
   _armRRenderer: {fileID: 667973993591523152}
@@ -1201,7 +1200,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f6cb6ed47bb5aeb4ca2f99e4d9dbc2dc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenSealExecutor
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
   _coreObject: {fileID: 2815818081025082498}
@@ -1230,7 +1229,7 @@ MonoBehaviour:
   - {fileID: 8706724287300603285}
   _sealRangeCircle: {fileID: 2528680064604181190}
   _coreRangeCircle: {fileID: 7068618741574333414}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
 --- !u!114 &7116612192379757486
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1243,12 +1242,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e53fe91ccc3d98349a5854e69bc26324, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenCore
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
   _coreObject: {fileID: 2815818081025082498}
   _coreSealGauge: {fileID: 1550287276941150864}
-  _shockwave: {fileID: 7521844168521252568}
+  _shockwave: {fileID: 6966774668998716745}
 --- !u!114 &6966774668998716745
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1261,27 +1260,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 156f7f7400ba1e040971e6a00676dc3b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenShockwave
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
-  _playerLayer:
-    serializedVersion: 2
-    m_Bits: 320
-  _discRenderer: {fileID: 438508706467857424}
-  _cameraTransform: {fileID: 0}
-  _cameraShakeStrength: 0.25
-  _cameraShakeDuration: 0.3
---- !u!114 &7521844168521252568
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3153932892854605847}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 156f7f7400ba1e040971e6a00676dc3b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenShockwave
-  _data: {fileID: 0}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 320
@@ -2439,7 +2418,7 @@ MonoBehaviour:
   _partType: 1
   _spriteRenderer: {fileID: 667973993591523152}
   _ownCollider: {fileID: 8488932745856487769}
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
 --- !u!114 &1172787042423395168
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2453,7 +2432,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeComponent
   _maxGauge: 200
-  _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
 --- !u!1 &7487386312020531751
 GameObject:
   m_ObjectHideFlags: 0
