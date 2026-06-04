@@ -94,6 +94,19 @@ namespace SEAL
         private readonly List<SealableComponent> _sealReadyList
             = new List<SealableComponent>();
 
+        /// <summary>
+        /// OnForceReleased 핸들러 캐시.
+        /// SealableComponent 별로 Action 을 저장하여
+        /// RegisterSealable 재호출 시 중복 구독 방지 + 정확한 -= 해제 보장.
+        ///
+        /// [버그1 수정]
+        ///   기존: void onReleased() 지역함수 → 호출마다 새 델리게이트 → -= 해제 불가
+        ///         RegisterSealable 재호출 시 중복 구독 누적
+        ///   수정: Dictionary 에 캐싱 → 재등록 전 기존 핸들러 -= 후 새 핸들러 += 보장
+        /// </summary>
+        private readonly Dictionary<SealableComponent, Action> _forceReleasedHandlers
+            = new Dictionary<SealableComponent, Action>();
+
         /// <summary> 현재 집행 실행 중 여부 (중복 방지). </summary>
         private bool _isExecuting;
 
@@ -136,7 +149,11 @@ namespace SEAL
 
         private void OnDestroy()
         {
-            // TimeScale 보호
+            // 모든 SealableComponent 구독 해제
+            var sealables = new List<SealableComponent>(_forceReleasedHandlers.Keys);
+            foreach (var s in sealables)
+                UnregisterSealable(s);
+
             RestoreTimeScale();
         }
 
@@ -156,21 +173,49 @@ namespace SEAL
         /// <summary>
         /// SealableComponent 를 이 Executor 에 등록한다.
         /// Start() 에서 자동 수집하지만, 동적 생성 시 수동 호출도 가능.
+        ///
+        /// [버그1 수정]
+        ///   기존: void onReleased() 지역함수 → -= 해제 불가 → 중복 구독 누적
+        ///   수정: _forceReleasedHandlers 딕셔너리에 캐싱
+        ///         재등록 전 기존 핸들러 -= 후 새 핸들러 += 보장
         /// </summary>
         public void RegisterSealable(SealableComponent sealable)
         {
             if (sealable == null) return;
 
+            // OnSealRequested: 멤버 함수라 -= / += 정상 동작
             sealable.OnSealRequested -= HandleSealRequested;
             sealable.OnSealRequested += HandleSealRequested;
 
-            sealable.OnForceReleased -= () => HandleForceReleased(sealable);
+            // OnForceReleased: 딕셔너리 캐싱으로 중복 방지 + 정확한 해제 보장
+            if (_forceReleasedHandlers.TryGetValue(sealable, out var existing))
+            {
+                sealable.OnForceReleased -= existing;
+                _forceReleasedHandlers.Remove(sealable);
+            }
 
-            // ✅ 람다 중복 방지를 위해 Action 캐싱 방식 사용
-            // OnForceReleased 는 파라미터 없는 이벤트이므로
-            // 각 sealable 별 클로저로 처리
-            void onReleased() => HandleForceReleased(sealable);
-            sealable.OnForceReleased += onReleased;
+            Action handler = () => HandleForceReleased(sealable);
+            _forceReleasedHandlers[sealable] = handler;
+            sealable.OnForceReleased += handler;
+        }
+
+        /// <summary>
+        /// SealableComponent 구독 해제.
+        /// OnDestroy 또는 적 오브젝트 파괴 시 호출.
+        /// </summary>
+        public void UnregisterSealable(SealableComponent sealable)
+        {
+            if (sealable == null) return;
+
+            sealable.OnSealRequested -= HandleSealRequested;
+
+            if (_forceReleasedHandlers.TryGetValue(sealable, out var handler))
+            {
+                sealable.OnForceReleased -= handler;
+                _forceReleasedHandlers.Remove(sealable);
+            }
+
+            _sealReadyList.Remove(sealable);
         }
 
         // ══════════════════════════════════════════════════════

@@ -216,22 +216,38 @@ namespace SEAL
         // AI 상태 변화 핸들러
         // ══════════════════════════════════════════════════════
 
-        public void HandleStateChanged(string stateName)
+        /// <summary>
+        /// BossWardenAI.OnStateChanged 수신.
+        /// 파라미터: (새 상태, 현재 패턴 — null 가능)
+        ///
+        /// ✅ 수정: 시그니처를 Action&lt;WardenAIState, BossPatternBase&gt; 에 맞게 변경
+        ///   기존: HandleStateChanged(string stateName) → 불일치 오류
+        ///   수정: HandleStateChanged(BossWardenAI.WardenAIState state, BossPatternBase pattern)
+        /// </summary>
+        public void HandleStateChanged(BossWardenAI.WardenAIState state, BossPatternBase pattern)
         {
             if (_data == null || _bodyRenderer == null) return;
 
             _bodyTween?.Kill();
-            switch (stateName)
+            switch (state)
             {
-                case "Warning":
+                case BossWardenAI.WardenAIState.Warning:
                     _bodyTween = _bodyRenderer
                         .DOColor(_data.colorWarning, _data.pulsePeriod * 0.4f)
                         .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
                     break;
-                case "Active":
+
+                case BossWardenAI.WardenAIState.Active:
                     _bodyRenderer.color = _data.colorActive;
                     break;
-                default:
+
+                case BossWardenAI.WardenAIState.Recovery:
+                    _bodyTween = _bodyRenderer
+                        .DOColor(_data.colorWarning, _data.pulsePeriod * 0.5f)
+                        .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+                    break;
+
+                default: // Idle / Chase
                     _bodyTween = _bodyRenderer
                         .DOColor(_data.colorIdle, _data.colorTransitionDuration)
                         .SetUpdate(true);

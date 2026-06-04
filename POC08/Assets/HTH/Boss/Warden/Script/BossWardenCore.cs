@@ -5,31 +5,26 @@
 // [v2.0 변경 — SealableComponent / SealExecutor 통합]
 //
 //   제거:
-//     [SerializeField] BossWardenCoreSealGauge _coreSealGauge → SealableComponent 로 교체
-//     [SerializeField] BossWardenSealExecutor _executor       → SealExecutor 로 교체
-//     _armL.OnPartSealed / _armR.OnPartSealed 구독            → SealableComponent.OnSealCompleted 로 통합
-//     _executor.OnPartSealed 구독                             → 제거
-//     _executor.OnCoreUnlocked 구독                           → 제거
-//     _executor.OnFinalSealCompleted 구독                     → 제거
-//     _coreSealGauge.OnPhase1TargetReached 구독               → SealableComponent.OnPhaseTargetReached 로 통합
-//     _coreSealGauge.OnPhase2TargetReached 구독               → 제거 (단일 이벤트로 통합)
-//     HandleExecutorPartSealed()                              → 제거
-//     HandleCoreUnlocked()                                    → HandleCoreSealed() 로 대체
-//     HandleFinalSealCompleted()                              → HandleFinalSealed() 로 대체
+//     BossWardenCoreSealGauge _coreSealGauge → SealableComponent 로 교체
+//     BossWardenSealExecutor _executor       → SealExecutor 로 교체
+//     _armL.OnPartSealed / _armR.OnPartSealed 구독 → SealableComponent.OnSealCompleted 로 통합
+//     _executor.OnPartSealed / OnCoreUnlocked / OnFinalSealCompleted 구독 → 제거
+//     _coreSealGauge.OnPhase1/2TargetReached 구독 → OnPhaseTargetReached 단일 이벤트로 통합
+//     HandleExecutorPartSealed / HandleCoreUnlocked / HandleFinalSealCompleted → 제거
 //
 //   추가:
-//     [SerializeField] SealExecutor _sealExecutor             → 신규 연결
-//     [SerializeField] SealableComponent _armLSealable        → LeftArm 의 SealableComponent
-//     [SerializeField] SealableComponent _armRSealable        → RightArm 의 SealableComponent
-//     [SerializeField] SealableComponent _coreSealable        → Core 의 SealableComponent
-//     _armLSealable.OnSealCompleted 구독                      → HandleArmSealed()
-//     _armRSealable.OnSealCompleted 구독                      → HandleArmSealed()
-//     _coreSealable.OnSealCompleted 구독                      → HandleFinalSealed()
-//     _coreSealable.OnPhaseTargetReached 구독                 → HandlePhaseTargetReached()
-//     _sealExecutor.Initialize(_data) 호출
-//     EnterDilPhase() 에서 _coreSealable.ActivateGauge(true)
-//     ExitDilPhase() 에서 _coreSealable.ActivateGauge(false)
-//     ExitGroggyFailure() 에서 _armLSealable.ForceRelease() / _armRSealable.ForceRelease()
+//     SealExecutor _sealExecutor             → 신규 연결
+//     SealableComponent _armLSealable / _armRSealable / _coreSealable → 신규 연결
+//     _armLSealable.OnSealCompleted 구독 → HandleArmLSealed()
+//     _armRSealable.OnSealCompleted 구독 → HandleArmRSealed()
+//     _coreSealable.OnSealCompleted 구독 → HandleCoreExecuted()
+//     _coreSealable.OnPhaseTargetReached 구독 → HandlePhaseTargetReached()
+//
+//   [버그 수정]
+//     HandleCoreExecuted():
+//       기존 HandleFinalSealed() 는 항상 Die() → 코어 해제와 최종 봉인 구별 불가
+//       수정: _isGroggy = true  → EnterDilPhase() (코어 해제)
+//             _isDilPhase = true → Die()           (최종 봉인)
 //
 // [v1.1 유지]
 //   [DefaultExecutionOrder(-10)] / Awake 초기화 순서 보장
@@ -83,7 +78,7 @@ namespace SEAL
         /// 코어 SealableComponent.
         /// Core 오브젝트에 부착된 SealableComponent 연결.
         /// grade = Core / isDilPhaseOnly = true.
-        /// OnSealCompleted → HandleFinalSealed().
+        /// OnSealCompleted → HandleCoreExecuted() (그로기 중: EnterDilPhase / 딜페이즈 중: Die).
         /// OnPhaseTargetReached → HandlePhaseTargetReached().
         /// </summary>
         [Tooltip("Core 의 SealableComponent.")]
@@ -224,10 +219,10 @@ namespace SEAL
             // 기존 BossWardenCoreSealGauge 이벤트 구독 제거
             if (_coreSealable != null)
             {
-                _coreSealable.OnSealCompleted -= HandleFinalSealed;
+                _coreSealable.OnSealCompleted -= HandleCoreExecuted;
                 _coreSealable.OnPhaseTargetReached -= HandlePhaseTargetReached;
 
-                _coreSealable.OnSealCompleted += HandleFinalSealed;
+                _coreSealable.OnSealCompleted += HandleCoreExecuted;
                 _coreSealable.OnPhaseTargetReached += HandlePhaseTargetReached;
             }
 
@@ -274,7 +269,7 @@ namespace SEAL
 
             if (_coreSealable != null)
             {
-                _coreSealable.OnSealCompleted -= HandleFinalSealed;
+                _coreSealable.OnSealCompleted -= HandleCoreExecuted;
                 _coreSealable.OnPhaseTargetReached -= HandlePhaseTargetReached;
             }
 
@@ -347,16 +342,48 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 이벤트 핸들러 — 최종 봉인
+        // 이벤트 핸들러 — 코어 집행 완료
         // ══════════════════════════════════════════════════════
 
         /// <summary>
         /// Core SealableComponent.OnSealCompleted 수신.
-        /// 코어 봉인 집행 완료 → 처치.
+        ///
+        /// [버그2, 3 수정]
+        ///   기존: HandleFinalSealed() → 항상 Die() 호출
+        ///         코어 해제(그로기 중)와 최종 봉인(딜 페이즈 중)을 구별 못함
+        ///
+        ///   수정: BossWardenCore 현재 상태로 분기
+        ///     _isGroggy = true  → 코어 해제 → EnterDilPhase()
+        ///     _isDilPhase = true → 최종 봉인 → Die()
+        ///     그 외             → 경고 로그 + 무시
+        ///
+        /// [코어 집행 시점별 상태]
+        ///   그로기 진입 → 코어 활성 → 플레이어 S키 집행
+        ///     → 이 시점 _isGroggy = true, _isDilPhase = false
+        ///     → EnterDilPhase() 호출
+        ///
+        ///   딜 페이즈 진입 → 코어 봉인도 100% → OnSealRequested → 플레이어 S키 집행
+        ///     → 이 시점 _isGroggy = false, _isDilPhase = true
+        ///     → Die() 호출
         /// </summary>
-        private void HandleFinalSealed()
+        private void HandleCoreExecuted()
         {
-            Die();
+            if (_isDead) return;
+
+            if (_isGroggy && !_isDilPhase)
+            {
+                Debug.Log("[BossWardenCore] 코어 해제 집행 완료 → 딜 페이즈 진입");
+                EnterDilPhase();
+            }
+            else if (_isDilPhase)
+            {
+                Debug.Log("[BossWardenCore] 최종 봉인 집행 완료 → 처치");
+                Die();
+            }
+            else
+            {
+                Debug.LogWarning("[BossWardenCore] HandleCoreExecuted — 예상치 못한 상태. 무시.");
+            }
         }
 
         // ══════════════════════════════════════════════════════
