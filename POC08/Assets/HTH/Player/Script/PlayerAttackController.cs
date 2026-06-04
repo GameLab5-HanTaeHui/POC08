@@ -302,15 +302,12 @@ namespace SEAL
             {
                 _comboInputQueued = true;
 
-                // 콤보 입력 시점의 방향키 입력을 스냅샷으로 저장
-                // 이동 잠금 중이어도 PlayerInputHandler.MoveInput 은 실제 누른 키를 반환
-                Vector2 inputDir = PlayerInputHandler.Instance != null
-                    ? PlayerInputHandler.Instance.MoveInput
+                // [마우스 방향 기반]
+                // 콤보 입력 시점의 마우스 방향(FacingDirection)을 스냅샷으로 저장
+                // 다음 콤보는 이 시점의 마우스 방향으로 실행
+                _nextComboDir = _moveController != null
+                    ? _moveController.FacingDirection
                     : Vector2.zero;
-
-                // 방향키 입력이 있을 때만 방향 변경
-                // 없으면 Vector2.zero → 다음 콤보에서 _currentAttackDir 유지
-                _nextComboDir = inputDir;
             }
         }
 
