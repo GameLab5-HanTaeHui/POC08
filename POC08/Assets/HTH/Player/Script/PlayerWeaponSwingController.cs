@@ -512,6 +512,7 @@ namespace SEAL
         private Sequence BuildComboSequence(ComboIndex combo, float sealAmount)
         {
             Sequence seq = DOTween.Sequence();
+            seq.SetUpdate(true);
 
             float bD = _data.BackswingDuration;
             float aD = _data.AttackDuration;
@@ -636,6 +637,7 @@ namespace SEAL
         private Sequence BuildChargeSequence(float sealAmount)
         {
             Sequence seq = DOTween.Sequence();
+            seq.SetUpdate(true);
 
             float bD = _data.BackswingDuration * 1.3f;
             float aD = _data.AttackDuration;
@@ -688,9 +690,7 @@ namespace SEAL
             Time.timeScale = _data.HitStopTimeScale;
             yield return new WaitForSecondsRealtime(duration);
 
-            if (Mathf.Approximately(Time.timeScale, _data.HitStopTimeScale))
-                Time.timeScale = 1f;
-
+            Time.timeScale = 1f;
             _hitStopCoroutine = null;
         }
 
