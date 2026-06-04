@@ -1,29 +1,25 @@
 ﻿// ============================================================
-// BossWardenFeedback.cs  v1.0
+// BossWardenFeedback.cs  v1.2
 // Boss_Warden 상태별 DOTween 색상 연출 전담 컴포넌트
 //
-// [POC07 참고]
-//   TestBossFeedBack.cs 구조를 기반으로 탑뷰 재설계.
-//   DOTween Sequence / Tween 핸들 관리 방식 계승.
+// [v1.2 변경 — 부위 봉인도 색상 실시간 보간 (DOColor 보정)]
+//   기존: OnStageChanged(int) → 4단계(0/25/50/75/100%) 점프 방식
+//         → 플레이어가 때릴 때마다 색상 변화 없고 단계 돌파 시에만 변경
 //
-// [POC07과의 차이]
-//   POC07: Animator 대체 목적의 flipX 기반 방향 처리 포함
-//   POC08: 방향 처리 제거 (탑뷰에서 flipX 는 ObjectDirectionController 담당)
-//          Animator 없음 → DOTween 으로 모든 동작감 표현
+//   변경: OnGaugeChanged(float UIPercent) → 매 AddGauge 호출마다 수신
+//         → UIPercent 기준으로 colorArm0 ~ colorArm100 사이 Lerp 목표색 계산
+//         → 현재 색상에서 목표색으로 DOColor(colorTransitionDuration) 부드럽게 보정
+//         → 연속 공격 시 이전 DOColor Kill() 후 새 목표색으로 즉시 재시작
+//         → 색상이 자연스럽게 누적되며 밝아지는 보정 효과
 //
-// [역할]
-//   ① BossWardenAI.OnStateChanged 구독 → 상태별 색상 전환
-//   ② SealGaugeComponent.OnStageChanged 구독 → 부위 봉인도 단계 색상 전환
-//   ③ BossWardenCore 이벤트 구독 → 그로기/딜페이즈/처치 연출
-//   ④ 히트 스탑 점멸 (본체 기준)
-//   ⑤ Pulse 루프 (Groggy / DilPhase 중 지속 발광)
+//   [OnSealReady 추가 구독]
+//     봉인도 100% 도달 시 Pulse 시작 (colorArm100 빠른 Yoyo)
+//     기존 OnStageChanged stage==4 에서 처리하던 것을 OnSealReady 로 이전
 //
-// [DOTween 원칙]
-//   - 새 상태 진입 시 반드시 이전 Tween/Sequence 를 Kill() 후 새로 생성
-//   - SetUpdate(true) : 슬로우 모션(Time.timeScale 감소) 중에도 연출 유지
-//   - DOColor 는 SpriteRenderer 에 직접 호출 (Material 변경 없음)
-//   - Pulse = DOColor Yoyo Loop 로 구현 (InfiteLoop = -1)
-//   - 새 색상으로 바뀔 때 UpdateBaseColor() 로 ArmPart 기본 색상 동기화
+//   [_armStageColors 배열 제거]
+//     단계별 색상 배열 불필요 — Lerp 로 연속 계산
+//
+// [v1.1 변경 — DefaultExecutionOrder(10) 추가]
 //
 // [namespace]
 //   namespace : SEAL
@@ -36,24 +32,9 @@ using DG.Tweening;
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 상태별 DOTween 색상 연출 전담 컴포넌트. (v1.0)
-    ///
-    /// ────────────────────────────────────────────────────
-    /// [색상 우선순위]
-    ///   Dead > Groggy > DilPhase > Warning > Active > Recovery > Chase > Idle
-    ///   상위 상태 진입 시 하위 상태 Tween 을 Kill() 하고 새 Tween 시작.
-    ///
-    /// [구독 대상]
-    ///   BossWardenAI.OnStateChanged
-    ///   BossWardenCore.OnGroggyEnter / OnGroggyExit
-    ///   BossWardenCore.OnDilPhaseEnter / OnDilPhaseExit
-    ///   BossWardenCore.OnPhaseChanged
-    ///   BossWardenCore.OnDead
-    ///   LeftArm.SealGaugeComponent.OnStageChanged
-    ///   RightArm.SealGaugeComponent.OnStageChanged
-    ///   LeftArm / RightArm SealGaugeComponent.OnSealed / OnReleased
-    /// ────────────────────────────────────────────────────
+    /// Boss_Warden 상태별 DOTween 색상 연출 전담 컴포넌트. (v1.2)
     /// </summary>
+    [DefaultExecutionOrder(10)]
     public class BossWardenFeedback : MonoBehaviour
     {
         // ══════════════════════════════════════════════════════
@@ -61,93 +42,43 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         [Header("── DataSO (필수) ──────────────────────")]
-
-        /// <summary>
-        /// BossWardenDataSO.
-        /// 모든 색상 / DOTween 타이밍 수치 참조.
-        /// </summary>
         [Tooltip("BossWardenDataSO. 필수 연결.")]
         [SerializeField] private BossWardenDataSO _data;
 
         [Header("── 본체 렌더러 ──────────────────────")]
-
-        /// <summary>
-        /// 보스 본체 SpriteRenderer.
-        /// 미연결 시 GetComponent 자동 탐색.
-        /// </summary>
         [Tooltip("보스 본체 SpriteRenderer. 미연결 시 자동 탐색.")]
         [SerializeField] private SpriteRenderer _bodyRenderer;
 
         [Header("── 부위 렌더러 ──────────────────────")]
-
-        /// <summary>
-        /// 왼팔 SpriteRenderer.
-        /// 봉인도 단계 색상 전환 대상.
-        /// </summary>
         [Tooltip("왼팔 SpriteRenderer.")]
         [SerializeField] private SpriteRenderer _armLRenderer;
 
-        /// <summary>
-        /// 오른팔 SpriteRenderer.
-        /// </summary>
         [Tooltip("오른팔 SpriteRenderer.")]
         [SerializeField] private SpriteRenderer _armRRenderer;
 
-        /// <summary>
-        /// 코어 SpriteRenderer.
-        /// 그로기 진입 시 색상 변화.
-        /// </summary>
         [Tooltip("코어 SpriteRenderer.")]
         [SerializeField] private SpriteRenderer _coreRenderer;
 
         [Header("── 부위 컴포넌트 참조 ──────────────────────")]
-
-        /// <summary>
-        /// 왼팔 BossWardenArmPart.
-        /// 봉인 완료 / 해제 이벤트 구독 + UpdateBaseColor() 호출 대상.
-        /// </summary>
         [Tooltip("왼팔 BossWardenArmPart.")]
         [SerializeField] private BossWardenArmPart _armLPart;
 
-        /// <summary>
-        /// 오른팔 BossWardenArmPart.
-        /// </summary>
         [Tooltip("오른팔 BossWardenArmPart.")]
         [SerializeField] private BossWardenArmPart _armRPart;
 
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조
         // ══════════════════════════════════════════════════════
-
         private BossWardenAI _ai;
         private BossWardenCore _core;
 
         // ══════════════════════════════════════════════════════
         // DOTween 핸들
         // ══════════════════════════════════════════════════════
-
-        /// <summary> 본체 현재 Tween 핸들. 새 상태 진입 시 Kill() 후 교체. </summary>
         private Tween _bodyTween;
-
-        /// <summary> 왼팔 현재 Tween 핸들. </summary>
         private Tween _armLTween;
-
-        /// <summary> 오른팔 현재 Tween 핸들. </summary>
         private Tween _armRTween;
-
-        /// <summary> 코어 현재 Tween 핸들. </summary>
         private Tween _coreTween;
-
-        // ══════════════════════════════════════════════════════
-        // 봉인도 단계별 색상 테이블
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 봉인도 단계(0~4) 별 색상 배열.
-        /// DataSO 의 색상 필드를 순서대로 참조.
-        /// index 0 = 0% / 1 = 25% / 2 = 50% / 3 = 75% / 4 = 100%
-        /// </summary>
-        private Color[] _armStageColors;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -164,21 +95,13 @@ namespace SEAL
 
         private void Start()
         {
-            // 색상 테이블 초기화
-            BuildArmStageColors();
-
-            // 이벤트 구독
             SubscribeAll();
-
-            // 초기 색상 설정
             SetBodyColorImmediate(_data != null ? _data.colorIdle : Color.gray);
         }
 
         private void OnDestroy()
         {
             UnsubscribeAll();
-
-            // 모든 Tween 정리
             _bodyTween?.Kill();
             _armLTween?.Kill();
             _armRTween?.Kill();
@@ -191,14 +114,12 @@ namespace SEAL
 
         private void SubscribeAll()
         {
-            // AI 상태 이벤트
             if (_ai != null)
             {
                 _ai.OnStateChanged -= HandleStateChanged;
                 _ai.OnStateChanged += HandleStateChanged;
             }
 
-            // Core 이벤트
             if (_core != null)
             {
                 _core.OnGroggyEnter -= HandleGroggyEnter;
@@ -216,9 +137,8 @@ namespace SEAL
                 _core.OnDead += HandleDead;
             }
 
-            // 팔 봉인도 단계 이벤트
-            SubscribeArmGauge(_armLPart, _armLRenderer, isLeft: true);
-            SubscribeArmGauge(_armRPart, _armRRenderer, isLeft: false);
+            SubscribeArmGauge(_armLPart, isLeft: true);
+            SubscribeArmGauge(_armRPart, isLeft: false);
         }
 
         private void UnsubscribeAll()
@@ -241,31 +161,39 @@ namespace SEAL
         }
 
         /// <summary>
-        /// 팔 부위 봉인도 / 봉인 완료 / 봉인 해제 이벤트 구독.
+        /// 팔 봉인도 이벤트 구독.
+        ///
+        /// [v1.2 변경]
+        ///   OnStageChanged 제거 → OnGaugeChanged 추가 구독
+        ///   OnSealReady 추가 구독 → 100% 도달 시 Pulse 시작
+        ///   OnSealed / OnReleased 유지
         /// </summary>
-        private void SubscribeArmGauge(BossWardenArmPart armPart, SpriteRenderer renderer, bool isLeft)
+        private void SubscribeArmGauge(BossWardenArmPart armPart, bool isLeft)
         {
             if (armPart == null || armPart.SealGauge == null) return;
-
             var gauge = armPart.SealGauge;
 
             if (isLeft)
             {
-                gauge.OnStageChanged -= HandleArmLStageChanged;
+                gauge.OnGaugeChanged -= HandleArmLGaugeChanged;
+                gauge.OnSealReady -= HandleArmLSealReady;
                 gauge.OnSealed -= HandleArmLSealed;
                 gauge.OnReleased -= HandleArmLReleased;
 
-                gauge.OnStageChanged += HandleArmLStageChanged;
+                gauge.OnGaugeChanged += HandleArmLGaugeChanged;
+                gauge.OnSealReady += HandleArmLSealReady;
                 gauge.OnSealed += HandleArmLSealed;
                 gauge.OnReleased += HandleArmLReleased;
             }
             else
             {
-                gauge.OnStageChanged -= HandleArmRStageChanged;
+                gauge.OnGaugeChanged -= HandleArmRGaugeChanged;
+                gauge.OnSealReady -= HandleArmRSealReady;
                 gauge.OnSealed -= HandleArmRSealed;
                 gauge.OnReleased -= HandleArmRReleased;
 
-                gauge.OnStageChanged += HandleArmRStageChanged;
+                gauge.OnGaugeChanged += HandleArmRGaugeChanged;
+                gauge.OnSealReady += HandleArmRSealReady;
                 gauge.OnSealed += HandleArmRSealed;
                 gauge.OnReleased += HandleArmRReleased;
             }
@@ -278,145 +206,108 @@ namespace SEAL
 
             if (isLeft)
             {
-                gauge.OnStageChanged -= HandleArmLStageChanged;
+                gauge.OnGaugeChanged -= HandleArmLGaugeChanged;
+                gauge.OnSealReady -= HandleArmLSealReady;
                 gauge.OnSealed -= HandleArmLSealed;
                 gauge.OnReleased -= HandleArmLReleased;
             }
             else
             {
-                gauge.OnStageChanged -= HandleArmRStageChanged;
+                gauge.OnGaugeChanged -= HandleArmRGaugeChanged;
+                gauge.OnSealReady -= HandleArmRSealReady;
                 gauge.OnSealed -= HandleArmRSealed;
                 gauge.OnReleased -= HandleArmRReleased;
             }
         }
 
         // ══════════════════════════════════════════════════════
-        // 색상 테이블 초기화
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// DataSO 에서 봉인도 단계 색상 배열을 구성한다.
-        /// </summary>
-        private void BuildArmStageColors()
-        {
-            if (_data == null)
-            {
-                _armStageColors = new Color[] { Color.white, Color.yellow, new Color(1f, 0.5f, 0f), Color.red, Color.blue };
-                return;
-            }
-
-            _armStageColors = new Color[]
-            {
-                _data.colorArm0,    // Stage 0 : 0%
-                _data.colorArm25,   // Stage 1 : 25%
-                _data.colorArm50,   // Stage 2 : 50%
-                _data.colorArm75,   // Stage 3 : 75%
-                _data.colorArm100,  // Stage 4 : 100%
-            };
-        }
-
-        // ══════════════════════════════════════════════════════
         // AI 상태 이벤트 핸들러
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// BossWardenAI.OnStateChanged 수신.
-        /// 상태별 본체 색상 전환 시작.
-        /// </summary>
-        private void HandleStateChanged(BossWardenAI.WardenAIState newState, BossPatternBase pattern)
+        private void HandleStateChanged(BossWardenAI.WardenAIState state, BossPatternBase pattern)
         {
-            if (_data == null || _bodyRenderer == null) return;
+            if (_data == null) return;
 
-            switch (newState)
+            Color target = state switch
             {
-                case BossWardenAI.WardenAIState.Idle:
-                case BossWardenAI.WardenAIState.Chase:
-                    PlayBodyColor(_data.colorIdle, _data.colorTransitionDuration);
-                    break;
+                BossWardenAI.WardenAIState.Idle => _data.colorIdle,
+                BossWardenAI.WardenAIState.Chase => _data.colorIdle,
+                BossWardenAI.WardenAIState.Warning => _data.colorWarning,
+                BossWardenAI.WardenAIState.Active => _data.colorActive,
+                BossWardenAI.WardenAIState.Recovery => _data.colorRecovery,
+                _ => _data.colorIdle,
+            };
 
-                case BossWardenAI.WardenAIState.Warning:
-                    // 주황 빠른 Pulse — 긴장감 연출
-                    PlayBodyPulse(_data.colorWarning, _data.colorIdle, _data.pulsePeriod);
-                    break;
-
-                case BossWardenAI.WardenAIState.Active:
-                    // 흰색 순간 전환 — 공격 강조
-                    PlayBodyColor(_data.colorActive, 0.05f);
-                    break;
-
-                case BossWardenAI.WardenAIState.Recovery:
-                    // 붉은 페이드 — 취약 구간 강조
-                    PlayBodyColor(_data.colorRecovery, _data.colorTransitionDuration);
-                    break;
-            }
+            PlayBodyColor(target, _data.colorTransitionDuration);
         }
 
         // ══════════════════════════════════════════════════════
         // Core 이벤트 핸들러
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 그로기 진입.
-        /// 본체 노란 빠른 Pulse + 코어 노란 Pulse 시작.
-        /// </summary>
         private void HandleGroggyEnter()
         {
             if (_data == null) return;
 
             // 본체 노란 빠른 Pulse
-            PlayBodyPulse(_data.colorGroggy, _data.colorIdle, _data.pulsePeriod * 0.6f);
+            _bodyTween?.Kill();
+            _bodyTween = _bodyRenderer
+                .DOColor(_data.colorIdle, _data.pulsePeriod * 0.5f)
+                .From(_data.colorGroggy)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetUpdate(true);
 
-            // 코어 노란 Pulse (코어 활성화 시점과 연동)
+            // 코어 노란 Pulse
             if (_coreRenderer != null)
-                PlayCorePulse(_data.colorCoreActive, new Color(1f, 1f, 0.5f), _data.pulsePeriod * 0.5f);
+            {
+                _coreTween?.Kill();
+                _coreTween = _coreRenderer
+                    .DOColor(_data.colorIdle, _data.pulsePeriod * 0.5f)
+                    .From(_data.colorCoreActive)
+                    .SetLoops(-1, LoopType.Yoyo)
+                    .SetUpdate(true);
+            }
         }
 
-        /// <summary>
-        /// 그로기 종료.
-        /// 본체 Idle 색상 복귀.
-        /// </summary>
         private void HandleGroggyExit()
         {
             if (_data == null) return;
             PlayBodyColor(_data.colorIdle, _data.colorTransitionDuration);
+            _coreTween?.Kill();
         }
 
-        /// <summary>
-        /// 딜 페이즈 진입.
-        /// 본체 밝은 주황 Pulse + 코어 흰 빠른 Pulse.
-        /// </summary>
         private void HandleDilPhaseEnter()
         {
             if (_data == null) return;
 
-            PlayBodyPulse(_data.colorDilPhase, _data.colorIdle, _data.pulsePeriod);
+            // 본체 밝은 주황 Pulse
+            _bodyTween?.Kill();
+            _bodyTween = _bodyRenderer
+                .DOColor(_data.colorIdle, _data.pulsePeriod)
+                .From(_data.colorDilPhase)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetUpdate(true);
 
+            // 코어 주황 → 빨강 보간은 BossWardenCoreSealGauge.UpdateCoreColor() 담당
+            // 여기서는 초기 색상만 설정
             if (_coreRenderer != null)
-                PlayCorePulse(_data.colorCoreDilPhase, _data.colorCoreActive, _data.pulsePeriod * 0.4f);
+            {
+                _coreTween?.Kill();
+                _coreRenderer.color = _data.colorCoreDilPhase;
+            }
         }
 
-        /// <summary>
-        /// 딜 페이즈 종료.
-        /// 본체 Idle 복귀.
-        /// </summary>
         private void HandleDilPhaseExit()
         {
             if (_data == null) return;
             PlayBodyColor(_data.colorIdle, _data.colorTransitionDuration);
-
-            // 코어 Pulse 정리
             _coreTween?.Kill();
         }
 
-        /// <summary>
-        /// 페이즈 전환.
-        /// 2페이즈 진입 시 본체 진한 붉은 전환 강조.
-        /// </summary>
         private void HandlePhaseChanged(int newPhase)
         {
             if (_data == null || newPhase != 2) return;
 
-            // 진한 붉은 순간 → DOShake → Idle 복귀 Sequence
             _bodyTween?.Kill();
             var seq = DOTween.Sequence();
             seq.Append(_bodyRenderer.DOColor(_data.colorPhase2, 0.05f).SetUpdate(true));
@@ -424,207 +315,149 @@ namespace SEAL
             seq.Append(_bodyRenderer.DOColor(_data.colorIdle, _data.colorTransitionDuration).SetUpdate(true));
             seq.SetUpdate(true);
             _bodyTween = seq;
-
-            Debug.Log("[BossWardenFeedback] 2페이즈 전환 연출");
         }
 
-        /// <summary>
-        /// 처치.
-        /// 본체 검정 페이드 → Scale 0 축소.
-        /// </summary>
         private void HandleDead()
         {
             if (_data == null) return;
 
             _bodyTween?.Kill();
-
             var seq = DOTween.Sequence();
             seq.Append(_bodyRenderer.DOColor(_data.colorDead, 0.3f).SetUpdate(true));
             seq.Join(transform.DOScale(0f, 0.5f).SetEase(Ease.InBack).SetUpdate(true));
             seq.SetUpdate(true);
             _bodyTween = seq;
-
-            Debug.Log("[BossWardenFeedback] 처치 연출 시작");
         }
 
         // ══════════════════════════════════════════════════════
         // 팔 봉인도 이벤트 핸들러 — 왼팔
         // ══════════════════════════════════════════════════════
 
-        private void HandleArmLStageChanged(int stage)
-            => ApplyArmStageColor(_armLRenderer, _armLPart, stage, isLoop: stage == 4);
+        /// <summary>
+        /// OnGaugeChanged(float UIPercent) 수신.
+        /// AddGauge 호출마다 발행 → 실시간 색상 보간.
+        /// </summary>
+        private void HandleArmLGaugeChanged(float uiPercent)
+            => ApplyArmGaugeColor(_armLRenderer, _armLPart, uiPercent, ref _armLTween);
+
+        /// <summary>
+        /// OnSealReady 수신 → 봉인도 100% → 연보라 빠른 Pulse 시작.
+        /// </summary>
+        private void HandleArmLSealReady()
+            => ApplyArmSealReadyPulse(_armLRenderer, _armLPart, ref _armLTween);
 
         private void HandleArmLSealed()
-            => ApplyArmSealedColor(_armLRenderer, _armLPart);
+            => ApplyArmSealedColor(_armLRenderer, _armLPart, ref _armLTween);
 
         private void HandleArmLReleased()
-            => ApplyArmStageColor(_armLRenderer, _armLPart, stage: 0, isLoop: false);
+            => ApplyArmGaugeColor(_armLRenderer, _armLPart, uiPercent: 0f, ref _armLTween);
 
         // ══════════════════════════════════════════════════════
         // 팔 봉인도 이벤트 핸들러 — 오른팔
         // ══════════════════════════════════════════════════════
 
-        private void HandleArmRStageChanged(int stage)
-            => ApplyArmStageColor(_armRRenderer, _armRPart, stage, isLoop: stage == 4);
+        private void HandleArmRGaugeChanged(float uiPercent)
+            => ApplyArmGaugeColor(_armRRenderer, _armRPart, uiPercent, ref _armRTween);
+
+        private void HandleArmRSealReady()
+            => ApplyArmSealReadyPulse(_armRRenderer, _armRPart, ref _armRTween);
 
         private void HandleArmRSealed()
-            => ApplyArmSealedColor(_armRRenderer, _armRPart);
+            => ApplyArmSealedColor(_armRRenderer, _armRPart, ref _armRTween);
 
         private void HandleArmRReleased()
-            => ApplyArmStageColor(_armRRenderer, _armRPart, stage: 0, isLoop: false);
+            => ApplyArmGaugeColor(_armRRenderer, _armRPart, uiPercent: 0f, ref _armRTween);
 
         // ══════════════════════════════════════════════════════
         // 부위 색상 적용
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 봉인도 단계에 따른 팔 색상 전환.
+        /// 봉인도 UIPercent 기준으로 팔 색상을 부드럽게 보정.
         ///
-        /// [단계별 연출]
-        ///   Stage 0~3 : DOColor 단순 전환
-        ///   Stage 4   : 파랑 빠른 Yoyo Pulse (집행 가능 상태 강조)
+        /// [v1.2 핵심 변경]
+        ///   UIPercent(0~100) → t(0~1) 로 정규화
+        ///   targetColor = Color.Lerp(colorArm0, colorArm100, t)
+        ///   현재 색상 → targetColor 로 DOColor(colorTransitionDuration) 보정
+        ///   연속 공격 시 이전 DOColor Kill() 후 새 목표색으로 재시작
+        ///   → 플레이어가 때릴 때마다 색상이 자연스럽게 밝아지는 효과
         ///
-        /// [UpdateBaseColor 동기화]
-        ///   색상이 바뀔 때 BossWardenArmPart.UpdateBaseColor() 를 호출하여
-        ///   히트 점멸 후 복귀 색상을 현재 단계 색상으로 유지.
+        /// [보정 동작]
+        ///   한 번 때릴 때마다 약간씩 밝아지고
+        ///   colorTransitionDuration 안에 목표색에 도달
+        ///   다시 때리면 더 밝은 목표색으로 부드럽게 이어짐
         /// </summary>
-        private void ApplyArmStageColor(SpriteRenderer renderer, BossWardenArmPart armPart, int stage, bool isLoop)
+        private void ApplyArmGaugeColor(SpriteRenderer renderer, BossWardenArmPart armPart,
+                                         float uiPercent, ref Tween tween)
         {
             if (renderer == null || _data == null) return;
-            if (stage < 0 || stage >= _armStageColors.Length) return;
 
-            Color targetColor = _armStageColors[stage];
+            float t = Mathf.Clamp01(uiPercent / 100f);
+            Color targetColor = Color.Lerp(_data.colorArm0, _data.colorArm100, t);
 
-            // 진행 중인 Tween 정리 후 새 Tween 시작
-            if (renderer == _armLRenderer)
-            {
-                _armLTween?.Kill();
-
-                if (isLoop)
-                    _armLTween = renderer.DOColor(_data.colorIdle, _data.pulsePeriod)
-                        .From(targetColor).SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
-                else
-                    _armLTween = renderer.DOColor(targetColor, _data.colorTransitionDuration).SetUpdate(true);
-            }
-            else
-            {
-                _armRTween?.Kill();
-
-                if (isLoop)
-                    _armRTween = renderer.DOColor(_data.colorIdle, _data.pulsePeriod)
-                        .From(targetColor).SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
-                else
-                    _armRTween = renderer.DOColor(targetColor, _data.colorTransitionDuration).SetUpdate(true);
-            }
+            // 이전 DOColor Kill → 새 목표색으로 부드럽게 보정
+            tween?.Kill();
+            tween = renderer
+                .DOColor(targetColor, _data.colorTransitionDuration)
+                .SetUpdate(true);
 
             // 히트 점멸 복귀 색상 동기화
             armPart?.UpdateBaseColor(targetColor);
         }
 
         /// <summary>
-        /// 봉인 집행 완료 색상 (파랑 고정) 적용.
-        /// Pulse 종료 후 단색 고정.
+        /// 봉인도 100% 도달 시 Pulse 시작.
+        /// colorArm100(연보라) 빠른 Yoyo — 집행 가능 상태 강조.
         /// </summary>
-        private void ApplyArmSealedColor(SpriteRenderer renderer, BossWardenArmPart armPart)
+        private void ApplyArmSealReadyPulse(SpriteRenderer renderer, BossWardenArmPart armPart,
+                                             ref Tween tween)
         {
             if (renderer == null || _data == null) return;
 
-            Color sealedColor = _data.colorArmSealed;
+            tween?.Kill();
+            tween = renderer
+                .DOColor(_data.colorArm0, _data.pulsePeriod * 0.4f)
+                .From(_data.colorArm100)
+                .SetLoops(-1, LoopType.Yoyo)
+                .SetUpdate(true);
 
-            if (renderer == _armLRenderer)
-            {
-                _armLTween?.Kill();
-                _armLTween = renderer.DOColor(sealedColor, _data.colorTransitionDuration).SetUpdate(true);
-            }
-            else
-            {
-                _armRTween?.Kill();
-                _armRTween = renderer.DOColor(sealedColor, _data.colorTransitionDuration).SetUpdate(true);
-            }
+            armPart?.UpdateBaseColor(_data.colorArm100);
+        }
 
-            armPart?.UpdateBaseColor(sealedColor);
+        /// <summary>
+        /// 봉인 집행 완료 색상 고정 (진한 보라 단색).
+        /// Pulse 종료 후 colorArmSealed 로 고정.
+        /// </summary>
+        private void ApplyArmSealedColor(SpriteRenderer renderer, BossWardenArmPart armPart,
+                                          ref Tween tween)
+        {
+            if (renderer == null || _data == null) return;
+
+            tween?.Kill();
+            tween = renderer
+                .DOColor(_data.colorArmSealed, _data.colorTransitionDuration)
+                .SetUpdate(true);
+
+            armPart?.UpdateBaseColor(_data.colorArmSealed);
         }
 
         // ══════════════════════════════════════════════════════
         // 공통 DOTween 헬퍼
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 본체를 지정 색상으로 전환한다.
-        /// 이전 Tween 을 Kill() 후 새 DOColor 시작.
-        /// SetUpdate(true) 로 timeScale 영향 없이 동작.
-        /// </summary>
-        private void PlayBodyColor(Color targetColor, float duration)
+        private void PlayBodyColor(Color target, float duration)
         {
-            if (_bodyRenderer == null) return;
-
             _bodyTween?.Kill();
             _bodyTween = _bodyRenderer
-                .DOColor(targetColor, duration)
+                .DOColor(target, duration)
                 .SetUpdate(true);
         }
 
-        /// <summary>
-        /// 본체를 두 색상 사이로 반복 Pulse 시킨다.
-        /// colorA(밝음) ↔ colorB(어두움) Yoyo 무한 루프.
-        /// </summary>
-        private void PlayBodyPulse(Color colorA, Color colorB, float period)
-        {
-            if (_bodyRenderer == null) return;
-
-            _bodyTween?.Kill();
-            _bodyRenderer.color = colorA;
-            _bodyTween = _bodyRenderer
-                .DOColor(colorB, period)
-                .SetLoops(-1, LoopType.Yoyo)
-                .SetUpdate(true);
-        }
-
-        /// <summary>
-        /// 코어를 두 색상 사이로 반복 Pulse 시킨다.
-        /// </summary>
-        private void PlayCorePulse(Color colorA, Color colorB, float period)
-        {
-            if (_coreRenderer == null) return;
-
-            _coreTween?.Kill();
-            _coreRenderer.color = colorA;
-            _coreTween = _coreRenderer
-                .DOColor(colorB, period)
-                .SetLoops(-1, LoopType.Yoyo)
-                .SetUpdate(true);
-        }
-
-        /// <summary>
-        /// 본체를 순간 흰색 점멸 후 현재 색상으로 복귀.
-        /// 공격 피격 시 BossWardenCore 에서 호출.
-        /// </summary>
-        public void PlayBodyHitFlash()
-        {
-            if (_bodyRenderer == null || _data == null) return;
-
-            Color currentColor = _bodyRenderer.color;
-            _bodyTween?.Kill();
-            _bodyRenderer.color = Color.white;
-            _bodyTween = _bodyRenderer
-                .DOColor(currentColor, _data.hitFlashDuration)
-                .SetEase(Ease.OutCubic)
-                .SetUpdate(true);
-        }
-
-        // ══════════════════════════════════════════════════════
-        // 유틸리티
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 본체 색상을 즉시 설정한다 (Tween 없음).
-        /// 초기화 시에만 사용.
-        /// </summary>
         private void SetBodyColorImmediate(Color color)
         {
-            if (_bodyRenderer == null) return;
             _bodyTween?.Kill();
-            _bodyRenderer.color = color;
+            if (_bodyRenderer != null)
+                _bodyRenderer.color = color;
         }
     }
 }
