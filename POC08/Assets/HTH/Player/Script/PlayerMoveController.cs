@@ -170,6 +170,17 @@ namespace SEAL
         private bool _isMoveLocked;
 
         // ──────────────────────────────────────────
+        // 컴포넌트 참조
+        // ──────────────────────────────────────────
+
+        /// <summary>
+        /// 무기 스윙 컨트롤러 참조.
+        /// UpdateFacingDirection() 에서 IsSwinging 체크에 사용.
+        /// 공격 중 flipX / 회전 변경 금지를 위해 참조.
+        /// </summary>
+        private PlayerWeaponSwingController _swingController;
+
+        // ──────────────────────────────────────────
         // 대시 상태
         // ──────────────────────────────────────────
 
@@ -263,6 +274,7 @@ namespace SEAL
             // ── 컴포넌트 취득 ──────────────────────
             _rigid2D = GetComponent<Rigidbody2D>();
             _spriteRenderer = GetComponent<SpriteRenderer>();
+            _swingController = GetComponent<PlayerWeaponSwingController>();
 
             // Visual Transform 미설정 시 자신 transform 사용
             if (_visualTransform == null)
@@ -435,11 +447,15 @@ namespace SEAL
 
             Vector2 newFacing = toMouse.normalized;
 
-            // 방향이 바뀌었을 때만 처리 (매 프레임 이벤트 발행 방지)
+            // 방향이 바뀌었을 때만 처리
             if (newFacing == _facingDirection) return;
 
             _facingDirection = newFacing;
             OnFacingChanged?.Invoke(_facingDirection);
+
+            // [v1.3 추가] 공격 중(IsSwinging)이면 flipX / 회전 변경 금지
+            // WeaponPivot 과 flipX 모두 공격 시작 시점 방향으로 고정
+            if (_swingController != null && _swingController.IsSwinging) return;
 
             if (_rotateTowardsMoveDirection)
             {
