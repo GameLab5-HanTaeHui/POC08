@@ -1,50 +1,24 @@
 ﻿// ============================================================
-// PlayerAttackController.cs  v2.3
-// 플레이어 A키 공격 컨트롤러
+// PlayerAttackController.cs  v2.4
+// 플레이어 공격 컨트롤러
+//
+// [v2.4 변경 — 공격 중 이동 잠금 제거]
+//   마우스 기반 조작으로 전환하면서
+//   공격 중에도 자유롭게 이동 가능하도록 SetMoveLocked 제거.
+//
+//   [제거 위치]
+//     ComboAttackRoutine()  : SetMoveLocked(true) / SetMoveLocked(false)
+//     ChargeAttackRoutine() : SetMoveLocked(true) / SetMoveLocked(false)
+//     CancelAttack()        : SetMoveLocked(false)
+//
+//   [유지]
+//     봉인 집행(BossWardenSealExecutor.BlockPlayerInput) 에서의
+//     SetMoveLocked 는 그대로 유지.
+//     SetMoveLocked 함수 자체는 제거하지 않음.
 //
 // [v2.3 변경 — 공격 중 대시 시 공격 캔슬 (7단계)]
-//   Start() 에서 _moveController.OnDashStarted 구독.
-//   대시 시작 시 CancelAttack() 호출.
-//
-//   CancelAttack():
-//     ① _attackCoroutine StopCoroutine
-//     ② _swingController.CancelSwing()   — DOTween 중단 + 무기 원점
-//     ③ _hitboxManager.DisableAllHitboxes() — 히트박스 즉시 비활성
-//     ④ _moveController.SetMoveLocked(false) — 이동 잠금 해제
-//     ⑤ 콤보 상태 전체 초기화
-//
-//   [공격하면서 대시 불가]
-//     대시 입력 → OnDashStarted 발행 → CancelAttack()
-//     → 공격 완전 중단 후 대시 진행
-//
 // [v2.2 변경 — 콤보 전환 시점 방향 결정 (6단계)]
 // [v2.1 변경 — 히트박스 판정 경로 통합]
-//   기존 두 경로 (OverlapCircle / Collider2D) 가 독립적으로 존재하던 구조를
-//   PlayerAttackHitboxManager 단일 경로로 통합.
-//
-//   [제거]
-//     _activeHitboxRadius  : OverlapCircle 반경 (사용 안 함)
-//     _hitProcessed        : 중복 판정 방지 플래그 (HitboxManager 내부로 이전)
-//     OnSwingHitCallback() : onHit 콜백 핸들러
-//     ProcessHitCheck()    : OverlapCircle 판정 함수
-//     Update() 판정 루프  : _activeHitboxRadius > 0 체크
-//
-//   [추가]
-//     _hitboxManager 참조 (Awake 자동 탐색)
-//     Start() 에서 _hitboxManager.OnHit 구독
-//     HandleHitboxHit(Collider2D, float) : OnHit 수신 → OnHitTarget 발행
-//
-//   [PlaySwing / PlayChargeSwing 시그니처 변경]
-//     기존: (combo, dir, Action<float> onHit)
-//     변경: (combo, dir, float sealAmount)
-//     → SwingController 내부에서 HitboxManager 직접 제어
-//
-// [v2.0 변경 — 무기 연출 분리]
-//   PlayerWeaponSwingController 로 무기 연출 완전 위임.
-//
-// [네임스페이스]
-//   namespace : SEAL
-// ============================================================
 
 using System;
 using System.Collections;
@@ -378,12 +352,14 @@ namespace SEAL
         /// 현재 공격을 즉시 캔슬하고 상태를 초기화한다.
         /// 대시 / 피격 / 봉인 집행 등 공격 중단이 필요한 상황에서 호출.
         ///
+        /// [v2.4 변경 — SetMoveLocked 제거]
+        ///   공격 중 이동 잠금을 사용하지 않으므로 SetMoveLocked(false) 제거.
+        ///
         /// [캔슬 처리 순서]
-        ///   ① _attackCoroutine StopCoroutine  — 코루틴 즉시 중단
-        ///   ② SwingController.CancelSwing()   — DOTween 중단 + 무기 원점 복귀
-        ///   ③ HitboxManager.DisableAllHitboxes() — 히트박스 즉시 비활성
-        ///   ④ MoveController.SetMoveLocked(false) — 이동 잠금 해제
-        ///   ⑤ 콤보 상태 전체 초기화
+        ///   ① _attackCoroutine StopCoroutine
+        ///   ② SwingController.CancelSwing()       — DOTween 중단 + 무기 원점
+        ///   ③ HitboxManager.DisableAllHitboxes()  — 히트박스 즉시 비활성
+        ///   ④ 콤보 상태 전체 초기화
         /// </summary>
         public void CancelAttack()
         {
@@ -400,10 +376,7 @@ namespace SEAL
             // ③ 히트박스 비활성화
             _hitboxManager?.DisableAllHitboxes();
 
-            // ④ 이동 잠금 해제
-            _moveController?.SetMoveLocked(false);
-
-            // ⑤ 콤보 상태 초기화
+            // ④ 콤보 상태 초기화 ([v2.4] SetMoveLocked(false) 제거)
             _isAttacking = false;
             _comboWindowOpen = false;
             _comboInputQueued = false;
@@ -411,7 +384,6 @@ namespace SEAL
             _nextComboDir = Vector2.zero;
             _isChargeHolding = false;
 
-            // 강공격 맥동 중이면 종료
             _swingController?.StopChargePulse();
         }
 
@@ -483,7 +455,7 @@ namespace SEAL
             // 다음 콤보 방향 초기화 (매 콤보 시작 시 리셋)
             _nextComboDir = Vector2.zero;
 
-            _moveController.SetMoveLocked(true);
+            // [v2.4] SetMoveLocked 제거 — 공격 중 이동 자유
 
             var comboIndex = (PlayerWeaponSwingController.ComboIndex)
                 Mathf.Clamp(_currentCombo, 0, 2);
@@ -523,7 +495,7 @@ namespace SEAL
             }
             else
             {
-                _moveController.SetMoveLocked(false);
+                // [v2.4] SetMoveLocked(false) 제거
                 StartComboResetTimer();
             }
 
@@ -541,7 +513,7 @@ namespace SEAL
 
             _currentAttackDir = GetAttackDirection();
 
-            _moveController.SetMoveLocked(true);
+            // [v2.4] SetMoveLocked 제거 — 공격 중 이동 자유
 
             _swingController.PlayChargeSwing(_currentAttackDir, _data.ChargeSealAmount);
             PlayLunge(_currentAttackDir);
@@ -556,7 +528,7 @@ namespace SEAL
 
             _currentCombo = 0;
             _isAttacking = false;
-            _moveController.SetMoveLocked(false);
+            // [v2.4] SetMoveLocked(false) 제거
             _attackCoroutine = null;
         }
 
@@ -577,14 +549,20 @@ namespace SEAL
         /// </summary>
         private void HandleHitboxHit(Collider2D hitCol, float sealAmount)
         {
-            Vector2 hitPos = hitCol.bounds.center;
+            // bounds.center 는 콜라이더 크기가 0이거나 초기화 전이면 원점(0,0)을 반환하는 경우 있음
+            // → transform.position (오브젝트 월드 위치) 을 우선 사용
+            // → bounds.size > 0 인 경우에만 bounds.center 사용
+            Vector2 hitPos = hitCol.bounds.size.sqrMagnitude > 0.001f
+                ? (Vector2)hitCol.bounds.center
+                : (Vector2)hitCol.transform.position;
+
             OnHitTarget?.Invoke(hitPos, sealAmount);
 
             // 적 피격 파티클 재생
             HitFeedbackController.Instance?.PlayEnemyHit(hitPos);
 
             Debug.Log($"[PlayerAttackController] 적중: {hitCol.name} | " +
-                      $"봉인도 +{sealAmount:F1} | 콤보: {_currentCombo + 1}");
+                      $"봉인도 +{sealAmount:F1} | 콤보: {_currentCombo + 1} | 위치: {hitPos}");
         }
 
         // ══════════════════════════════════════════════════════
