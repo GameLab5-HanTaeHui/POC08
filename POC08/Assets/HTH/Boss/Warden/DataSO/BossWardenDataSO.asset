@@ -65,7 +65,7 @@ MonoBehaviour:
   colorDilPhase: {r: 1, g: 0.4, b: 0, a: 1}
   colorPhase2: {r: 0.6, g: 0, b: 0, a: 1}
   colorDead: {r: 0.067, g: 0.067, b: 0.067, a: 1}
-  colorArm0: {r: 0.102, g: 0.039, b: 0.18, a: 1}
+  colorArm0: {r: 1, g: 1, b: 1, a: 1}
   colorArm25: {r: 0.239, g: 0.122, b: 0.431, a: 1}
   colorArm50: {r: 0.42, g: 0.208, b: 0.722, a: 1}
   colorArm75: {r: 0.608, g: 0.349, b: 0.816, a: 1}

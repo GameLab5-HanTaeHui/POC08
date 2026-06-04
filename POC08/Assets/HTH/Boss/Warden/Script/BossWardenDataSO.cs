@@ -236,8 +236,8 @@ namespace SEAL
         /// 부위 봉인도 0% 색상.
         /// v1.1: 매우 어두운 보라 (#1A0A2E)
         /// </summary>
-        [Tooltip("부위 봉인도 0% 색상. v1.1: 매우 어두운 보라 #1A0A2E.")]
-        public Color colorArm0 = new Color(0.102f, 0.039f, 0.180f); // #1A0A2E
+        [Tooltip("부위 봉인도 0% 색상. v1.1: 하얀색. #FFFFFF")]
+        public Color colorArm0 = new Color(1f, 1f, 1f); // #FFFFFF
 
         /// <summary>
         /// 부위 봉인도 25% 색상.
