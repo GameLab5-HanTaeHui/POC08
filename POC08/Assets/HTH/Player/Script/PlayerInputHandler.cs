@@ -1,21 +1,26 @@
 ﻿// ============================================================
-// PlayerInputHandler.cs  v1.2
+// PlayerInputHandler.cs  v1.3
 // 탑뷰 플레이어 입력 통합 관리 컴포넌트
 //
+// [v1.3 변경 — BlockAction() 에 홀드 상태 초기화 추가]
+//   BlockAction() / BlockAll() 호출 시
+//   _isSealHeld / _isAttackHeld 를 false 로 강제 초기화.
+//
+//   [수정 이유]
+//     기존: BlockAll() → _actionBlocked = true
+//           그러나 _isSealHeld 는 여전히 true 유지
+//           → BossWardenSealExecutor.ExecuteSeal() 내부 while 루프에서
+//             IsSealHeld 를 체크하는데 BlockAll() 이후에도 true 이므로
+//             S키를 누르지 않아도 집행이 계속 진행되는 버그
+//           → Time.timeScale 이 SlowScale 로 고정되는 원인
+//
+//     수정: BlockAction() 에서 _isSealHeld / _isAttackHeld 강제 false
+//           → BlockAll() 은 BlockAction() 을 포함하므로 동일하게 적용
+//           → ExecuteSeal while 루프: IsSealHeld = false → goto cleanup
+//           → RestoreTimeScale() 정상 호출 → TimeScale 복구
+//
 // [v1.2 변경 — IsSealHeld 프로퍼티 추가]
-//   _isSealHeld 내부 상태 변수 추가.
-//   RegisterCallbacks() 봉인 콜백에 performed/canceled 로 갱신.
-//   IsSealHeld 프로퍼티 추가.
-//
-//   [추가 이유]
-//     BossWardenSealExecutor 가 S키 홀드 상태를 매 프레임 폴링해야 함.
-//     IsAttackHeld 와 동일한 방식으로 구현.
-//     OnSeal 이벤트(1회 발행)와 IsSealHeld(지속 상태) 는 용도가 다름:
-//       OnSeal      = 눌린 순간 트리거 (기존 유지)
-//       IsSealHeld  = 현재 누르고 있는지 여부 (신규, BossWardenSealExecutor 폴링용)
-//
-// [v1.1 변경]
-//   SEAL_README 키 할당 기준으로 전면 수정.
+// [v1.1 변경 — SEAL_README 키 할당 기준 전면 수정]
 //   이동   : WASD 제거 → 방향키(↑↓←→) 전용
 //   대시   : LShift → Space
 //   공격   : J → A (Button / 홀드 릴리즈 분리)
@@ -576,8 +581,19 @@ namespace SEAL
         /// <summary>
         /// 공격 / 봉인 / 상호작용 입력을 차단한다.
         /// 메뉴(OnMenu) 와 취소(OnCancel) 는 차단하지 않음.
+        ///
+        /// [v1.3 변경 — 홀드 상태 초기화]
+        ///   _isSealHeld / _isAttackHeld 를 false 로 강제 초기화.
+        ///   이유: BlockAll() 호출 후에도 _isSealHeld 가 true 유지되면
+        ///         ExecuteSeal while 루프에서 IsSealHeld = true 로 인식
+        ///         → S키 없이 집행 진행 + TimeScale 슬로우 고정 버그.
         /// </summary>
-        public void BlockAction() => _actionBlocked = true;
+        public void BlockAction()
+        {
+            _actionBlocked = true;
+            _isSealHeld = false;  // 봉인 홀드 상태 즉시 해제
+            _isAttackHeld = false;  // 공격 홀드 상태 즉시 해제
+        }
 
         /// <summary> 공격 / 봉인 / 상호작용 입력 차단 해제. </summary>
         public void UnblockAction() => _actionBlocked = false;
@@ -586,12 +602,13 @@ namespace SEAL
         /// 모든 입력을 차단한다.
         /// 컷씬, 페이즈 전환 등 전체 차단 시 사용.
         /// 주의: 메뉴와 취소는 코드 내부에서 항상 발행됨.
+        /// BlockAction() 을 포함하므로 홀드 상태도 함께 초기화됨.
         /// </summary>
         public void BlockAll()
         {
             _moveBlocked = true;
             _dashBlocked = true;
-            _actionBlocked = true;
+            BlockAction();  // _actionBlocked + _isSealHeld + _isAttackHeld 초기화 포함
         }
 
         /// <summary> 모든 입력 차단 해제. </summary>
