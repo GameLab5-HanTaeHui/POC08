@@ -1,32 +1,27 @@
 ﻿// ============================================================
-// BossWardenCoreSealGauge.cs  v1.1
+// BossWardenCoreSealGauge.cs  v1.2
 // Boss_Warden 코어 봉인도 누적 전담 컴포넌트
 //
+// [v1.2 변경 — SetActive=false 구독 누락 버그 수정 + 코어 색상 보간 추가]
+//
+//   🔴 버그 수정: Start() 에서 OnHit 구독 시 SetActive=false 상태면 실행 안 됨
+//       기존: Start() 에서 FindObjectsByType → OnHit 구독
+//             → 코어는 기본 SetActive=false → Start() 자체가 실행 안 됨
+//             → 딜 페이즈에서 코어를 공격해도 봉인도 누적 불가
+//       수정: BossWardenCore.EnterDilPhase() 에서 코어 SetActive(true) 후
+//             SubscribeHitboxManager() 를 직접 호출하는 방식으로 변경.
+//             OnEnable() 에서도 구독 시도 (SetActive=true 시 자동 구독).
+//
+//   🎨 코어 색상 보간 추가:
+//       딜 페이즈 중 봉인도 0% → colorCoreDilPhase(주황)
+//       봉인도 100% → colorCoreFinalSeal(빨강)
+//       AddGauge 시 UIPercent 기준으로 Lerp → 색상 자동 보간
+//       BossWardenFeedback 의 코어 색상 변경과 충돌 방지:
+//         UpdateBaseColor() 로 점멸 복귀 색상만 갱신
+//         실시간 Lerp 는 이 컴포넌트 내부에서만 처리
+//
 // [v1.1 수정]
-//   🟡 경고1 확인: 프로젝트 파일 버전의 _core 필드(BossWardenCore 참조)가
-//       Inspector 연결만 되고 실제 코드에서 미사용인 것을 확인.
-//       → outputs 버전에는 해당 필드 없음 (정상).
-//       → 프로젝트 파일에서 _core 필드 및 GetComponentInParent 참조 제거 권장.
-//
-// [역할]
-//   딜 페이즈 중 플레이어가 코어를 공격하면 코어 봉인도를 누적한다.
-//   부위 SealGaugeComponent 와 동일한 이벤트 구조를 가지지만
-//   봉인 저항 없음 / 딜 페이즈 전용이라는 점이 다르다.
-//
-// [피격 감지 방식]
-//   PlayerAttackHitboxManager.OnHit 이벤트 구독.
-//   hitCol 이 _ownCollider 와 일치할 때만 처리.
-//   (BossWardenArmPart 와 동일한 방식)
-//
-// [딜 페이즈 전용]
-//   BossWardenCore.OnDilPhaseEnter → SetActive(true) + ActivateGauge(true)
-//   BossWardenCore.OnDilPhaseExit  → ActivateGauge(false)
-//   딜 페이즈 외에는 AddGauge 무시.
-//
-// [페이즈별 목표치]
-//   1페이즈: 0 → phase1CoreSealTarget (250)
-//   2페이즈: 250 → phase2CoreSealTarget (500)
-//   코어 봉인도는 페이즈 전환 후에도 초기화되지 않는다.
+//   _core 필드 미사용 확인 → 제거
 //
 // [namespace]
 //   namespace : SEAL
@@ -39,105 +34,52 @@ using DG.Tweening;
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 코어 봉인도 누적 전담 컴포넌트. (v1.0)
-    ///
-    /// ────────────────────────────────────────────────────
-    /// [봉인도 흐름]
-    ///   딜 페이즈 진입 → ActivateGauge(true)
-    ///   플레이어 코어 공격 → OnHit → AddGauge(sealAmount)
-    ///   코어 봉인도 누적
-    ///   → 1페이즈 목표(250) 도달 → OnPhase1TargetReached
-    ///   → 2페이즈 목표(500) 도달 → OnPhase2TargetReached
-    ///   딜 페이즈 종료 → ActivateGauge(false)
-    /// ────────────────────────────────────────────────────
+    /// Boss_Warden 코어 봉인도 누적 전담 컴포넌트. (v1.2)
     /// </summary>
     public class BossWardenCoreSealGauge : MonoBehaviour
     {
-        // ══════════════════════════════════════════════════════
-        // Inspector
-        // ══════════════════════════════════════════════════════
-
         [Header("── DataSO ──────────────────────")]
-
         [Tooltip("BossWardenDataSO. BossWardenCore.Initialize() 에서 주입.")]
         [SerializeField] private BossWardenDataSO _data;
 
         [Header("── 코어 SpriteRenderer ──────────────────────")]
-
-        /// <summary>
-        /// 코어 SpriteRenderer.
-        /// 피격 점멸 연출에 사용.
-        /// 미연결 시 GetComponent 자동 탐색.
-        /// </summary>
         [Tooltip("코어 SpriteRenderer. 미연결 시 자동 탐색.")]
         [SerializeField] private SpriteRenderer _spriteRenderer;
 
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조
         // ══════════════════════════════════════════════════════
-
         private Collider2D _ownCollider;
         private PlayerAttackHitboxManager _hitboxManager;
 
         // ══════════════════════════════════════════════════════
         // 내부 상태
         // ══════════════════════════════════════════════════════
-
-        /// <summary> 현재 코어 봉인도 (내부 수치, 0 ~ coreSealGaugeMax). </summary>
         private float _currentGauge;
-
-        /// <summary>
-        /// 딜 페이즈 활성 여부.
-        /// false 시 AddGauge 완전 무시.
-        /// </summary>
         private bool _isActive;
-
-        /// <summary> 1페이즈 목표 도달 이벤트 발행 완료 여부. </summary>
         private bool _phase1Reached;
-
-        /// <summary> 2페이즈 목표 도달 이벤트 발행 완료 여부. </summary>
         private bool _phase2Reached;
-
-        /// <summary> 현재 피격 점멸 Tween. </summary>
         private Tweener _flashTween;
-
-        /// <summary> 기본 색상 캐시. </summary>
         private Color _baseColor;
 
         // ══════════════════════════════════════════════════════
         // 이벤트
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 코어 봉인도 변화 시 발행.
-        /// 파라미터: UI 퍼센트 (0~100).
-        /// BossWardenCore / UI 가 구독.
-        /// </summary>
+        /// <summary>코어 봉인도 변화 시 발행. 파라미터: UI 퍼센트 (0~100).</summary>
         public event Action<float> OnCoreSealGaugeChanged;
 
-        /// <summary>
-        /// 1페이즈 코어 봉인도 목표 도달 시 1회 발행.
-        /// BossWardenCore 가 구독 → 딜 페이즈 종료 / 2페이즈 전환.
-        /// </summary>
+        /// <summary>1페이즈 코어 봉인도 목표 도달 시 1회 발행.</summary>
         public event Action OnPhase1TargetReached;
 
-        /// <summary>
-        /// 2페이즈 코어 봉인도 목표 도달 시 1회 발행.
-        /// BossWardenCore 가 구독 → 최종 봉인 진입 신호.
-        /// </summary>
+        /// <summary>2페이즈 코어 봉인도 목표 도달 시 1회 발행.</summary>
         public event Action OnPhase2TargetReached;
 
         // ══════════════════════════════════════════════════════
         // 프로퍼티
         // ══════════════════════════════════════════════════════
-
-        /// <summary> 현재 코어 봉인도 내부 수치. </summary>
         public float CurrentGauge => _currentGauge;
 
-        /// <summary>
-        /// 코어 봉인도 UI 퍼센트 (0~100).
-        /// coreSealGaugeMax 기준.
-        /// </summary>
         public float UIPercent => (_data != null && _data.coreSealGaugeMax > 0f)
             ? Mathf.Clamp01(_currentGauge / _data.coreSealGaugeMax) * 100f
             : 0f;
@@ -157,27 +99,25 @@ namespace SEAL
                 _baseColor = _spriteRenderer.color;
         }
 
-        private void Start()
+        /// <summary>
+        /// SetActive(true) 시 자동 구독.
+        /// v1.2: BossWardenCore.ActivateCore() → SetActive(true) → OnEnable() → 구독.
+        /// </summary>
+        private void OnEnable()
         {
-            // PlayerAttackHitboxManager 탐색 (1회)
-            var managers = FindObjectsByType<PlayerAttackHitboxManager>(FindObjectsSortMode.None);
-            if (managers.Length > 0)
-            {
-                _hitboxManager = managers[0];
+            SubscribeHitboxManager();
+        }
+
+        private void OnDisable()
+        {
+            if (_hitboxManager != null)
                 _hitboxManager.OnHit -= HandlePlayerHit;
-                _hitboxManager.OnHit += HandlePlayerHit;
-            }
-            else
-            {
-                Debug.LogWarning("[BossWardenCoreSealGauge] PlayerAttackHitboxManager 를 찾을 수 없습니다.");
-            }
         }
 
         private void OnDestroy()
         {
             if (_hitboxManager != null)
                 _hitboxManager.OnHit -= HandlePlayerHit;
-
             _flashTween?.Kill();
         }
 
@@ -186,7 +126,7 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// BossWardenCore.Start() 에서 DataSO 주입 후 초기화.
+        /// BossWardenCore 에서 DataSO 주입 후 초기화.
         /// </summary>
         public void Initialize(BossWardenDataSO data)
         {
@@ -196,6 +136,33 @@ namespace SEAL
                 _baseColor = _spriteRenderer.color;
 
             Debug.Log("[BossWardenCoreSealGauge] 초기화 완료");
+        }
+
+        /// <summary>
+        /// PlayerAttackHitboxManager.OnHit 구독.
+        ///
+        /// [v1.2 추가]
+        ///   OnEnable() 에서 호출 — SetActive(true) 시 자동 구독.
+        ///   BossWardenCore.EnterDilPhase() 에서 직접 호출도 가능.
+        ///   중복 구독 방지: -= 먼저 후 +=.
+        /// </summary>
+        public void SubscribeHitboxManager()
+        {
+            if (_hitboxManager == null)
+            {
+                var managers = FindObjectsByType<PlayerAttackHitboxManager>(FindObjectsSortMode.None);
+                if (managers.Length > 0)
+                    _hitboxManager = managers[0];
+                else
+                {
+                    Debug.LogWarning("[BossWardenCoreSealGauge] PlayerAttackHitboxManager 를 찾을 수 없습니다.");
+                    return;
+                }
+            }
+
+            _hitboxManager.OnHit -= HandlePlayerHit;
+            _hitboxManager.OnHit += HandlePlayerHit;
+            Debug.Log("[BossWardenCoreSealGauge] PlayerAttackHitboxManager.OnHit 구독 완료");
         }
 
         // ══════════════════════════════════════════════════════
@@ -209,6 +176,14 @@ namespace SEAL
         public void ActivateGauge(bool isActive)
         {
             _isActive = isActive;
+
+            // 딜 페이즈 진입 시 색상 초기화 (주황 → 빨강 보간 시작점)
+            if (isActive && _data != null && _spriteRenderer != null)
+            {
+                _baseColor = _data.colorCoreDilPhase;
+                _spriteRenderer.color = _baseColor;
+            }
+
             Debug.Log($"[BossWardenCoreSealGauge] 게이지 활성 = {isActive}");
         }
 
@@ -219,11 +194,6 @@ namespace SEAL
         /// <summary>
         /// PlayerAttackHitboxManager.OnHit 수신.
         /// hitCol 이 _ownCollider 와 일치할 때만 처리.
-        ///
-        /// [누적량 결정]
-        ///   PlayerAttackHitboxManager.CurrentSealAmount 를 코어 봉인도 누적량으로 변환.
-        ///   기본 공격 봉인도 = coreBasicAttackGain / 강공격 = coreChargeAttackGain.
-        ///   현재는 sealAmount 크기 기준으로 강/약 구분 (추후 PlayerAttackController 연동).
         /// </summary>
         private void HandlePlayerHit(Collider2D hitCol, float sealAmount)
         {
@@ -231,7 +201,6 @@ namespace SEAL
             if (!_isActive) return;
             if (_data == null) return;
 
-            // 강공격 여부 판단 (기준값 이상이면 강공격으로 간주)
             float coreGain = sealAmount >= 25f
                 ? _data.coreChargeAttackGain
                 : _data.coreBasicAttackGain;
@@ -245,11 +214,12 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 코어 봉인도를 누적한다.
+        /// 코어 봉인도 누적 + 색상 보간 + 목표 도달 체크.
         ///
-        /// [페이즈별 목표 체크]
-        ///   _currentGauge >= phase1CoreSealTarget → OnPhase1TargetReached (1회)
-        ///   _currentGauge >= phase2CoreSealTarget → OnPhase2TargetReached (1회)
+        /// [v1.2 추가 — 색상 보간]
+        ///   UIPercent 기준으로 colorCoreDilPhase(주황) → colorCoreFinalSeal(빨강) 보간.
+        ///   AddGauge 호출마다 SpriteRenderer 색상을 즉시 갱신.
+        ///   점멸 중이면 _baseColor 만 갱신 (점멸 완료 후 반영).
         /// </summary>
         private void AddGauge(float amount)
         {
@@ -258,10 +228,13 @@ namespace SEAL
 
             _currentGauge = Mathf.Min(_currentGauge + amount, _data.coreSealGaugeMax);
 
-            // UI 이벤트 발행
+            // UI 이벤트
             OnCoreSealGaugeChanged?.Invoke(UIPercent);
 
-            // 1페이즈 목표 도달
+            // [v1.2] 봉인도 기준 색상 보간 (주황 → 빨강)
+            UpdateCoreColor();
+
+            // 1페이즈 목표
             if (!_phase1Reached && _currentGauge >= _data.phase1CoreSealTarget)
             {
                 _phase1Reached = true;
@@ -269,7 +242,7 @@ namespace SEAL
                 Debug.Log("[BossWardenCoreSealGauge] 1페이즈 코어 봉인도 목표 도달!");
             }
 
-            // 2페이즈 목표 도달
+            // 2페이즈 목표
             if (!_phase2Reached && _currentGauge >= _data.phase2CoreSealTarget)
             {
                 _phase2Reached = true;
@@ -278,14 +251,49 @@ namespace SEAL
             }
         }
 
+        /// <summary>
+        /// 봉인도 진행도에 따라 코어 색상 보간.
+        ///
+        /// [색상 기획]
+        ///   0%   → colorCoreDilPhase  (#FF8C00 주황)
+        ///   100% → colorCoreFinalSeal (#FF0000 빨강)
+        ///   중간 → Lerp 보간
+        ///
+        /// [2페이즈 보간 기준]
+        ///   1페이즈: 0 ~ phase1CoreSealTarget 기준
+        ///   2페이즈: phase1CoreSealTarget ~ phase2CoreSealTarget 기준
+        ///   각 페이즈 내에서 독립적으로 0~1 보간
+        /// </summary>
+        private void UpdateCoreColor()
+        {
+            if (_data == null || _spriteRenderer == null) return;
+
+            float t;
+            if (!_phase1Reached)
+            {
+                // 1페이즈: 0 ~ phase1CoreSealTarget
+                t = Mathf.Clamp01(_currentGauge / _data.phase1CoreSealTarget);
+            }
+            else
+            {
+                // 2페이즈: phase1CoreSealTarget ~ phase2CoreSealTarget
+                float range = _data.phase2CoreSealTarget - _data.phase1CoreSealTarget;
+                float progress = _currentGauge - _data.phase1CoreSealTarget;
+                t = (range > 0f) ? Mathf.Clamp01(progress / range) : 1f;
+            }
+
+            Color lerpColor = Color.Lerp(_data.colorCoreDilPhase, _data.colorCoreFinalSeal, t);
+
+            // 점멸 중이면 _baseColor 만 갱신 (점멸 완료 후 복귀 색상에 반영)
+            _baseColor = lerpColor;
+            if (_flashTween == null || !_flashTween.IsActive() || !_flashTween.IsPlaying())
+                _spriteRenderer.color = lerpColor;
+        }
+
         // ══════════════════════════════════════════════════════
         // 히트 점멸
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 코어 피격 시 흰색 점멸 연출.
-        /// SetUpdate(true) — TimeScale 슬로우 중에도 정상 복귀.
-        /// </summary>
         private void PlayHitFlash()
         {
             if (_spriteRenderer == null || _data == null) return;
@@ -302,10 +310,7 @@ namespace SEAL
         // 외부 API
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 기본 색상 업데이트.
-        /// BossWardenFeedback 이 딜 페이즈 색상 변경 시 호출.
-        /// </summary>
+        /// <summary>기본 색상 업데이트. BossWardenFeedback 에서 호출.</summary>
         public void UpdateBaseColor(Color newColor)
         {
             _baseColor = newColor;
@@ -318,16 +323,9 @@ namespace SEAL
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = _isActive
-                ? new Color(1f, 1f, 0f, 0.5f)
-                : new Color(0.4f, 0.4f, 0.4f, 0.2f);
-
-            Gizmos.DrawWireSphere(transform.position, 0.35f);
-
-#if UNITY_EDITOR
-            UnityEditor.Handles.Label(
-                transform.position + Vector3.up * 0.5f,
-                $"Core: {UIPercent:F0}% [{(_isActive ? "Active" : "Inactive")}]");
-#endif
+                ? new Color(1f, 0.5f, 0f, 0.5f)
+                : new Color(0.3f, 0.3f, 0.3f, 0.3f);
+            Gizmos.DrawWireSphere(transform.position, 0.5f);
         }
     }
 }

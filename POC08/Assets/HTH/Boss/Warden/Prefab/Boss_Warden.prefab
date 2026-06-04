@@ -269,7 +269,7 @@ MonoBehaviour:
   _recoveryDuration: 0.8
   _triggerGroggyOnRecovery: 0
   _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 1
+  _isPhase2Only: 0
   _attackRange: {fileID: 5298859741369411445}
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
@@ -711,6 +711,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenArmPart
   _partType: 0
   _spriteRenderer: {fileID: 3641258697330880272}
+  _ownCollider: {fileID: 5469557703581780597}
   _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
 --- !u!114 &794984356774534731
 MonoBehaviour:
@@ -2437,6 +2438,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenArmPart
   _partType: 1
   _spriteRenderer: {fileID: 667973993591523152}
+  _ownCollider: {fileID: 8488932745856487769}
   _data: {fileID: 11400000, guid: a29f48e4d5b245f48a87633ffaf400d9, type: 2}
 --- !u!114 &1172787042423395168
 MonoBehaviour:

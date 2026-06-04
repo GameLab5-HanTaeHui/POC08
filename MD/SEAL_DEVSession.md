@@ -741,3 +741,369 @@ else
 | 코어 해제 + 딜 페이즈 | ⬜ |
 | 충격파 + 2페이즈 전환 | ⬜ |
 | 최종 봉인 + 처치 | ⬜ |
+
+---
+
+## v1.0 — 플레이어 디테일링 1~7단계 완료
+
+**단계**: 핵심 메카닉 구현 (1단계) → 테스트 진행 단계 진입  
+**작업**: 플레이어 시스템 전면 디테일링 + 리팩토링
+
+---
+
+### 변경 파일 전체 현황 (v1.0 기준)
+
+#### 플레이어 시스템
+
+| 파일 | 버전 | 변경 내용 |
+|---|---|---|
+| `PlayerInputHandler.cs` | v1.2 | IsSealHeld 프로퍼티 추가 (S키 홀드 폴링용) |
+| `PlayerMoveController.cs` | v1.2 | HandleDashInput — PlayerInputHandler.MoveInput 기준 대시 방향 수정. DashRoutine — OnDashStarted 발행 후 wasMoveLocked 재캐싱 |
+| `PlayerAttackDataSO.cs` | v2.2 | Combo1/2/ChargeArcHeight 필드 추가 (DOPath 곡선 이동) |
+| `PlayerAttackController.cs` | v2.3 | _nextComboDir 추가(6단계), HandleDashStarted + CancelAttack() 추가(7단계), OnDashStarted 구독 |
+| `PlayerWeaponSwingController.cs` | v1.3 | UpdatePivotToFacing() 추가(1단계), _hitboxManager 직접 제어(3단계), InsertCallback→AppendCallback 교체(3단계), ArcPath() 추가 + DOLocalPath PathMode.Ignore(4단계) |
+| `ObjectDirectionController.cs` | v1.1 | HandleFacingChanged — IsSwinging 체크 후 WeaponPivot 이동방향 동기화 연결(1단계) |
+| `PlayerAttackHitboxManager.cs` | v1.1 | _enemyLayer → EnemyAttackHitBox 레이어 명시 |
+| `HitFeedbackController.cs` | v1.0 | 신규. PlayPlayerHit / PlayEnemyHit 싱글턴 (5단계) |
+
+#### Boss_Warden 시스템
+
+| 파일 | 프로젝트 버전 | 변경 내용 |
+|---|---|---|
+| `BossPattern_Charge.cs` | v1.3 | Awake 강제설정 제거, _rigid2D.position 교체, 안전장치 3종 |
+| `BossPattern_Slam.cs` | v3.0 | 팔 던지기 + 공략 타임 전면 재설계 |
+| `BossPattern_Sweep.cs` | v3.0 | FacingDir 기준 양팔 벌리기 전면 재설계 |
+| `BossPattern_GuardBreak.cs` | v3.0 | 로컬 오프셋 정확화 + IsGuarding 연동 |
+| `BossPattern_RageCharge.cs` | v1.1 | _rigid2D.position 교체 |
+| `BossWardenCore.cs` | v1.1 | DefaultExecutionOrder(-10) 추가 |
+| `BossWardenAI.cs` | v1.2 | GC 최적화 + 이중 체크 |
+| `BossWardenSealExecutor.cs` | v1.1 | 람다 캐싱 + holdTimer 수정 |
+| `SealGaugeComponent.cs` | v1.2 | 주석 수정 |
+| `BossPatternBase.cs` | v1.2 | 단계별 상세 로그 추가 |
+
+---
+
+### 1단계 — 이동 방향대로 무기 방향 동기화
+
+**수정 파일:** `ObjectDirectionController.cs` v1.0→v1.1, `PlayerWeaponSwingController.cs` v1.1→v1.2
+
+```
+이동 방향 변경
+  → PlayerMoveController.OnFacingChanged(Vector2)
+  → ObjectDirectionController.HandleFacingChanged()
+    ① flipX 처리
+    ② IsSwinging == false → SwingController.UpdatePivotToFacing(dir)
+                             → WeaponPivot Z회전 즉시 반영
+       IsSwinging == true  → 변경 없음 (공격 방향 고정 유지)
+```
+
+---
+
+### 2단계 — 공격 준비/복귀 중 대시 방향 수정
+
+**수정 파일:** `PlayerMoveController.cs` v1.1→v1.2
+
+```
+기존: _moveInput 기준 → 이동 잠금 중 zero → _lastMoveDirection (공격 방향)
+변경: PlayerInputHandler.Instance.MoveInput 기준 (실제 눌린 키, 잠금 무관)
+     → 방향키 입력 있으면 그 방향 / 없으면 _lastMoveDirection 유지
+```
+
+---
+
+### 3단계 — HitboxManager 활성화 흐름 통합
+
+**수정 파일:** `PlayerWeaponSwingController.cs`, `PlayerAttackController.cs` v2.0→v2.1
+
+```
+제거: onHit 콜백 / ProcessHitCheck OverlapCircle / _activeHitboxRadius / _hitProcessed
+
+추가: _hitboxManager 직접 제어 (PlayerWeaponSwingController)
+      AppendCallback → EnableHitbox (백스윙 완료 직후)
+      AppendCallback → DisableAllHitboxes (타격 완료 직후, 복귀 시작 전)
+
+      HandleHitboxHit(Collider2D, float) — OnHit 구독 → OnHitTarget 발행
+
+히트박스 활성 흐름:
+  공격 준비 → Collider2D disabled
+  타격 구간 → Collider2D enabled
+  복귀 구간 → Collider2D disabled
+```
+
+**InsertCallback → AppendCallback 교체 이유:**
+InsertCallback(bD) 과 Append 가 같은 시각이면 InsertCallback 이 먼저 발화하는 DOTween 내부 순서 문제로 백스윙 시점에 EnableHitbox 가 발화하는 역전 버그 발생. AppendCallback 은 이전 Append 완료 직후 실행 보장.
+
+---
+
+### 4단계 — DOPath 곡선 이동 + 8방향 적용
+
+**수정 파일:** `PlayerAttackDataSO.cs` v2.1→v2.2, `PlayerWeaponSwingController.cs` v1.2→v1.3
+
+```
+추가 필드: Combo1ArcHeight(0.8f), Combo2ArcHeight(-0.6f), ChargeArcHeight(1.5f)
+
+ArcPath(backPos, attackPos, arcHeight, duration, ease):
+  mid = (backPos + attackPos) / 2
+  perp = Vector3.Cross(dir.normalized, Vector3.forward)
+  controlPoint = mid + perp × arcHeight
+  DOLocalPath([backPos, controlPoint, attackPos], CatmullRom, PathMode.Ignore)
+
+PathMode.Ignore: 경유점을 로컬 좌표로 해석
+  → WeaponPivot Z회전과 함께 8방향 모두 동일한 호 궤적 보장
+
+Combo3 찌르기: DOLocalMove 직선 유지 (직선이 컨셉)
+```
+
+---
+
+### 5단계 — HitFeedback ParticleSystem 연동
+
+**신규 파일:** `HitFeedbackController.cs` v1.0
+
+```
+씬 배치:
+  EffectRoot → HitFeedbackController [싱글턴]
+                 ├─ PlayerHitEffect [HitParticle.prefab]
+                 └─ EnemyHitEffect  [EnemyHitParticle.prefab]
+
+API:
+  PlayPlayerHit(Vector2) → 플레이어 피격 시 (보스 패턴에서 호출)
+  PlayEnemyHit(Vector2)  → 적 피격 시 (PlayerAttackController.HandleHitboxHit)
+
+연결 추가:
+  BossPattern_Charge.CheckChargeHit() → PlayPlayerHit
+  PlayerAttackController.HandleHitboxHit() → PlayEnemyHit
+  (나머지 패턴 Slam/Sweep/GuardBreak/RageCharge는 POC08에서 직접 추가)
+```
+
+---
+
+### 6단계 — 콤보 전환 시점 방향 결정
+
+**수정 파일:** `PlayerAttackController.cs` v2.1→v2.2
+
+```
+추가 변수: _nextComboDir (Vector2)
+
+HandleAttackPress() — 콤보 윈도우 입력 시:
+  _nextComboDir = PlayerInputHandler.Instance.MoveInput (실제 누른 방향키 스냅샷)
+  방향키 없으면 zero 저장
+
+ComboAttackRoutine():
+  1콤보(첫 공격): GetAttackDirection() — FacingDirection 기준
+  2/3콤보: _nextComboDir 유효하면 그 방향 / zero면 이전 방향 유지
+  콤보 시작마다 _nextComboDir = zero 초기화
+
+결과:
+  1콤보 오른쪽 → 콤보 윈도우에서 ↑ 누르며 A → 2콤보 위쪽
+  1콤보 오른쪽 → 콤보 윈도우에서 방향키 없이 A → 2콤보 오른쪽 유지
+```
+
+---
+
+### 7단계 — 공격 중 대시 시 공격 캔슬
+
+**수정 파일:** `PlayerAttackController.cs` v2.2→v2.3, `PlayerMoveController.cs` v1.2
+
+```
+PlayerAttackController:
+  Start() → _moveController.OnDashStarted 구독
+  HandleDashStarted() → IsAttacking 체크 후 CancelAttack()
+  CancelAttack():
+    ① StopCoroutine(_attackCoroutine)
+    ② SwingController.CancelSwing()
+    ③ HitboxManager.DisableAllHitboxes()
+    ④ MoveController.SetMoveLocked(false)
+    ⑤ 콤보 상태 전체 초기화
+
+PlayerMoveController:
+  DashRoutine():
+    wasMoveLocked = _isMoveLocked (초기 캐싱)
+    OnDashStarted?.Invoke()
+    wasMoveLocked = _isMoveLocked  ← OnDashStarted 발행 후 재캐싱
+    (CancelAttack이 SetMoveLocked(false) 호출 → 재캐싱 시 false 반영)
+    대시 종료: _isMoveLocked = wasMoveLocked (false 복원 → 이동 정상)
+```
+
+---
+
+### Boss_Warden 패턴 업데이트 (POC08 프로젝트 파일 기준)
+
+| 패턴 | 버전 | 핵심 변경 |
+|---|---|---|
+| BossPattern_Slam | v3.0 | 팔 SetParent 분리 → DOMove 플레이어 위치 꽂기 → 공략 타임 → 귀환 재부착. _rigid2D 캐싱. |
+| BossPattern_Sweep | v3.0 | FacingDir 기준 양팔 수직 벌리기. _rigid2D.position 기준 히트박스. |
+| BossPattern_GuardBreak | v3.0 | 로컬 Y+ 오프셋 고정. IsGuarding 정면 봉인도 무효 연동. WaitForSecondsRealtime 교체. |
+
+---
+
+### STEP 09 진행 현황
+
+| 항목 | 상태 |
+|---|---|
+| 플레이어 디테일링 1~7단계 | ✅ 완료 |
+| Boss 패턴 업데이트 (Slam/Sweep/GuardBreak) | ✅ 완료 |
+| 초기화 + 패턴 순환 동작 | 🟨 테스트 필요 |
+| 봉인도 누적 + 색상 단계 변화 | ⬜ |
+| S키 봉인 집행 + 그로기 진입 | ⬜ |
+| 코어 해제 + 딜 페이즈 | ⬜ |
+| 충격파 + 2페이즈 전환 | ⬜ |
+| 최종 봉인 + 처치 | ⬜ |
+
+---
+
+## v1.1 — 봉인 시스템 연결 구조 버그 수정 + 색상 기획 변경
+
+**단계**: 핵심 메카닉 구현 (1단계) / STEP 09 진입  
+**작업**: 봉인 시스템 실제 연결 구조 분석 → 4개 버그 수정 + 색상 변경
+
+---
+
+### 🔴 발견된 버그 4개
+
+#### 버그 A — BossWardenArmPart._ownCollider 레이어 불일치 (치명적)
+
+```
+PlayerAttackHitboxManager._enemyLayer = EnemyAttackHitBox (Layer 22)
+→ OverlapCollider 로 Layer 22 감지 → LeftHurtBox(Layer 22) 감지
+→ OnHit(hitCol=LeftHurtBox콜라이더) 발행
+
+BossWardenArmPart.HandlePlayerHit():
+  _ownCollider = GetComponent<Collider2D>()
+               = LeftArm 본체 Collider2D (Layer 20 = Enemy)
+  if (hitCol != _ownCollider) return;  ← LeftHurtBox ≠ LeftArm콜라이더 → 항상 return
+→ 봉인도 누적 절대 안 됨
+
+수정: Awake() 에서 EnemyAttackHitBox 레이어를 가진 자식 콜라이더 탐색
+  FindHurtBoxCollider() 추가 → _ownCollider = 자식 LeftHurtBox 콜라이더
+```
+
+#### 버그 B — BossWardenCoreSealGauge.Start() SetActive=false 구독 누락 (치명적)
+
+```
+BossWardenCoreSealGauge.Start() 에서 OnHit 구독
+코어는 기본 SetActive=false → Start() 자체 실행 안 됨
+→ 딜 페이즈에서 코어 공격해도 봉인도 누적 불가
+
+수정: OnEnable() 에서 SubscribeHitboxManager() 호출
+  SetActive(true) 시 OnEnable() 자동 실행 → 구독 보장
+  OnDisable() 에서 구독 해제
+  BossWardenCore.EnterDilPhase() 에서 SetActive(true) → 자동 구독
+```
+
+#### 버그 C — BossWardenSealExecutor._sealReadyParts 그로기 실패 후 잔류
+
+```
+그로기 실패(ExitGroggyFailure) → HandleGroggyExit() 호출
+_sealReadyParts.Clear() 없음 → 이전 집행 취소 상태 부위가 남아있음
+→ 루프 재시작 후 이미 해제된 부위를 집행 대상으로 잡는 버그
+
+수정: HandleGroggyExit() 에 _sealReadyParts.Clear() 추가
+```
+
+#### 버그 D — BossWardenFeedback SubscribeArmGauge 타이밍 불안정
+
+```
+BossWardenFeedback.Start() → SubscribeArmGauge()
+BossWardenCore.DefaultExecutionOrder(-10) 으로 Core.Awake() 먼저 실행 보장
+그러나 BossWardenFeedback.Start() 와 BossWardenArmPart.Start() 순서 미보장
+
+수정: BossWardenFeedback 에 [DefaultExecutionOrder(10)] 추가
+  → Core (-10) → 기본 (0) → Feedback (10) 순서 보장
+  → Feedback.Start() 시점에 SealGauge 항상 초기화 완료 상태
+```
+
+---
+
+### 변경 파일 목록
+
+| 파일 | 버전 | 변경 내용 |
+|---|---|---|
+| `BossWardenArmPart.cs` | v1.1 → v1.2 | FindHurtBoxCollider() 추가, _ownCollider 자식 HurtBox 탐색 |
+| `BossWardenCoreSealGauge.cs` | v1.1 → v1.2 | OnEnable/OnDisable 구독, SubscribeHitboxManager() 추가, 코어 색상 보간 |
+| `BossWardenSealExecutor.cs` | v1.1 → v1.2 | HandleGroggyExit() 에 _sealReadyParts.Clear() 추가 |
+| `BossWardenFeedback.cs` | v1.0 → v1.1 | [DefaultExecutionOrder(10)] 추가 |
+| `BossWardenDataSO.cs` | v1.0 → v1.1 | 색상 값 변경 |
+
+---
+
+### 🎨 색상 변경 기획
+
+#### 부위 봉인도 단계 색상 — 어두운 보라색 계열
+
+| 단계 | % | 색상값 | 색상명 |
+|---|---|---|---|
+| Stage 0 | 0% | `#1A0A2E` | 매우 어두운 보라 |
+| Stage 1 | 25% | `#3D1F6E` | 어두운 보라 |
+| Stage 2 | 50% | `#6B35B8` | 중간 보라 |
+| Stage 3 | 75% | `#9B59D0` | 밝은 보라 |
+| Stage 4 | 100% | `#C77DFF` | 연보라 빠른 Pulse |
+| Sealed | 완료 | `#7B2FBE` | 진한 보라 고정 |
+
+**BossWardenDataSO 변경값:**
+```csharp
+colorArm0      = new Color(0.102f, 0.039f, 0.180f)  // #1A0A2E
+colorArm25     = new Color(0.239f, 0.122f, 0.431f)  // #3D1F6E
+colorArm50     = new Color(0.420f, 0.208f, 0.722f)  // #6B35B8
+colorArm75     = new Color(0.608f, 0.349f, 0.816f)  // #9B59D0
+colorArm100    = new Color(0.780f, 0.490f, 1.000f)  // #C77DFF
+colorArmSealed = new Color(0.482f, 0.184f, 0.745f)  // #7B2FBE
+```
+
+#### 코어 색상 — 노란색 → 붉은색 진행
+
+| 상태 | 색상값 | 설명 |
+|---|---|---|
+| 그로기 (코어 활성) | `#FFE600` | 밝은 노랑 빠른 Pulse |
+| 딜 페이즈 시작 (0%) | `#FF8C00` | 주황 |
+| 딜 페이즈 중간 | Lerp 보간 | 주황→빨강 자동 보간 |
+| 봉인도 100% | `#FF0000` | 선명한 빨강 강한 Pulse |
+
+**BossWardenDataSO 변경값:**
+```csharp
+colorCoreActive    = new Color(1.000f, 0.902f, 0.000f)  // #FFE600
+colorCoreDilPhase  = new Color(1.000f, 0.549f, 0.000f)  // #FF8C00
+colorCoreFinalSeal = new Color(1.000f, 0.000f, 0.000f)  // #FF0000
+```
+
+**코어 색상 보간 구현 위치:** `BossWardenCoreSealGauge.UpdateCoreColor()`
+```csharp
+Color.Lerp(colorCoreDilPhase, colorCoreFinalSeal, UIPercent / 100f)
+```
+
+---
+
+### POC08 프로젝트 파일 직접 수정 체크리스트
+
+```
+[ ] BossWardenArmPart.cs
+    → Awake() 내 _ownCollider = GetComponent<Collider2D>() 제거
+    → FindHurtBoxCollider() 메서드 추가
+    → _ownCollider = FindHurtBoxCollider() 로 교체
+
+[ ] BossWardenFeedback.cs
+    → 클래스 선언 위 [DefaultExecutionOrder(10)] 추가
+
+[ ] BossWardenSealExecutor.cs
+    → HandleGroggyExit() 내 _sealReadyParts.Clear() 추가
+
+[ ] BossWardenDataSO.cs
+    → 색상 필드 6개 변경 (부위 보라색 / 코어 주황→빨강)
+
+[ ] BossWardenDataSO.asset (Unity Inspector)
+    → 변경된 색상 값 에셋에 반영
+    (cs 파일의 기본값이 바뀌어도 이미 생성된 에셋은 수동 변경 필요)
+```
+
+---
+
+### STEP 09 진행 현황
+
+| 항목 | 상태 |
+|---|---|
+| 플레이어 디테일링 1~7단계 | ✅ |
+| Boss 패턴 업데이트 | ✅ |
+| HitFeedback Pool 방식 재설계 | ✅ |
+| 봉인 시스템 연결 구조 버그 수정 | ✅ |
+| 색상 기획 변경 | ✅ |
+| 전체 루프 통합 테스트 | ⬜ |
