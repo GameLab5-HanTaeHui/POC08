@@ -401,23 +401,41 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// Update 에서 호출. 이동 입력 방향에 따라 Sprite 방향을 갱신한다.
+        /// Update 에서 호출. 마우스 포인터 방향으로 FacingDirection 을 갱신한다.
         ///
-        /// [_rotateTowardsMoveDirection = false (기본)]
-        ///   X 방향에 따라 SpriteRenderer.flipX 반전.
-        ///   탑뷰에서 좌/우 방향으로 스프라이트 플립.
+        /// [v1.3 변경 — 마우스 방향 기반]
+        ///   기존: _moveInput(이동 방향) 기준으로 FacingDirection 갱신
+        ///         → 이동을 멈추면 방향이 갱신되지 않음
+        ///         → 이동 방향 = 공격 방향 (분리 불가)
         ///
-        /// [_rotateTowardsMoveDirection = true]
-        ///   이동 방향 각도로 transform.rotation 보간.
-        ///   8방향 회전 표현.
+        ///   변경: 마우스 월드 좌표 기준으로 FacingDirection 갱신
+        ///         → 플레이어는 항상 마우스를 향해 바라봄
+        ///         → WASD 이동 방향과 공격 방향이 완전히 독립
+        ///         → 멈춰있어도 마우스를 따라 방향 전환
+        ///
+        /// [flipX 처리]
+        ///   마우스가 플레이어 기준 왼쪽 → flipX = true
+        ///   마우스가 플레이어 기준 오른쪽 → flipX = false
+        ///
+        /// [최소 거리 임계값]
+        ///   마우스가 플레이어와 너무 가까우면 (< 0.1f) 방향 갱신 스킵
+        ///   → 플레이어 위에 마우스를 올렸을 때 방향이 진동하는 문제 방지
         /// </summary>
         private void UpdateFacingDirection()
         {
-            if (_moveInput.sqrMagnitude < 0.01f) return;
+            if (PlayerInputHandler.Instance == null) return;
 
-            Vector2 newFacing = _moveInput.normalized;
+            // 마우스 월드 좌표 → 플레이어 기준 방향 계산
+            Vector2 mouseWorld = PlayerInputHandler.Instance.MouseWorldPosition;
+            Vector2 playerPos = (Vector2)transform.position;
+            Vector2 toMouse = mouseWorld - playerPos;
 
-            // 방향이 바뀌었을 때만 처리
+            // 최소 거리 임계값 (마우스가 플레이어 위에 있으면 스킵)
+            if (toMouse.sqrMagnitude < 0.01f) return;
+
+            Vector2 newFacing = toMouse.normalized;
+
+            // 방향이 바뀌었을 때만 처리 (매 프레임 이벤트 발행 방지)
             if (newFacing == _facingDirection) return;
 
             _facingDirection = newFacing;
@@ -435,12 +453,10 @@ namespace SEAL
             }
             else
             {
+                // flipX: 마우스가 왼쪽이면 flipX = true
                 if (_facingDirection.x != 0f)
                     _spriteRenderer.flipX = _facingDirection.x < 0f;
             }
-
-            // 이동 방향 스쿼시 피드백
-            PlayMoveSquash();
         }
 
         // ══════════════════════════════════════════════════════
@@ -482,17 +498,26 @@ namespace SEAL
             if (_isDashing) return;
             if (_remainingDashCount <= 0) return;
 
-            // 실제 눌린 방향키 입력 참조 (잠금 여부 무관)
-            Vector2 currentKeyInput = PlayerInputHandler.Instance != null
+            // 실제 눌린 WASD 입력 참조 (잠금 여부 무관)
+            Vector2 wasdInput = PlayerInputHandler.Instance != null
                 ? PlayerInputHandler.Instance.MoveInput
                 : Vector2.zero;
 
-            // 대시 방향 결정:
-            //   현재 방향키 입력 있으면 → 그 방향
-            //   없으면 → 마지막 이동 방향 (정지 중 대시 시 자연스러운 방향 유지)
-            Vector2 dashDir = currentKeyInput.sqrMagnitude > 0.01f
-                ? currentKeyInput.normalized
-                : _lastMoveDirection;
+            Vector2 dashDir;
+
+            if (wasdInput.sqrMagnitude > 0.01f)
+            {
+                // WASD 입력 있음 → WASD 방향으로 대시
+                dashDir = wasdInput.normalized;
+            }
+            else
+            {
+                // WASD 입력 없음 → 마우스 방향(FacingDirection)으로 대시
+                // 플레이어가 바라보는 방향으로 대시
+                dashDir = _facingDirection.sqrMagnitude > 0.01f
+                    ? _facingDirection
+                    : _lastMoveDirection;
+            }
 
             if (_dashCoroutine != null)
                 StopCoroutine(_dashCoroutine);
@@ -546,7 +571,7 @@ namespace SEAL
             // ── 대시 종료 ──────────────────────
             _rigid2D.linearVelocity = Vector2.zero; // 대시 후 즉시 멈춤
             _isDashing = false;
-            _isMoveLocked = false; // 이전 잠금 상태 복원
+            _isMoveLocked = wasMoveLocked; // 이전 잠금 상태 복원
 
             OnDashEnded?.Invoke();
 

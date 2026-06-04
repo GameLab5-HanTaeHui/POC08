@@ -1,52 +1,44 @@
 ﻿// ============================================================
-// PlayerInputHandler.cs  v1.3
+// PlayerInputHandler.cs  v1.4
 // 탑뷰 플레이어 입력 통합 관리 컴포넌트
 //
+// [v1.4 변경 — 마우스 기반 조작으로 전면 변경]
+//
+//   [키 바인딩 변경]
+//     이동         : 방향키(↑↓←→) → WASD
+//     공격         : A키           → 마우스 좌클릭
+//     봉인 집행    : S키           → F키 + 마우스 우클릭 (둘 다 인식)
+//     대시         : Space         → 유지
+//     상호작용     : E             → 유지
+//     취소/메뉴    : Shift/Esc     → 유지
+//
+//   [마우스 추가]
+//     _actionMousePosition : 마우스 스크린 좌표 Value Action
+//     _actionMouseLeft     : 마우스 좌클릭 Button (공격)
+//     _actionMouseRight    : 마우스 우클릭 Button (봉인 — F키와 OR)
+//
+//     MouseScreenPosition  : Vector2 스크린 좌표 프로퍼티
+//     MouseWorldPosition   : Vector2 월드 좌표 프로퍼티
+//       → Camera.main.ScreenToWorldPoint 변환
+//       → Cinemachine Follow 카메라 지원 (Camera.main 사용)
+//
+//   [봉인 IsSealHeld 변경]
+//     기존: F키 홀드
+//     변경: F키 홀드 OR 마우스 우클릭 홀드 중 하나라도 true이면 IsSealHeld = true
+//
 // [v1.3 변경 — BlockAction() 에 홀드 상태 초기화 추가]
-//   BlockAction() / BlockAll() 호출 시
-//   _isSealHeld / _isAttackHeld 를 false 로 강제 초기화.
-//
-//   [수정 이유]
-//     기존: BlockAll() → _actionBlocked = true
-//           그러나 _isSealHeld 는 여전히 true 유지
-//           → BossWardenSealExecutor.ExecuteSeal() 내부 while 루프에서
-//             IsSealHeld 를 체크하는데 BlockAll() 이후에도 true 이므로
-//             S키를 누르지 않아도 집행이 계속 진행되는 버그
-//           → Time.timeScale 이 SlowScale 로 고정되는 원인
-//
-//     수정: BlockAction() 에서 _isSealHeld / _isAttackHeld 강제 false
-//           → BlockAll() 은 BlockAction() 을 포함하므로 동일하게 적용
-//           → ExecuteSeal while 루프: IsSealHeld = false → goto cleanup
-//           → RestoreTimeScale() 정상 호출 → TimeScale 복구
-//
 // [v1.2 변경 — IsSealHeld 프로퍼티 추가]
 // [v1.1 변경 — SEAL_README 키 할당 기준 전면 수정]
-//   이동   : WASD 제거 → 방향키(↑↓←→) 전용
-//   대시   : LShift → Space
-//   공격   : J → A (Button / 홀드 릴리즈 분리)
-//   봉인   : K → S (봉인 집행 / 코어 해제 겸용)
-//   추가   : 상호작용(E) / 회피·취소(Shift) / 메뉴(Esc) Action + 이벤트
-//   헤더 주석 전체 갱신.
 //
-// [ActionMap 구조]
-//   _inGameMap : Move / Dash / Attack / Seal / Interact / Cancel / Menu
-//
-// [키 바인딩 — SEAL_README 기준]
-//   이동         : 방향키 (↑↓←→)
+// [키 바인딩 — v1.4 확정]
+//   이동         : WASD
 //   대시         : Space
-//   기본 공격    : A
-//   강공격       : A 홀드 후 릴리즈 (OnAttackReleased)
-//   봉인 / 코어  : S
+//   공격(기본)   : 마우스 좌클릭
+//   공격(강)     : 마우스 좌클릭 홀드 후 릴리즈
+//   봉인 집행    : F 또는 마우스 우클릭
 //   상호작용     : E
-//   회피 / 취소  : Shift
+//   취소         : LeftShift
 //   메뉴         : Esc
-//
-// [입력 차단 시스템]
-//   _moveBlocked / _dashBlocked / _actionBlocked
-//   외부(StateMachine 상태 등)에서 Block/Unblock 호출로 제어.
-//
-// [싱글턴]
-//   씬 내 단일 인스턴스. PlayerMoveController 등에서 참조.
 //
 // [네임스페이스]
 //   namespace : SEAL
@@ -59,7 +51,7 @@ using UnityEngine.InputSystem;
 namespace SEAL
 {
     /// <summary>
-    /// 탑뷰 플레이어 입력 통합 관리 컴포넌트. (v1.1)
+    /// 탑뷰 플레이어 입력 통합 관리 컴포넌트. (v1.4)
     ///
     /// ────────────────────────────────────────────────────
     /// [외부 구독 예시]
@@ -68,308 +60,199 @@ namespace SEAL
     ///   PlayerInputHandler.Instance.OnAttack    += HandleAttack;
     ///   PlayerInputHandler.Instance.OnSeal      += HandleSeal;
     ///   PlayerInputHandler.Instance.OnInteract  += HandleInteract;
-    ///   PlayerInputHandler.Instance.OnCancel    += HandleCancel;
-    ///   PlayerInputHandler.Instance.OnMenu      += HandleMenu;
     ///
-    /// [입력 차단 예시 — 봉인 집행 상태]
-    ///   PlayerInputHandler.Instance.BlockMove();
-    ///   PlayerInputHandler.Instance.BlockAction();
-    ///   // ... 봉인 집행 처리 ...
-    ///   PlayerInputHandler.Instance.UnblockMove();
-    ///   PlayerInputHandler.Instance.UnblockAction();
+    /// [마우스 월드 좌표]
+    ///   PlayerInputHandler.Instance.MouseWorldPosition
+    ///   → PlayerMoveController 에서 FacingDirection 계산에 사용
     /// ────────────────────────────────────────────────────
     /// </summary>
     public class PlayerInputHandler : MonoBehaviour
     {
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // 싱글턴
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 전역 단일 인스턴스.
-        /// 씬 전환 시 파괴되면 null 로 초기화.
-        /// </summary>
+        /// <summary>전역 단일 인스턴스.</summary>
         public static PlayerInputHandler Instance { get; private set; }
 
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // Inspector — 키 바인딩
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
-        [Header("── 이동 키 ──────────────────────")]
+        [Header("── 이동 키 (WASD) ──────────────────────")]
 
-        /// <summary>
-        /// 이동 Up 키. 기본 UpArrow.
-        /// README: 이동 = 방향키 전용.
-        /// </summary>
-        [Tooltip("이동 Up 키. 기본 ↑ (UpArrow).")]
-        [SerializeField] private Key _keyMoveUp = Key.UpArrow;
+        [Tooltip("이동 Up 키. 기본 W.")]
+        [SerializeField] private Key _keyMoveUp = Key.W;
 
-        /// <summary>
-        /// 이동 Down 키. 기본 DownArrow.
-        /// </summary>
-        [Tooltip("이동 Down 키. 기본 ↓ (DownArrow).")]
-        [SerializeField] private Key _keyMoveDown = Key.DownArrow;
+        [Tooltip("이동 Down 키. 기본 S.")]
+        [SerializeField] private Key _keyMoveDown = Key.S;
 
-        /// <summary>
-        /// 이동 Left 키. 기본 LeftArrow.
-        /// </summary>
-        [Tooltip("이동 Left 키. 기본 ← (LeftArrow).")]
-        [SerializeField] private Key _keyMoveLeft = Key.LeftArrow;
+        [Tooltip("이동 Left 키. 기본 A.")]
+        [SerializeField] private Key _keyMoveLeft = Key.A;
 
-        /// <summary>
-        /// 이동 Right 키. 기본 RightArrow.
-        /// </summary>
-        [Tooltip("이동 Right 키. 기본 → (RightArrow).")]
-        [SerializeField] private Key _keyMoveRight = Key.RightArrow;
+        [Tooltip("이동 Right 키. 기본 D.")]
+        [SerializeField] private Key _keyMoveRight = Key.D;
 
         [Header("── 전투 키 ──────────────────────")]
 
-        /// <summary>
-        /// 대시 키. 기본 Space.
-        /// README: 대시 = Space.
-        /// </summary>
         [Tooltip("대시 키. 기본 Space.")]
         [SerializeField] private Key _keyDash = Key.Space;
 
         /// <summary>
-        /// 공격 키. 기본 A.
-        /// 탭 → 기본 공격 / 홀드 릴리즈 → 강공격.
-        /// README: 기본 공격 = A / 강공격 = A 홀드 후 릴리즈.
+        /// 봉인 집행 키보드 키. 기본 F.
+        /// 마우스 우클릭과 OR 조건 — 둘 중 하나 홀드 시 IsSealHeld = true.
         /// </summary>
-        [Tooltip("공격 키. 기본 A. 탭=기본 공격 / 홀드 릴리즈=강공격.")]
-        [SerializeField] private Key _keyAttack = Key.A;
-
-        /// <summary>
-        /// 봉인 집행 / 코어 해제 키. 기본 S.
-        /// 봉인도 100% 부위에 접근 후 입력 → 봉인 집행.
-        /// 그로기 코어 접근 후 입력 → 코어 해제.
-        /// README: 봉인 집행 = S / 코어 해제 = S.
-        /// </summary>
-        [Tooltip("봉인 집행 / 코어 해제 키. 기본 S.")]
-        [SerializeField] private Key _keySeal = Key.S;
+        [Tooltip("봉인 집행 키. 기본 F. 마우스 우클릭과 OR 조건.")]
+        [SerializeField] private Key _keySeal = Key.F;
 
         [Header("── 보조 키 ──────────────────────")]
 
-        /// <summary>
-        /// 상호작용 키. 기본 E.
-        /// 쉼터, 상점, 이벤트 노드 등 상호작용.
-        /// README: 상호작용 = E.
-        /// </summary>
         [Tooltip("상호작용 키. 기본 E.")]
         [SerializeField] private Key _keyInteract = Key.E;
 
-        /// <summary>
-        /// 회피 / 취소 키. 기본 LeftShift.
-        /// 봉인 집행 취소, UI 뒤로가기 등.
-        /// README: 회피 / 취소 = Shift.
-        /// </summary>
-        [Tooltip("회피 / 취소 키. 기본 Shift.")]
+        [Tooltip("취소 키. 기본 LeftShift.")]
         [SerializeField] private Key _keyCancel = Key.LeftShift;
 
-        /// <summary>
-        /// 메뉴 키. 기본 Escape.
-        /// 일시정지, 옵션 메뉴 열기.
-        /// README: 메뉴 = Esc.
-        /// </summary>
-        [Tooltip("메뉴 / 일시정지 키. 기본 Esc.")]
+        [Tooltip("메뉴 키. 기본 Esc.")]
         [SerializeField] private Key _keyMenu = Key.Escape;
 
-        // ──────────────────────────────────────────
-        // InputAction 인스턴스 (코드 기반 ActionMap)
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // InputAction 인스턴스
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 인게임 ActionMap.
-        /// Move / Dash / Attack / Seal / Interact / Cancel / Menu 포함.
-        /// </summary>
         private InputActionMap _inGameMap;
 
-        /// <summary>
-        /// 이동 입력 Action. Vector2 Value 타입.
-        /// 방향키 2DVector Composite + 게임패드 좌스틱.
-        /// </summary>
+        // 이동
         private InputAction _actionMove;
 
-        /// <summary>
-        /// 대시 Action. Button 타입.
-        /// Space / 게임패드 East.
-        /// </summary>
+        // 대시
         private InputAction _actionDash;
 
-        /// <summary>
-        /// 공격 Action. Button 타입.
-        /// performed = 기본 공격 / canceled = 강공격 릴리즈 판정.
-        /// </summary>
+        // 공격 — 마우스 좌클릭
         private InputAction _actionAttack;
 
-        /// <summary>
-        /// 봉인 집행 / 코어 해제 Action. Button 타입.
-        /// S키 / 게임패드 South.
-        /// </summary>
+        // 봉인 집행 — F키
         private InputAction _actionSeal;
 
-        /// <summary>
-        /// 상호작용 Action. Button 타입.
-        /// E키 / 게임패드 North.
-        /// </summary>
+        // 상호작용
         private InputAction _actionInteract;
 
-        /// <summary>
-        /// 회피 / 취소 Action. Button 타입.
-        /// Shift키 / 게임패드 West.
-        /// </summary>
+        // 취소 / 메뉴
         private InputAction _actionCancel;
-
-        /// <summary>
-        /// 메뉴 Action. Button 타입.
-        /// Esc키 / 게임패드 Start.
-        /// </summary>
         private InputAction _actionMenu;
 
-        // ──────────────────────────────────────────
-        // 내부 상태 — 입력 차단 플래그
-        // ──────────────────────────────────────────
+        // 마우스 좌표
+        private InputAction _actionMousePosition;
 
-        /// <summary>
-        /// 이동 입력 차단 플래그.
-        /// true 시 OnMove 이벤트 Vector2.zero 강제 발행.
-        /// 봉인 집행 / 피격 경직 / 컷씬 등에서 true.
-        /// </summary>
+        // 마우스 우클릭 (봉인 집행 보조)
+        private InputAction _actionMouseRight;
+
+        // ══════════════════════════════════════════════════════
+        // 내부 상태 — 입력 차단
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>이동 입력 차단. true 시 OnMove zero 강제 발행.</summary>
         private bool _moveBlocked;
 
-        /// <summary>
-        /// 대시 입력 차단 플래그.
-        /// true 시 OnDash 이벤트 발행 안 함.
-        /// </summary>
+        /// <summary>대시 입력 차단.</summary>
         private bool _dashBlocked;
 
-        /// <summary>
-        /// 공격 / 봉인 / 상호작용 입력 차단 플래그.
-        /// true 시 OnAttack / OnSeal / OnInteract 이벤트 발행 안 함.
-        /// 메뉴(OnMenu) / 취소(OnCancel) 는 차단하지 않음.
-        /// </summary>
+        /// <summary>공격 / 봉인 / 상호작용 입력 차단.</summary>
         private bool _actionBlocked;
 
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // 내부 상태 — 현재 입력값
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 현재 이동 입력 벡터. 매 프레임 Update 폴링으로 읽음.
-        /// 외부에서 MoveInput 프로퍼티로 접근.
-        /// </summary>
+        /// <summary>현재 이동 입력 벡터. 매 프레임 폴링.</summary>
         private Vector2 _rawMoveInput;
 
-        /// <summary>
-        /// 공격 버튼 현재 홀드 여부.
-        /// performed = true / canceled = false.
-        /// PlayerAttackController 에서 강공격 홀드 시간 계산에 사용.
-        /// </summary>
+        /// <summary>공격 버튼 홀드 여부. (마우스 좌클릭)</summary>
         private bool _isAttackHeld;
 
         /// <summary>
-        /// 봉인 버튼(S) 현재 홀드 여부.
-        /// performed = true / canceled = false.
-        /// BossWardenSealExecutor 에서 매 프레임 폴링하여 홀드 시간 누적.
-        /// _isAttackHeld 와 동일한 방식으로 관리.
-        ///
-        /// [OnSeal 이벤트와의 차이]
-        ///   OnSeal       = 눌린 순간 1회 발행 (트리거)
-        ///   IsSealHeld   = 현재 누르고 있는지 여부 (지속 상태 폴링)
+        /// 봉인 버튼 홀드 여부.
+        /// F키 홀드 OR 마우스 우클릭 홀드 중 하나라도 true이면 true.
+        /// BlockAction() 호출 시 강제 false 초기화.
         /// </summary>
         private bool _isSealHeld;
 
-        // ──────────────────────────────────────────
-        // 이벤트 — 외부 구독
-        // ──────────────────────────────────────────
+        /// <summary>마우스 스크린 좌표. 매 프레임 갱신.</summary>
+        private Vector2 _mouseScreenPosition;
 
-        /// <summary>
-        /// 이동 입력 변경 시 매 프레임 발행 (폴링 방식).
-        /// 파라미터: 방향 Vector2. 입력 없음 = Vector2.zero.
-        /// _moveBlocked 시 Vector2.zero 강제 발행.
-        /// </summary>
+        // ══════════════════════════════════════════════════════
+        // 이벤트
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>이동 입력 변경 시 매 프레임 발행.</summary>
         public event Action<Vector2> OnMove;
 
-        /// <summary>
-        /// 대시 버튼 눌림 시 1회 발행.
-        /// _dashBlocked 시 발행 안 함.
-        /// </summary>
+        /// <summary>대시 버튼 눌림 시 1회 발행.</summary>
         public event Action OnDash;
 
-        /// <summary>
-        /// 공격 버튼(A) 눌림 시 1회 발행.
-        /// _actionBlocked 시 발행 안 함.
-        /// README: 기본 공격 = A.
-        /// </summary>
+        /// <summary>공격 버튼(마우스 좌클릭) 눌림 시 1회 발행.</summary>
         public event Action OnAttack;
 
-        /// <summary>
-        /// 공격 버튼(A) 뗌 시 1회 발행.
-        /// 차단 여부와 무관하게 항상 발행 (강공격 취소 보장).
-        /// PlayerAttackController 에서 홀드 시간 확인 후 강공격 판정.
-        /// README: 강공격 = A 홀드 후 릴리즈.
-        /// </summary>
+        /// <summary>공격 버튼 뗌 시 1회 발행. 차단 무관 항상 발행.</summary>
         public event Action OnAttackReleased;
 
-        /// <summary>
-        /// 봉인 집행 / 코어 해제 버튼(S) 눌림 시 1회 발행.
-        /// _actionBlocked 시 발행 안 함.
-        /// 실제 집행 가능 여부는 PlayerSealExecutor 에서 판정.
-        /// README: 봉인 집행 = S / 코어 해제 = S.
-        /// </summary>
+        /// <summary>봉인 집행 버튼(F 또는 우클릭) 눌림 시 1회 발행.</summary>
         public event Action OnSeal;
 
-        /// <summary>
-        /// 상호작용 버튼(E) 눌림 시 1회 발행.
-        /// _actionBlocked 시 발행 안 함.
-        /// 쉼터, 상점, 이벤트 노드 등 상호작용 처리.
-        /// README: 상호작용 = E.
-        /// </summary>
+        /// <summary>상호작용 버튼 눌림 시 1회 발행.</summary>
         public event Action OnInteract;
 
-        /// <summary>
-        /// 회피 / 취소 버튼(Shift) 눌림 시 1회 발행.
-        /// 차단 여부와 무관하게 항상 발행 (취소는 언제든 가능해야 함).
-        /// 봉인 집행 취소, UI 뒤로가기 등.
-        /// README: 회피 / 취소 = Shift.
-        /// </summary>
+        /// <summary>취소 버튼 눌림 시 1회 발행. 차단 무관 항상 발행.</summary>
         public event Action OnCancel;
 
-        /// <summary>
-        /// 메뉴 버튼(Esc) 눌림 시 1회 발행.
-        /// 차단 여부와 무관하게 항상 발행 (메뉴는 언제든 가능해야 함).
-        /// 일시정지, 옵션 메뉴 열기.
-        /// README: 메뉴 = Esc.
-        /// </summary>
+        /// <summary>메뉴 버튼 눌림 시 1회 발행. 차단 무관 항상 발행.</summary>
         public event Action OnMenu;
 
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // 프로퍼티
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 현재 이동 입력 벡터 (방향키 기준).
-        /// 대시 방향 결정, 공격 방향 보조 등에 사용.
+        /// 현재 이동 입력 벡터.
+        /// 이동 잠금(_moveBlocked) 중에도 실제 눌린 키 반환.
+        /// 대시 방향, 콤보 방향 결정에 사용.
         /// </summary>
         public Vector2 MoveInput => _rawMoveInput;
 
-        /// <summary>
-        /// 공격 버튼 현재 홀드 여부.
-        /// 강공격 홀드 시간 계산에 사용.
-        /// </summary>
+        /// <summary>공격 버튼(마우스 좌클릭) 홀드 여부.</summary>
         public bool IsAttackHeld => _isAttackHeld;
 
         /// <summary>
-        /// 봉인 버튼(S) 현재 홀드 여부.
-        /// BossWardenSealExecutor 에서 매 프레임 폴링하여 홀드 시간 누적.
-        ///
-        /// [사용 예시 — BossWardenSealExecutor]
-        ///   if (PlayerInputHandler.Instance.IsSealHeld)
-        ///       _holdTimer += Time.unscaledDeltaTime;
-        ///   else
-        ///       ResetHoldTimer();
+        /// 봉인 버튼 홀드 여부.
+        /// F키 또는 마우스 우클릭 중 하나라도 홀드 시 true.
+        /// BossWardenSealExecutor 에서 매 프레임 폴링.
         /// </summary>
         public bool IsSealHeld => _isSealHeld;
+
+        /// <summary>
+        /// 마우스 스크린 좌표.
+        /// </summary>
+        public Vector2 MouseScreenPosition => _mouseScreenPosition;
+
+        /// <summary>
+        /// 마우스 월드 좌표.
+        /// Camera.main.ScreenToWorldPoint 변환.
+        /// Cinemachine Follow 카메라 지원.
+        ///
+        /// [사용 위치]
+        ///   PlayerMoveController.UpdateFacingDirection()
+        ///   → 플레이어 → 마우스 방향 = FacingDirection
+        /// </summary>
+        public Vector2 MouseWorldPosition
+        {
+            get
+            {
+                if (Camera.main == null) return Vector2.zero;
+                Vector3 world = Camera.main.ScreenToWorldPoint(
+                    new Vector3(_mouseScreenPosition.x, _mouseScreenPosition.y, 0f));
+                return new Vector2(world.x, world.y);
+            }
+        }
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -377,40 +260,28 @@ namespace SEAL
 
         private void Awake()
         {
-            // ── 싱글턴 설정 ──────────────────────
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
                 return;
             }
             Instance = this;
-
-            // ── ActionMap 빌드 ──────────────────────
             BuildInGameMap();
         }
 
-        private void OnEnable()
-        {
-            _inGameMap?.Enable();
-        }
-
-        private void OnDisable()
-        {
-            _inGameMap?.Disable();
-        }
+        private void OnEnable() => _inGameMap?.Enable();
+        private void OnDisable() => _inGameMap?.Disable();
 
         private void OnDestroy()
         {
             _inGameMap?.Dispose();
-
-            if (Instance == this)
-                Instance = null;
+            if (Instance == this) Instance = null;
         }
 
         private void Update()
         {
-            // 이동은 매 프레임 폴링 (performed/canceled 콜백보다 안정적)
             ReadMoveInput();
+            ReadMousePosition();
         }
 
         // ══════════════════════════════════════════════════════
@@ -418,84 +289,83 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// InGame ActionMap 을 코드로 생성한다.
-        /// Move / Dash / Attack / Seal / Interact / Cancel / Menu 등록.
+        /// InGame ActionMap 코드 기반 생성.
         ///
-        /// [코드 기반 ActionMap 이유]
-        ///   .inputactions 에셋 없이 작동.
-        ///   Inspector 에서 키 바인딩 직접 조절 가능.
-        ///   POC07 InputManager.cs 와 동일한 방식.
+        /// [v1.4 변경]
+        ///   이동: WASD 2DVector Composite
+        ///   공격: 마우스 좌클릭
+        ///   봉인: F키 + 마우스 우클릭 별도 Action (OR 처리)
+        ///   마우스 좌표: Position 읽기 전용 Value Action
         /// </summary>
         private void BuildInGameMap()
         {
             _inGameMap = new InputActionMap("InGame");
 
-            // ── 이동 (방향키 전용 + 게임패드) ──────────────────────
-            // README: 이동 = 방향키(↑↓←→) 전용
+            // ── 이동 (WASD + 게임패드) ──────────────────────
             _actionMove = _inGameMap.AddAction("Move", InputActionType.Value);
-
             _actionMove.AddCompositeBinding("2DVector")
                 .With("Up", KeyToPath(_keyMoveUp))
                 .With("Down", KeyToPath(_keyMoveDown))
                 .With("Left", KeyToPath(_keyMoveLeft))
                 .With("Right", KeyToPath(_keyMoveRight));
-
-            // 게임패드 좌측 스틱
             _actionMove.AddBinding("<Gamepad>/leftStick");
 
-            // ── 대시 ──────────────────────
-            // README: 대시 = Space
+            // ── 대시 (Space + 게임패드) ──────────────────────
             _actionDash = _inGameMap.AddAction("Dash", InputActionType.Button);
             _actionDash.AddBinding(KeyToPath(_keyDash));
             _actionDash.AddBinding("<Gamepad>/buttonEast");
 
-            // ── 공격 ──────────────────────
-            // README: 기본 공격 = A / 강공격 = A 홀드 후 릴리즈
+            // ── 공격 (마우스 좌클릭 + 게임패드) ──────────────────────
+            // performed = 기본 공격 / canceled = 강공격 릴리즈 판정
             _actionAttack = _inGameMap.AddAction("Attack", InputActionType.Button);
-            _actionAttack.AddBinding(KeyToPath(_keyAttack));
+            _actionAttack.AddBinding("<Mouse>/leftButton");
             _actionAttack.AddBinding("<Gamepad>/buttonWest");
 
-            // ── 봉인 집행 / 코어 해제 ──────────────────────
-            // README: 봉인 집행 = S / 코어 해제 = S
+            // ── 봉인 집행 (F키) ──────────────────────
+            // 마우스 우클릭은 _actionMouseRight 에서 별도 처리
             _actionSeal = _inGameMap.AddAction("Seal", InputActionType.Button);
             _actionSeal.AddBinding(KeyToPath(_keySeal));
             _actionSeal.AddBinding("<Gamepad>/buttonSouth");
 
+            // ── 마우스 우클릭 (봉인 집행 보조) ──────────────────────
+            // F키(_actionSeal)와 OR 조건으로 _isSealHeld 갱신
+            _actionMouseRight = _inGameMap.AddAction("MouseRight", InputActionType.Button);
+            _actionMouseRight.AddBinding("<Mouse>/rightButton");
+
+            // ── 마우스 좌표 ──────────────────────
+            _actionMousePosition = _inGameMap.AddAction("MousePosition", InputActionType.Value);
+            _actionMousePosition.AddBinding("<Mouse>/position");
+
             // ── 상호작용 ──────────────────────
-            // README: 상호작용 = E
             _actionInteract = _inGameMap.AddAction("Interact", InputActionType.Button);
             _actionInteract.AddBinding(KeyToPath(_keyInteract));
             _actionInteract.AddBinding("<Gamepad>/buttonNorth");
 
-            // ── 회피 / 취소 ──────────────────────
-            // README: 회피 / 취소 = Shift
+            // ── 취소 ──────────────────────
             _actionCancel = _inGameMap.AddAction("Cancel", InputActionType.Button);
             _actionCancel.AddBinding(KeyToPath(_keyCancel));
             _actionCancel.AddBinding("<Gamepad>/rightShoulder");
 
             // ── 메뉴 ──────────────────────
-            // README: 메뉴 = Esc
             _actionMenu = _inGameMap.AddAction("Menu", InputActionType.Button);
             _actionMenu.AddBinding(KeyToPath(_keyMenu));
             _actionMenu.AddBinding("<Gamepad>/start");
 
-            // ── 콜백 등록 ──────────────────────
             RegisterCallbacks();
         }
 
         /// <summary>
-        /// 각 Action 에 콜백을 등록한다.
-        /// BuildInGameMap() 내부에서 마지막에 호출.
+        /// 각 Action 콜백 등록.
         /// </summary>
         private void RegisterCallbacks()
         {
-            // 대시 — 차단 가능
+            // ── 대시 ──────────────────────
             _actionDash.performed += _ =>
             {
                 if (!_dashBlocked) OnDash?.Invoke();
             };
 
-            // 공격 — 누름(기본공격) / 뗌(강공격 릴리즈) 분리
+            // ── 공격 (마우스 좌클릭) ──────────────────────
             // OnAttackReleased 는 차단 무관 항상 발행 (강공격 취소 보장)
             _actionAttack.performed += _ =>
             {
@@ -505,12 +375,10 @@ namespace SEAL
             _actionAttack.canceled += _ =>
             {
                 _isAttackHeld = false;
-                OnAttackReleased?.Invoke(); // 차단 무관
+                OnAttackReleased?.Invoke();
             };
 
-            // 봉인 / 코어 해제 — 차단 가능 (OnSeal 이벤트)
-            // _isSealHeld 는 차단 무관 항상 갱신
-            // (BossWardenSealExecutor 가 홀드 여부를 직접 폴링하므로)
+            // ── 봉인 집행 — F키 ──────────────────────
             _actionSeal.performed += _ =>
             {
                 _isSealHeld = true;
@@ -518,100 +386,111 @@ namespace SEAL
             };
             _actionSeal.canceled += _ =>
             {
-                _isSealHeld = false;
+                // 마우스 우클릭이 아직 홀드 중이면 IsSealHeld 유지
+                if (!(_actionMouseRight.IsPressed()))
+                    _isSealHeld = false;
             };
 
-            // 상호작용 — 차단 가능
+            // ── 봉인 집행 — 마우스 우클릭 ──────────────────────
+            _actionMouseRight.performed += _ =>
+            {
+                _isSealHeld = true;
+                if (!_actionBlocked) OnSeal?.Invoke();
+            };
+            _actionMouseRight.canceled += _ =>
+            {
+                // F키가 아직 홀드 중이면 IsSealHeld 유지
+                if (!(_actionSeal.IsPressed()))
+                    _isSealHeld = false;
+            };
+
+            // ── 상호작용 ──────────────────────
             _actionInteract.performed += _ =>
             {
                 if (!_actionBlocked) OnInteract?.Invoke();
             };
 
-            // 회피 / 취소 — 항상 발행 (취소는 언제든 가능해야 함)
+            // ── 취소 / 메뉴 — 항상 발행 ──────────────────────
             _actionCancel.performed += _ => OnCancel?.Invoke();
-
-            // 메뉴 — 항상 발행 (일시정지는 언제든 가능해야 함)
             _actionMenu.performed += _ => OnMenu?.Invoke();
         }
 
         // ══════════════════════════════════════════════════════
-        // 이동 입력 폴링
+        // 이동 / 마우스 폴링
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 매 프레임 이동 입력을 폴링하여 OnMove 이벤트를 발행한다.
-        ///
-        /// [폴링 방식 선택 이유]
-        ///   performed/canceled 콜백은 변화 순간에만 호출.
-        ///   이동은 매 프레임 연속 처리 필요 → 폴링이 더 안정적.
-        ///   _moveBlocked 시 zero 강제 발행 → 캐릭터 즉시 정지 보장.
+        /// 매 프레임 이동 입력 폴링.
+        /// _moveBlocked 시 zero 강제 발행.
+        /// MoveInput 은 잠금 무관 항상 갱신 (대시/콤보 방향 결정용).
         /// </summary>
         private void ReadMoveInput()
         {
             if (_actionMove == null) return;
 
             Vector2 input = _actionMove.ReadValue<Vector2>();
+            _rawMoveInput = input;  // 잠금 무관 갱신
 
-            if (_moveBlocked)
-                input = Vector2.zero;
-
-            _rawMoveInput = input;
+            if (_moveBlocked) input = Vector2.zero;
             OnMove?.Invoke(input);
+        }
+
+        /// <summary>
+        /// 매 프레임 마우스 스크린 좌표 갱신.
+        /// MouseWorldPosition 프로퍼티에서 월드 좌표로 변환.
+        /// </summary>
+        private void ReadMousePosition()
+        {
+            if (_actionMousePosition == null) return;
+            _mouseScreenPosition = _actionMousePosition.ReadValue<Vector2>();
         }
 
         // ══════════════════════════════════════════════════════
         // 외부 API — 입력 차단 / 해제
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 이동 입력을 차단한다.
-        /// 봉인 집행 상태 / 피격 경직 / 컷씬 등에서 호출.
-        /// </summary>
+        /// <summary>이동 입력 차단.</summary>
         public void BlockMove() => _moveBlocked = true;
 
-        /// <summary> 이동 입력 차단 해제. 상태 종료 시 반드시 호출. </summary>
+        /// <summary>이동 입력 차단 해제.</summary>
         public void UnblockMove() => _moveBlocked = false;
 
-        /// <summary> 대시 입력을 차단한다. </summary>
+        /// <summary>대시 입력 차단.</summary>
         public void BlockDash() => _dashBlocked = true;
 
-        /// <summary> 대시 입력 차단 해제. </summary>
+        /// <summary>대시 입력 차단 해제.</summary>
         public void UnblockDash() => _dashBlocked = false;
 
         /// <summary>
-        /// 공격 / 봉인 / 상호작용 입력을 차단한다.
-        /// 메뉴(OnMenu) 와 취소(OnCancel) 는 차단하지 않음.
+        /// 공격 / 봉인 / 상호작용 입력 차단.
         ///
         /// [v1.3 변경 — 홀드 상태 초기화]
-        ///   _isSealHeld / _isAttackHeld 를 false 로 강제 초기화.
-        ///   이유: BlockAll() 호출 후에도 _isSealHeld 가 true 유지되면
-        ///         ExecuteSeal while 루프에서 IsSealHeld = true 로 인식
-        ///         → S키 없이 집행 진행 + TimeScale 슬로우 고정 버그.
+        ///   _isSealHeld / _isAttackHeld 강제 false.
+        ///   → ExecuteSeal while 루프에서 IsSealHeld=false → goto cleanup
+        ///   → TimeScale 복구 보장.
         /// </summary>
         public void BlockAction()
         {
             _actionBlocked = true;
-            _isSealHeld = false;  // 봉인 홀드 상태 즉시 해제
-            _isAttackHeld = false;  // 공격 홀드 상태 즉시 해제
+            _isSealHeld = false;
+            _isAttackHeld = false;
         }
 
-        /// <summary> 공격 / 봉인 / 상호작용 입력 차단 해제. </summary>
+        /// <summary>공격 / 봉인 / 상호작용 입력 차단 해제.</summary>
         public void UnblockAction() => _actionBlocked = false;
 
         /// <summary>
-        /// 모든 입력을 차단한다.
-        /// 컷씬, 페이즈 전환 등 전체 차단 시 사용.
-        /// 주의: 메뉴와 취소는 코드 내부에서 항상 발행됨.
-        /// BlockAction() 을 포함하므로 홀드 상태도 함께 초기화됨.
+        /// 모든 입력 차단.
+        /// BlockAction() 포함 → 홀드 상태도 초기화.
         /// </summary>
         public void BlockAll()
         {
             _moveBlocked = true;
             _dashBlocked = true;
-            BlockAction();  // _actionBlocked + _isSealHeld + _isAttackHeld 초기화 포함
+            BlockAction();
         }
 
-        /// <summary> 모든 입력 차단 해제. </summary>
+        /// <summary>모든 입력 차단 해제.</summary>
         public void UnblockAll()
         {
             _moveBlocked = false;
@@ -620,41 +499,30 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 내부 유틸리티
+        // 유틸리티
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// Unity Key 열거형 → InputSystem 바인딩 경로 문자열로 변환.
-        ///
-        /// [1차] Keyboard.current 컨트롤 순회 → keyCode 일치 경로 반환
-        /// [2차] 폴백 — Digit1~9 → "1"~"9" / 나머지 camelCase 변환
-        ///
-        /// POC07 InputManager.KeyToPath 와 동일한 방식.
+        /// Unity Key 열거형 → InputSystem 바인딩 경로 문자열 변환.
         /// </summary>
-        /// <param name="key">변환할 Key 열거형 값.</param>
-        /// <returns>InputSystem 바인딩 경로 문자열.</returns>
-        private static string KeyToPath(Key key)
+        private string KeyToPath(Key key)
         {
-            // 1차: 런타임 Keyboard 컨트롤에서 일치하는 경로 탐색
-            if (Keyboard.current != null)
+            var keyboard = Keyboard.current;
+            if (keyboard != null)
             {
-                foreach (var control in Keyboard.current.allControls)
+                foreach (var control in keyboard.allKeys)
                 {
-                    if (control is UnityEngine.InputSystem.Controls.KeyControl kc
-                        && kc.keyCode == key)
-                        return control.path;
+                    if (control.keyCode == key)
+                        return $"<Keyboard>/{control.name}";
                 }
             }
 
-            // 2차: 폴백 변환
+            // 폴백 — Digit 및 기타 변환
             string name = key.ToString();
-
-            // Digit1~9 → "1"~"9"
             if (name.StartsWith("Digit"))
-                name = name.Substring(5);
+                return $"<Keyboard>/{name.Substring(5)}";
 
-            // 나머지: 첫 글자 소문자 변환
-            return $"<Keyboard>/{char.ToLower(name[0]) + name.Substring(1)}";
+            return $"<Keyboard>/{char.ToLower(name[0])}{name.Substring(1)}";
         }
     }
 }

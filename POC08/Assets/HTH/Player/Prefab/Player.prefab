@@ -352,13 +352,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e9323fbf5a744e94e8149b8b16130841, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.PlayerInputHandler
-  _keyMoveUp: 63
-  _keyMoveDown: 64
-  _keyMoveLeft: 61
-  _keyMoveRight: 62
-  _keyDash: 51
-  _keyAttack: 15
-  _keySeal: 33
+  _keyMoveUp: 37
+  _keyMoveDown: 33
+  _keyMoveLeft: 15
+  _keyMoveRight: 18
+  _keyDash: 1
+  _keySeal: 20
   _keyInteract: 19
   _keyCancel: 51
   _keyMenu: 60

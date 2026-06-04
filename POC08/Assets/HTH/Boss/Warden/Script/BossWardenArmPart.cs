@@ -1,6 +1,20 @@
 ﻿// ============================================================
-// BossWardenArmPart.cs  v2.0
+// BossWardenArmPart.cs  v2.1
 // Boss_Warden 팔 부위 피격 + 봉인도 누적 컴포넌트
+//
+// [v2.1 추가 — GuardBreak IsGuarding 정면 봉인도 무효 연동]
+//   _guardBreakPattern : BossPattern_GuardBreak Inspector 연결 (RightArm 전용)
+//   _ai                : BossWardenAI Awake 자동 탐색 (FacingDir 참조)
+//   _playerTransform   : Start 1회 캐싱 (매 피격 FindObjectsByType 방지)
+//
+//   HandlePlayerHit():
+//     IsGuarding = true + IsPlayerFacingFront() = true
+//     → 봉인도 누적 차단 (방어 성공)
+//     → PlayHitFlash() 는 실행 (막혔다는 시각 피드백)
+//     → 측면/후방 공격 = 정상 누적 (방향 공략 유도)
+//
+//   IsPlayerFacingFront():
+//     AI.FacingDir · (보스→플레이어 방향).Dot > 0.5f = 정면 60도 이내
 //
 // [v2.0 변경 — SealableComponent 통합]
 //   기존:
@@ -72,6 +86,25 @@ namespace SEAL
         [Tooltip("BossWardenDataSO. BossWardenCore.Initialize() 에서 주입.")]
         [SerializeField] private BossWardenDataSO _data;
 
+        /// <summary>
+        /// GuardBreak 패턴 참조.
+        /// RightArm 전용. IsGuarding = true 시 정면 봉인도 무효.
+        ///
+        /// [연결 방법]
+        ///   Inspector 에서 Patterns/BossPattern_GuardBreak 오브젝트의
+        ///   BossPattern_GuardBreak 컴포넌트 직접 연결.
+        ///   LeftArm 에는 null 로 두면 됨 (체크 자동 스킵).
+        /// </summary>
+        [Tooltip("GuardBreak 패턴. RightArm 에만 연결. 가드 중 정면 봉인도 무효 처리용.")]
+        [SerializeField] private BossPattern_GuardBreak _guardBreakPattern;
+
+        /// <summary>
+        /// BossWardenAI 참조.
+        /// IsGuarding 정면 방향 체크 시 FacingDir 참조용.
+        /// Awake 에서 GetComponentInParent 자동 탐색.
+        /// </summary>
+        private BossWardenAI _ai;
+
         // ══════════════════════════════════════════════════════
         // 내부 컴포넌트
         // ══════════════════════════════════════════════════════
@@ -83,6 +116,13 @@ namespace SEAL
         private SealableComponent _sealable;
 
         private PlayerAttackHitboxManager _hitboxManager;
+
+        /// <summary>
+        /// 플레이어 Transform 캐시.
+        /// IsPlayerFacingFront() 에서 매 피격마다 FindObjectsByType 방지.
+        /// Start() 에서 1회 탐색.
+        /// </summary>
+        private Transform _playerTransform;
 
         // ══════════════════════════════════════════════════════
         // 내부 상태
@@ -146,6 +186,9 @@ namespace SEAL
             // ✅ v2.0: SealGaugeComponent → SealableComponent 교체
             _sealable = GetComponent<SealableComponent>();
 
+            // BossWardenAI 자동 탐색 (IsGuarding 정면 체크용 FacingDir 참조)
+            _ai = GetComponentInParent<BossWardenAI>();
+
             if (_ownCollider == null)
                 Debug.LogWarning($"[BossWardenArmPart] {gameObject.name} — _ownCollider 미연결.");
 
@@ -158,6 +201,11 @@ namespace SEAL
 
         private void Start()
         {
+            // 플레이어 Transform 캐싱 (IsPlayerFacingFront 매 프레임 탐색 방지)
+            var players = FindObjectsByType<PlayerMoveController>(FindObjectsSortMode.None);
+            if (players.Length > 0)
+                _playerTransform = players[0].transform;
+
             var managers = FindObjectsByType<PlayerAttackHitboxManager>(FindObjectsSortMode.None);
             if (managers.Length > 0)
             {
@@ -213,6 +261,20 @@ namespace SEAL
             if (hitCol != _ownCollider) return;
             if (IsSealed) return;
 
+            // ✅ v2.1 추가: GuardBreak IsGuarding 정면 봉인도 무효 처리
+            // _guardBreakPattern 연결된 RightArm 에서만 동작
+            // IsGuarding = true + 플레이어가 보스 정면에 있으면 봉인도 차단
+            // 측면 / 후방 공격은 정상 누적 (방향 공략 유도)
+            if (_guardBreakPattern != null && _guardBreakPattern.IsGuarding)
+            {
+                if (IsPlayerFacingFront())
+                {
+                    Debug.Log($"[BossWardenArmPart] {_partType} — 가드 중 정면 공격 봉인도 무효");
+                    PlayHitFlash(); // 피격 점멸은 표시 (막혔다는 피드백)
+                    return;
+                }
+            }
+
             float rawAmount = sealAmount;
 
             // Recovery 취약 구간 배율
@@ -227,6 +289,39 @@ namespace SEAL
             _sealable?.AddGauge(rawAmount);
 
             PlayHitFlash();
+        }
+
+        /// <summary>
+        /// 플레이어가 보스 정면에 있는지 체크.
+        ///
+        /// [정면 판단 기준]
+        ///   AI.FacingDir (보스 정면 방향 벡터)
+        ///   플레이어→보스 방향 벡터
+        ///   두 벡터의 Dot 곱 > _guardFrontDotThreshold (0.5f = 60도 이내)
+        ///   → true = 정면 / false = 측면 or 후방
+        ///
+        /// [Dot 곱 기준값]
+        ///   1.0 = 완전 정면만 차단
+        ///   0.5 = 60도 이내 정면 차단 (권장)
+        ///   0.0 = 전방 180도 차단
+        ///   -1.0 = 모든 방향 차단 (측면/후방 포함)
+        /// </summary>
+        private bool IsPlayerFacingFront()
+        {
+            if (_ai == null || _playerTransform == null) return false;
+
+            Vector2 playerPos = _playerTransform.position;
+            Vector2 bossPos = transform.position;
+
+            // 플레이어 → 보스 방향 (보스 입장에서 플레이어가 어느 방향에서 오는지)
+            Vector2 toPlayer = (bossPos - playerPos).normalized;
+
+            // 보스 정면 방향
+            Vector2 facingDir = _ai.FacingDir;
+
+            // Dot > 0.5 → 정면 60도 이내 → 봉인도 무효
+            float dot = Vector2.Dot(facingDir, toPlayer);
+            return dot > 0.5f;
         }
 
         // ══════════════════════════════════════════════════════

@@ -1,6 +1,13 @@
 ﻿// ============================================================
-// SealExecutor.cs  v1.0
+// SealExecutor.cs  v1.1
 // 봉인 집행 관리자 — 적 캐릭터 1개당 1개 보유
+//
+// [v1.1 수정]
+//   BossWardenAttackRange 연동 추가
+//   HandleSealRequested() → ShowSealRange() / ShowCoreRange() 호출
+//   HandleForceReleased() → HideSealRange() / HideCoreRange() 호출
+//   ExecuteSeal() 완료 시 → HideSealRange() / HideCoreRange() 호출
+//   Initialize() 에서 _attackRange 자동 탐색 추가
 //
 // [역할]
 //   자기 적의 SealableComponent 들에서 발행된
@@ -74,6 +81,16 @@ namespace SEAL
         [Tooltip("BossWardenDataSO. 슬로우 배율 참조.")]
         [SerializeField] private BossWardenDataSO _data;
 
+        [Header("── 범위 표시 ──────────────────────")]
+
+        /// <summary>
+        /// BossWardenAttackRange.
+        /// 봉인 집행 가능 범위 점선 원 표시 / 코어 해제 범위 표시.
+        /// 미연결 시 GetComponentInChildren 자동 탐색.
+        /// </summary>
+        [Tooltip("BossWardenAttackRange. 미연결 시 자동 탐색.")]
+        [SerializeField] private BossWardenAttackRange _attackRange;
+
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조
         // ══════════════════════════════════════════════════════
@@ -125,6 +142,10 @@ namespace SEAL
 
         private void Start()
         {
+            // BossWardenAttackRange 자동 탐색
+            if (_attackRange == null)
+                _attackRange = GetComponentInChildren<BossWardenAttackRange>();
+
             // 플레이어 탐색
             var players = FindObjectsByType<PlayerMoveController>(FindObjectsSortMode.None);
             if (players.Length > 0)
@@ -224,24 +245,46 @@ namespace SEAL
 
         /// <summary>
         /// SealableComponent.OnSealRequested 수신.
-        /// 집행 대기 목록에 추가.
+        /// 집행 대기 목록에 추가 + 봉인 집행 범위 시각 표시.
         /// </summary>
         private void HandleSealRequested(SealableComponent sealable)
         {
             if (!_sealReadyList.Contains(sealable))
             {
                 _sealReadyList.Add(sealable);
+
+                // 봉인 집행 가능 범위 시각 표시
+                // Grade 에 따라 다른 범위 원 표시
+                if (sealable.Grade == SealGrade.Core)
+                {
+                    _attackRange?.ShowCoreRange(
+                        sealable.transform.position,
+                        sealable.SealRange);
+                }
+                else
+                {
+                    _attackRange?.ShowSealRange(
+                        sealable.transform.position,
+                        sealable.SealRange);
+                }
+
                 Debug.Log($"[SealExecutor] {gameObject.name} — {sealable.name} 집행 대기 등록 | 등급:{sealable.Grade}");
             }
         }
 
         /// <summary>
         /// SealableComponent.OnForceReleased 수신.
-        /// 집행 대기 목록에서 제거.
+        /// 집행 대기 목록에서 제거 + 범위 표시 숨김.
         /// </summary>
         private void HandleForceReleased(SealableComponent sealable)
         {
             _sealReadyList.Remove(sealable);
+
+            // 범위 표시 숨김
+            if (sealable.Grade == SealGrade.Core)
+                _attackRange?.HideCoreRange();
+            else
+                _attackRange?.HideSealRange();
         }
 
         // ══════════════════════════════════════════════════════
@@ -387,6 +430,12 @@ namespace SEAL
                 target.ExecuteSeal();
                 _sealReadyList.Remove(target);
 
+                // 집행 완료 후 범위 표시 숨김
+                if (target.Grade == SealGrade.Core)
+                    _attackRange?.HideCoreRange();
+                else
+                    _attackRange?.HideSealRange();
+
                 Debug.Log($"[SealExecutor] {target.name} 집행 완료 | 등급:{target.Grade}");
 
                 // Part 등급: 집행 완료 후 짧은 슬로우
@@ -435,11 +484,14 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// BossWardenCore.Initialize() 에서 DataSO 주입.
+        /// BossWardenCore.Initialize() 에서 DataSO + AttackRange 주입.
         /// </summary>
         public void Initialize(BossWardenDataSO data)
         {
             _data = data;
+
+            if (_attackRange == null)
+                _attackRange = GetComponentInChildren<BossWardenAttackRange>();
         }
     }
 }
