@@ -1,38 +1,43 @@
 ﻿// ============================================================
-// BossWardenFeedback.cs  v1.2
-// Boss_Warden 상태별 DOTween 색상 연출 전담 컴포넌트
+// BossWardenFeedback.cs  v2.0
+// Boss_Warden 시각 피드백 컴포넌트
 //
-// [v1.2 변경 — 부위 봉인도 색상 실시간 보간 (DOColor 보정)]
-//   기존: OnStageChanged(int) → 4단계(0/25/50/75/100%) 점프 방식
-//         → 플레이어가 때릴 때마다 색상 변화 없고 단계 돌파 시에만 변경
+// [v2.0 변경 — SealableComponent 이벤트 구독으로 교체]
+//   제거:
+//     SubscribeArmGauge() → SealGaugeComponent 이벤트 구독
+//     UnsubscribeArmGauge() → SealGaugeComponent 이벤트 해제
+//     armPart.SealGauge 참조 (SealGaugeComponent)
 //
-//   변경: OnGaugeChanged(float UIPercent) → 매 AddGauge 호출마다 수신
-//         → UIPercent 기준으로 colorArm0 ~ colorArm100 사이 Lerp 목표색 계산
-//         → 현재 색상에서 목표색으로 DOColor(colorTransitionDuration) 부드럽게 보정
-//         → 연속 공격 시 이전 DOColor Kill() 후 새 목표색으로 즉시 재시작
-//         → 색상이 자연스럽게 누적되며 밝아지는 보정 효과
+//   변경:
+//     armPart.Sealable 참조 (SealableComponent) 로 교체
+//     구독 이벤트:
+//       OnGaugeChanged  → 유지 (SealableComponent 동일 이벤트)
+//       OnStageChanged  → 유지 (SealableComponent 동일 이벤트)
+//       OnSealCompleted → OnSealed 대체 (이름 변경)
+//       OnForceReleased → OnReleased 대체 (이름 변경)
+//       OnSealRequested → OnSealReady 대체 (이름 변경, 파라미터 있음)
 //
-//   [OnSealReady 추가 구독]
-//     봉인도 100% 도달 시 Pulse 시작 (colorArm100 빠른 Yoyo)
-//     기존 OnStageChanged stage==4 에서 처리하던 것을 OnSealReady 로 이전
+// [v1.2 유지]
+//   [DefaultExecutionOrder(10)] — Core(-10) → 기본(0) → Feedback(10)
+//   DOTween 색상 전환 / Pulse / 처치 연출 전체 유지
 //
-//   [_armStageColors 배열 제거]
-//     단계별 색상 배열 불필요 — Lerp 로 연속 계산
-//
-// [v1.1 변경 — DefaultExecutionOrder(10) 추가]
-//
-// [namespace]
-//   namespace : SEAL
+// [namespace] SEAL
 // ============================================================
 
-using System.Collections.Generic;
+using System;
 using UnityEngine;
 using DG.Tweening;
 
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 상태별 DOTween 색상 연출 전담 컴포넌트. (v1.2)
+    /// Boss_Warden 시각 피드백 컴포넌트. (v2.0)
+    ///
+    /// ────────────────────────────────────────────────────
+    /// [역할]
+    ///   BossWardenCore / BossWardenAI / SealableComponent 이벤트 수신
+    ///   → SpriteRenderer 색상 전환 / Pulse / 처치 연출 담당
+    /// ────────────────────────────────────────────────────
     /// </summary>
     [DefaultExecutionOrder(10)]
     public class BossWardenFeedback : MonoBehaviour
@@ -41,62 +46,43 @@ namespace SEAL
         // Inspector
         // ══════════════════════════════════════════════════════
 
-        [Header("── DataSO (필수) ──────────────────────")]
-        [Tooltip("BossWardenDataSO. 필수 연결.")]
+        [Header("── 컴포넌트 연결 ──────────────────────")]
         [SerializeField] private BossWardenDataSO _data;
+        [SerializeField] private BossWardenCore _core;
+        [SerializeField] private BossWardenAI _ai;
 
-        [Header("── 본체 렌더러 ──────────────────────")]
-        [Tooltip("보스 본체 SpriteRenderer. 미연결 시 자동 탐색.")]
-        [SerializeField] private SpriteRenderer _bodyRenderer;
-
-        [Header("── 부위 렌더러 ──────────────────────")]
-        [Tooltip("왼팔 SpriteRenderer.")]
-        [SerializeField] private SpriteRenderer _armLRenderer;
-
-        [Tooltip("오른팔 SpriteRenderer.")]
-        [SerializeField] private SpriteRenderer _armRRenderer;
-
-        [Tooltip("코어 SpriteRenderer.")]
-        [SerializeField] private SpriteRenderer _coreRenderer;
-
-        [Header("── 부위 컴포넌트 참조 ──────────────────────")]
-        [Tooltip("왼팔 BossWardenArmPart.")]
+        [Header("── 팔 부위 연결 ──────────────────────")]
         [SerializeField] private BossWardenArmPart _armLPart;
-
-        [Tooltip("오른팔 BossWardenArmPart.")]
         [SerializeField] private BossWardenArmPart _armRPart;
 
-        // ══════════════════════════════════════════════════════
-        // 컴포넌트 참조
-        // ══════════════════════════════════════════════════════
-        private BossWardenAI _ai;
-        private BossWardenCore _core;
+        [Header("── SpriteRenderer ──────────────────────")]
+        [SerializeField] private SpriteRenderer _bodyRenderer;
+        [SerializeField] private SpriteRenderer _armLRenderer;
+        [SerializeField] private SpriteRenderer _armRRenderer;
+        [SerializeField] private SpriteRenderer _coreRenderer;
 
         // ══════════════════════════════════════════════════════
-        // DOTween 핸들
+        // 내부 상태
         // ══════════════════════════════════════════════════════
-        private Tween _bodyTween;
-        private Tween _armLTween;
-        private Tween _armRTween;
-        private Tween _coreTween;
+
+        private Tweener _bodyTween;
+        private Tweener _armLTween;
+        private Tweener _armRTween;
+        private Tweener _coreTween;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
         // ══════════════════════════════════════════════════════
 
-        private void Awake()
-        {
-            if (_bodyRenderer == null)
-                _bodyRenderer = GetComponent<SpriteRenderer>();
-
-            _ai = GetComponent<BossWardenAI>();
-            _core = GetComponent<BossWardenCore>();
-        }
-
         private void Start()
         {
+            if (_core == null) _core = GetComponent<BossWardenCore>();
+            if (_ai == null) _ai = GetComponent<BossWardenAI>();
+
+            if (_data != null && _bodyRenderer != null)
+                _bodyRenderer.color = _data != null ? _data.colorIdle : Color.gray;
+
             SubscribeAll();
-            SetBodyColorImmediate(_data != null ? _data.colorIdle : Color.gray);
         }
 
         private void OnDestroy()
@@ -137,8 +123,9 @@ namespace SEAL
                 _core.OnDead += HandleDead;
             }
 
-            SubscribeArmGauge(_armLPart, isLeft: true);
-            SubscribeArmGauge(_armRPart, isLeft: false);
+            // ✅ v2.0: SealableComponent 이벤트 구독
+            SubscribeArmSealable(_armLPart, isLeft: true);
+            SubscribeArmSealable(_armRPart, isLeft: false);
         }
 
         private void UnsubscribeAll()
@@ -156,311 +143,271 @@ namespace SEAL
                 _core.OnDead -= HandleDead;
             }
 
-            UnsubscribeArmGauge(_armLPart, isLeft: true);
-            UnsubscribeArmGauge(_armRPart, isLeft: false);
+            UnsubscribeArmSealable(_armLPart, isLeft: true);
+            UnsubscribeArmSealable(_armRPart, isLeft: false);
         }
 
         /// <summary>
-        /// 팔 봉인도 이벤트 구독.
-        ///
-        /// [v1.2 변경]
-        ///   OnStageChanged 제거 → OnGaugeChanged 추가 구독
-        ///   OnSealReady 추가 구독 → 100% 도달 시 Pulse 시작
-        ///   OnSealed / OnReleased 유지
+        /// 팔 SealableComponent 이벤트 구독.
+        /// ✅ v2.0: SealGaugeComponent → SealableComponent 교체
+        ///   OnSealReady  → OnSealRequested (파라미터: SealableComponent)
+        ///   OnSealed     → OnSealCompleted
+        ///   OnReleased   → OnForceReleased
         /// </summary>
-        private void SubscribeArmGauge(BossWardenArmPart armPart, bool isLeft)
+        private void SubscribeArmSealable(BossWardenArmPart armPart, bool isLeft)
         {
-            if (armPart == null || armPart.SealGauge == null) return;
-            var gauge = armPart.SealGauge;
+            if (armPart == null || armPart.Sealable == null) return;
+            var s = armPart.Sealable;
 
             if (isLeft)
             {
-                gauge.OnGaugeChanged -= HandleArmLGaugeChanged;
-                gauge.OnSealReady -= HandleArmLSealReady;
-                gauge.OnSealed -= HandleArmLSealed;
-                gauge.OnReleased -= HandleArmLReleased;
+                s.OnGaugeChanged -= HandleArmLGaugeChanged;
+                s.OnStageChanged -= HandleArmLStageChanged;
+                s.OnSealRequested -= HandleArmLSealRequested;
+                s.OnSealCompleted -= HandleArmLSealed;
+                s.OnForceReleased -= HandleArmLReleased;
 
-                gauge.OnGaugeChanged += HandleArmLGaugeChanged;
-                gauge.OnSealReady += HandleArmLSealReady;
-                gauge.OnSealed += HandleArmLSealed;
-                gauge.OnReleased += HandleArmLReleased;
+                s.OnGaugeChanged += HandleArmLGaugeChanged;
+                s.OnStageChanged += HandleArmLStageChanged;
+                s.OnSealRequested += HandleArmLSealRequested;
+                s.OnSealCompleted += HandleArmLSealed;
+                s.OnForceReleased += HandleArmLReleased;
             }
             else
             {
-                gauge.OnGaugeChanged -= HandleArmRGaugeChanged;
-                gauge.OnSealReady -= HandleArmRSealReady;
-                gauge.OnSealed -= HandleArmRSealed;
-                gauge.OnReleased -= HandleArmRReleased;
+                s.OnGaugeChanged -= HandleArmRGaugeChanged;
+                s.OnStageChanged -= HandleArmRStageChanged;
+                s.OnSealRequested -= HandleArmRSealRequested;
+                s.OnSealCompleted -= HandleArmRSealed;
+                s.OnForceReleased -= HandleArmRReleased;
 
-                gauge.OnGaugeChanged += HandleArmRGaugeChanged;
-                gauge.OnSealReady += HandleArmRSealReady;
-                gauge.OnSealed += HandleArmRSealed;
-                gauge.OnReleased += HandleArmRReleased;
+                s.OnGaugeChanged += HandleArmRGaugeChanged;
+                s.OnStageChanged += HandleArmRStageChanged;
+                s.OnSealRequested += HandleArmRSealRequested;
+                s.OnSealCompleted += HandleArmRSealed;
+                s.OnForceReleased += HandleArmRReleased;
             }
         }
 
-        private void UnsubscribeArmGauge(BossWardenArmPart armPart, bool isLeft)
+        private void UnsubscribeArmSealable(BossWardenArmPart armPart, bool isLeft)
         {
-            if (armPart == null || armPart.SealGauge == null) return;
-            var gauge = armPart.SealGauge;
+            if (armPart == null || armPart.Sealable == null) return;
+            var s = armPart.Sealable;
 
             if (isLeft)
             {
-                gauge.OnGaugeChanged -= HandleArmLGaugeChanged;
-                gauge.OnSealReady -= HandleArmLSealReady;
-                gauge.OnSealed -= HandleArmLSealed;
-                gauge.OnReleased -= HandleArmLReleased;
+                s.OnGaugeChanged -= HandleArmLGaugeChanged;
+                s.OnStageChanged -= HandleArmLStageChanged;
+                s.OnSealRequested -= HandleArmLSealRequested;
+                s.OnSealCompleted -= HandleArmLSealed;
+                s.OnForceReleased -= HandleArmLReleased;
             }
             else
             {
-                gauge.OnGaugeChanged -= HandleArmRGaugeChanged;
-                gauge.OnSealReady -= HandleArmRSealReady;
-                gauge.OnSealed -= HandleArmRSealed;
-                gauge.OnReleased -= HandleArmRReleased;
+                s.OnGaugeChanged -= HandleArmRGaugeChanged;
+                s.OnStageChanged -= HandleArmRStageChanged;
+                s.OnSealRequested -= HandleArmRSealRequested;
+                s.OnSealCompleted -= HandleArmRSealed;
+                s.OnForceReleased -= HandleArmRReleased;
             }
         }
 
         // ══════════════════════════════════════════════════════
-        // AI 상태 이벤트 핸들러
+        // AI 상태 변화 핸들러
         // ══════════════════════════════════════════════════════
 
-        private void HandleStateChanged(BossWardenAI.WardenAIState state, BossPatternBase pattern)
+        public void HandleStateChanged(string stateName)
         {
-            if (_data == null) return;
+            if (_data == null || _bodyRenderer == null) return;
 
-            Color target = state switch
+            _bodyTween?.Kill();
+            switch (stateName)
             {
-                BossWardenAI.WardenAIState.Idle => _data.colorIdle,
-                BossWardenAI.WardenAIState.Chase => _data.colorIdle,
-                BossWardenAI.WardenAIState.Warning => _data.colorWarning,
-                BossWardenAI.WardenAIState.Active => _data.colorActive,
-                BossWardenAI.WardenAIState.Recovery => _data.colorRecovery,
-                _ => _data.colorIdle,
-            };
-
-            PlayBodyColor(target, _data.colorTransitionDuration);
+                case "Warning":
+                    _bodyTween = _bodyRenderer
+                        .DOColor(_data.colorWarning, _data.pulsePeriod * 0.4f)
+                        .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+                    break;
+                case "Active":
+                    _bodyRenderer.color = _data.colorActive;
+                    break;
+                default:
+                    _bodyTween = _bodyRenderer
+                        .DOColor(_data.colorIdle, _data.colorTransitionDuration)
+                        .SetUpdate(true);
+                    break;
+            }
         }
 
         // ══════════════════════════════════════════════════════
-        // Core 이벤트 핸들러
+        // Core 이벤트 핸들러 (public — BossWardenCore.SubscribeAll 에서 직접 구독)
         // ══════════════════════════════════════════════════════
 
-        private void HandleGroggyEnter()
+        public void HandleGroggyEnter()
         {
             if (_data == null) return;
-
-            // 본체 노란 빠른 Pulse
             _bodyTween?.Kill();
-            _bodyTween = _bodyRenderer
-                .DOColor(_data.colorIdle, _data.pulsePeriod * 0.5f)
-                .From(_data.colorGroggy)
-                .SetLoops(-1, LoopType.Yoyo)
+            _bodyTween = _bodyRenderer?
+                .DOColor(_data.colorGroggy, _data.pulsePeriod * 0.5f)
+                .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+        }
+
+        public void HandleGroggyExit()
+        {
+            _bodyTween?.Kill();
+            _bodyTween = _bodyRenderer?
+                .DOColor(_data?.colorIdle ?? Color.white, _data?.colorTransitionDuration ?? 0.1f)
                 .SetUpdate(true);
-
-            // 코어 노란 Pulse
-            if (_coreRenderer != null)
-            {
-                _coreTween?.Kill();
-                _coreTween = _coreRenderer
-                    .DOColor(_data.colorIdle, _data.pulsePeriod * 0.5f)
-                    .From(_data.colorCoreActive)
-                    .SetLoops(-1, LoopType.Yoyo)
-                    .SetUpdate(true);
-            }
         }
 
-        private void HandleGroggyExit()
+        public void HandleDilPhaseEnter()
         {
             if (_data == null) return;
-            PlayBodyColor(_data.colorIdle, _data.colorTransitionDuration);
-            _coreTween?.Kill();
-        }
-
-        private void HandleDilPhaseEnter()
-        {
-            if (_data == null) return;
-
-            // 본체 밝은 주황 Pulse
             _bodyTween?.Kill();
-            _bodyTween = _bodyRenderer
-                .DOColor(_data.colorIdle, _data.pulsePeriod)
-                .From(_data.colorDilPhase)
-                .SetLoops(-1, LoopType.Yoyo)
+            _bodyTween = _bodyRenderer?
+                .DOColor(_data.colorDilPhase, _data.pulsePeriod * 0.3f)
+                .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+
+            _coreTween?.Kill();
+            _coreTween = _coreRenderer?
+                .DOColor(Color.white, _data.pulsePeriod * 0.3f)
+                .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+        }
+
+        public void HandleDilPhaseExit()
+        {
+            _bodyTween?.Kill();
+            _coreTween?.Kill();
+            _bodyTween = _bodyRenderer?
+                .DOColor(_data?.colorIdle ?? Color.white, _data?.colorTransitionDuration ?? 0.1f)
                 .SetUpdate(true);
-
-            // 코어 주황 → 빨강 보간은 BossWardenCoreSealGauge.UpdateCoreColor() 담당
-            // 여기서는 초기 색상만 설정
-            if (_coreRenderer != null)
-            {
-                _coreTween?.Kill();
-                _coreRenderer.color = _data.colorCoreDilPhase;
-            }
         }
 
-        private void HandleDilPhaseExit()
+        public void HandlePhaseChanged(int phase)
         {
             if (_data == null) return;
-            PlayBodyColor(_data.colorIdle, _data.colorTransitionDuration);
+            _bodyTween?.Kill();
+            _bodyTween = _bodyRenderer?
+                .DOColor(_data.colorPhase2, _data.colorTransitionDuration)
+                .SetUpdate(true);
+        }
+
+        public void HandleDead()
+        {
+            _bodyTween?.Kill();
+            _armLTween?.Kill();
+            _armRTween?.Kill();
             _coreTween?.Kill();
-        }
 
-        private void HandlePhaseChanged(int newPhase)
-        {
-            if (_data == null || newPhase != 2) return;
-
-            _bodyTween?.Kill();
-            var seq = DOTween.Sequence();
-            seq.Append(_bodyRenderer.DOColor(_data.colorPhase2, 0.05f).SetUpdate(true));
-            seq.AppendInterval(0.3f);
-            seq.Append(_bodyRenderer.DOColor(_data.colorIdle, _data.colorTransitionDuration).SetUpdate(true));
-            seq.SetUpdate(true);
-            _bodyTween = seq;
-        }
-
-        private void HandleDead()
-        {
-            if (_data == null) return;
-
-            _bodyTween?.Kill();
-            var seq = DOTween.Sequence();
-            seq.Append(_bodyRenderer.DOColor(_data.colorDead, 0.3f).SetUpdate(true));
-            seq.Join(transform.DOScale(0f, 0.5f).SetEase(Ease.InBack).SetUpdate(true));
-            seq.SetUpdate(true);
-            _bodyTween = seq;
+            float dur = _data?.colorTransitionDuration ?? 0.3f;
+            _bodyRenderer?.DOColor(Color.black, dur).SetUpdate(true);
+            _armLRenderer?.DOColor(Color.black, dur).SetUpdate(true);
+            _armRRenderer?.DOColor(Color.black, dur).SetUpdate(true);
         }
 
         // ══════════════════════════════════════════════════════
-        // 팔 봉인도 이벤트 핸들러 — 왼팔
+        // 왼팔 SealableComponent 핸들러
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// OnGaugeChanged(float UIPercent) 수신.
-        /// AddGauge 호출마다 발행 → 실시간 색상 보간.
-        /// </summary>
-        private void HandleArmLGaugeChanged(float uiPercent)
-            => ApplyArmGaugeColor(_armLRenderer, _armLPart, uiPercent, ref _armLTween);
+        private void HandleArmLGaugeChanged(float percent)
+        {
+            // UI 게이지 업데이트 연결 예정
+        }
 
-        /// <summary>
-        /// OnSealReady 수신 → 봉인도 100% → 연보라 빠른 Pulse 시작.
-        /// </summary>
-        private void HandleArmLSealReady()
-            => ApplyArmSealReadyPulse(_armLRenderer, _armLPart, ref _armLTween);
+        private void HandleArmLStageChanged(int stage)
+        {
+            if (_data == null || _armLRenderer == null) return;
+            _armLTween?.Kill();
+            Color targetColor = GetStageColor(stage);
+            _armLTween = _armLRenderer
+                .DOColor(targetColor, _data.colorTransitionDuration)
+                .SetUpdate(true);
+            _armLPart?.UpdateBaseColor(targetColor);
+        }
+
+        private void HandleArmLSealRequested(SealableComponent s)
+        {
+            if (_data == null || _armLRenderer == null) return;
+            _armLTween?.Kill();
+            _armLTween = _armLRenderer
+                .DOColor(_data.colorArm100, _data.pulsePeriod * 0.3f)
+                .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+        }
 
         private void HandleArmLSealed()
-            => ApplyArmSealedColor(_armLRenderer, _armLPart, ref _armLTween);
+        {
+            _armLTween?.Kill();
+            Color sealedColor = _data?.colorArmSealed ?? new Color(0.482f, 0.184f, 0.745f);
+            _armLRenderer?.DOColor(sealedColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            _armLPart?.UpdateBaseColor(sealedColor);
+        }
 
         private void HandleArmLReleased()
-            => ApplyArmGaugeColor(_armLRenderer, _armLPart, uiPercent: 0f, ref _armLTween);
+        {
+            _armLTween?.Kill();
+            Color idleColor = _data?.colorArm0 ?? Color.gray;
+            _armLRenderer?.DOColor(idleColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            _armLPart?.UpdateBaseColor(idleColor);
+        }
 
         // ══════════════════════════════════════════════════════
-        // 팔 봉인도 이벤트 핸들러 — 오른팔
+        // 오른팔 SealableComponent 핸들러
         // ══════════════════════════════════════════════════════
 
-        private void HandleArmRGaugeChanged(float uiPercent)
-            => ApplyArmGaugeColor(_armRRenderer, _armRPart, uiPercent, ref _armRTween);
+        private void HandleArmRGaugeChanged(float percent) { }
 
-        private void HandleArmRSealReady()
-            => ApplyArmSealReadyPulse(_armRRenderer, _armRPart, ref _armRTween);
+        private void HandleArmRStageChanged(int stage)
+        {
+            if (_data == null || _armRRenderer == null) return;
+            _armRTween?.Kill();
+            Color targetColor = GetStageColor(stage);
+            _armRTween = _armRRenderer
+                .DOColor(targetColor, _data.colorTransitionDuration)
+                .SetUpdate(true);
+            _armRPart?.UpdateBaseColor(targetColor);
+        }
+
+        private void HandleArmRSealRequested(SealableComponent s)
+        {
+            if (_data == null || _armRRenderer == null) return;
+            _armRTween?.Kill();
+            _armRTween = _armRRenderer
+                .DOColor(_data.colorArm100, _data.pulsePeriod * 0.3f)
+                .SetLoops(-1, LoopType.Yoyo).SetUpdate(true);
+        }
 
         private void HandleArmRSealed()
-            => ApplyArmSealedColor(_armRRenderer, _armRPart, ref _armRTween);
+        {
+            _armRTween?.Kill();
+            Color sealedColor = _data?.colorArmSealed ?? new Color(0.482f, 0.184f, 0.745f);
+            _armRRenderer?.DOColor(sealedColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            _armRPart?.UpdateBaseColor(sealedColor);
+        }
 
         private void HandleArmRReleased()
-            => ApplyArmGaugeColor(_armRRenderer, _armRPart, uiPercent: 0f, ref _armRTween);
-
-        // ══════════════════════════════════════════════════════
-        // 부위 색상 적용
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 봉인도 UIPercent 기준으로 팔 색상을 부드럽게 보정.
-        ///
-        /// [v1.2 핵심 변경]
-        ///   UIPercent(0~100) → t(0~1) 로 정규화
-        ///   targetColor = Color.Lerp(colorArm0, colorArm100, t)
-        ///   현재 색상 → targetColor 로 DOColor(colorTransitionDuration) 보정
-        ///   연속 공격 시 이전 DOColor Kill() 후 새 목표색으로 재시작
-        ///   → 플레이어가 때릴 때마다 색상이 자연스럽게 밝아지는 효과
-        ///
-        /// [보정 동작]
-        ///   한 번 때릴 때마다 약간씩 밝아지고
-        ///   colorTransitionDuration 안에 목표색에 도달
-        ///   다시 때리면 더 밝은 목표색으로 부드럽게 이어짐
-        /// </summary>
-        private void ApplyArmGaugeColor(SpriteRenderer renderer, BossWardenArmPart armPart, float uiPercent, ref Tween tween)
         {
-            if (renderer == null || _data == null) return;
+            _armRTween?.Kill();
+            Color idleColor = _data?.colorArm0 ?? Color.gray;
+            _armRRenderer?.DOColor(idleColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            _armRPart?.UpdateBaseColor(idleColor);
+        }
 
-            float t = Mathf.Clamp01(uiPercent / 100f);
-            Color targetColor = Color.Lerp(_data.colorArm0, _data.colorArm100, t);
+        // ══════════════════════════════════════════════════════
+        // 유틸
+        // ══════════════════════════════════════════════════════
 
-            // 히트 점멸 복귀 색상 동기화 — 먼저 갱신
-            armPart?.UpdateBaseColor(targetColor);
-
-            // 히트 점멸(hitFlashDuration) 완료 후 색상 보정 시작
-            // → PlayHitFlash의 DOColor와 충돌 방지
-            tween?.Kill();
-            tween = DOVirtual.DelayedCall(_data.hitFlashDuration, () =>
+        private Color GetStageColor(int stage)
+        {
+            if (_data == null) return Color.gray;
+            return stage switch
             {
-                if (renderer == null) return;
-                renderer.DOColor(targetColor, _data.colorTransitionDuration)
-                        .SetUpdate(true);
-            }).SetUpdate(true);
-        }
-
-        /// <summary>
-        /// 봉인도 100% 도달 시 Pulse 시작.
-        /// colorArm100(연보라) 빠른 Yoyo — 집행 가능 상태 강조.
-        /// </summary>
-        private void ApplyArmSealReadyPulse(SpriteRenderer renderer, BossWardenArmPart armPart,
-                                             ref Tween tween)
-        {
-            if (renderer == null || _data == null) return;
-
-            tween?.Kill();
-            tween = renderer
-                .DOColor(_data.colorArm0, _data.pulsePeriod * 0.4f)
-                .From(_data.colorArm100)
-                .SetLoops(-1, LoopType.Yoyo)
-                .SetUpdate(true);
-
-            armPart?.UpdateBaseColor(_data.colorArm100);
-        }
-
-        /// <summary>
-        /// 봉인 집행 완료 색상 고정 (진한 보라 단색).
-        /// Pulse 종료 후 colorArmSealed 로 고정.
-        /// </summary>
-        private void ApplyArmSealedColor(SpriteRenderer renderer, BossWardenArmPart armPart,
-                                          ref Tween tween)
-        {
-            if (renderer == null || _data == null) return;
-
-            tween?.Kill();
-            tween = renderer
-                .DOColor(_data.colorArmSealed, _data.colorTransitionDuration)
-                .SetUpdate(true);
-
-            armPart?.UpdateBaseColor(_data.colorArmSealed);
-        }
-
-        // ══════════════════════════════════════════════════════
-        // 공통 DOTween 헬퍼
-        // ══════════════════════════════════════════════════════
-
-        private void PlayBodyColor(Color target, float duration)
-        {
-            _bodyTween?.Kill();
-            _bodyTween = _bodyRenderer
-                .DOColor(target, duration)
-                .SetUpdate(true);
-        }
-
-        private void SetBodyColorImmediate(Color color)
-        {
-            _bodyTween?.Kill();
-            if (_bodyRenderer != null)
-                _bodyRenderer.color = color;
+                0 => _data.colorArm0,
+                1 => _data.colorArm25,
+                2 => _data.colorArm50,
+                3 => _data.colorArm75,
+                4 => _data.colorArm100,
+                _ => _data.colorArm0
+            };
         }
     }
 }

@@ -810,7 +810,7 @@ namespace SEAL
         ///   Interrupt() 먼저 → 패턴 내부 OnPatternEnd 발행 + 상태 정리 완료
         ///   그 후 StopCoroutine() → 코루틴 즉시 중단
         /// </summary>
-        private void HandleGroggyEnter()
+        public void HandleGroggyEnter()
         {
             _isStopped = true;
 
@@ -827,7 +827,7 @@ namespace SEAL
         /// 그로기 종료 수신.
         /// 이동/패턴 재개 + 플레이어 방향 즉시 전환 후 Idle 복귀.
         /// </summary>
-        private void HandleGroggyExit()
+        public void HandleGroggyExit()
         {
             _isStopped = false;
             TurnTowardPlayerImmediate();
@@ -840,7 +840,7 @@ namespace SEAL
         /// 딜 페이즈 진입 수신.
         /// 이동/패턴 정지 (그로기와 동일).
         /// </summary>
-        private void HandleDilPhaseEnter()
+        public void HandleDilPhaseEnter()
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
@@ -853,7 +853,7 @@ namespace SEAL
         /// 딜 페이즈 종료 수신.
         /// 이동/패턴 재개 + Idle 복귀.
         /// </summary>
-        private void HandleDilPhaseExit()
+        public void HandleDilPhaseExit()
         {
             _isStopped = false;
             TurnTowardPlayerImmediate();
@@ -866,7 +866,7 @@ namespace SEAL
         /// 페이즈 전환 수신.
         /// 2페이즈 진입 시 패턴 강화 + 이동 속도 갱신.
         /// </summary>
-        private void HandlePhaseChanged(int newPhase)
+        public void HandlePhaseChanged(int newPhase)
         {
             if (newPhase != 2) return;
 
@@ -888,7 +888,7 @@ namespace SEAL
         /// 보스 처치 수신.
         /// AI 완전 정지 + 컴포넌트 비활성.
         /// </summary>
-        private void HandleDead()
+        public void HandleDead()
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
