@@ -1031,6 +1031,7 @@ GameObject:
   - component: {fileID: 5298859741369411445}
   - component: {fileID: 7116612192379757486}
   - component: {fileID: 6966774668998716745}
+  - component: {fileID: 2216384963670681136}
   m_Layer: 0
   m_Name: Boss_Warden
   m_TagString: Untagged
@@ -1268,6 +1269,25 @@ MonoBehaviour:
   _cameraTransform: {fileID: 0}
   _cameraShakeStrength: 0.25
   _cameraShakeDuration: 0.3
+--- !u!114 &2216384963670681136
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d1a379aeae2763e4892c395f8c900b63, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenFeedback
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _bodyRenderer: {fileID: 3534132678184260611}
+  _armLRenderer: {fileID: 3641258697330880272}
+  _armRRenderer: {fileID: 667973993591523152}
+  _coreRenderer: {fileID: 4626551619868309503}
+  _armLPart: {fileID: 4585807861786295039}
+  _armRPart: {fileID: 4394930287480848199}
 --- !u!1 &3820522534865309555
 GameObject:
   m_ObjectHideFlags: 0
