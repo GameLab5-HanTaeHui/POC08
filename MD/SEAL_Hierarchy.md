@@ -1,388 +1,183 @@
-# SEAL_Hierarchy.md
-# KEY 프로젝트 — Unity Hierarchy 계층 구조 문서
-
-> 기준: SEAL_README #43 Unity Hierarchy 구조 + POC08 현재 구현 반영  
-> 갱신 기준: 새 오브젝트/컴포넌트 추가 시 반드시 업데이트  
-> 표기 규칙: `[컴포넌트명]` = 해당 오브젝트에 부착된 컴포넌트 / `← SO` = ScriptableObject 연결 필요
-
----
-
-## 전체 씬 구조
-
-```
-GameRoot
-├─ Managers
-├─ Systems
-├─ CameraRoot
-├─ PlayerRoot
-├─ StageRoot
-├─ EnemyRoot
-├─ BossRoot
-├─ ProjectileRoot
-├─ EffectRoot
-├─ UIRoot
-└─ DebugRoot
-```
-
----
-
-## Managers
-
-전역 관리자 오브젝트를 모아둔다.  
-씬 전환 후에도 유지되는 싱글턴 Manager 컴포넌트를 부착.
-
-```
-Managers
-├─ GameManager          [GameManager]
-├─ DungeonManager       [DungeonManager]
-├─ StageManager         [StageManager]
-├─ BattleManager        [BattleManager]
-├─ PlayerManager        [PlayerManager]
-├─ EnemyManager         [EnemyManager]
-├─ BossManager          [BossManager]
-├─ UIManager            [UIManager]
-├─ AudioManager         [AudioManager]
-└─ SaveManager          [SaveManager]
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## Systems
-
-런타임 시스템 오브젝트를 모아둔다.  
-Manager 와 달리 씬 내 시스템 컴포넌트.
-
-```
-Systems
-├─ InputSystem          [PlayerInputHandler]   ← 싱글턴, 키 바인딩 SO 없음 (코드 기반)
-├─ PoolManager          [PoolManager]
-├─ EventBus             [EventBus]
-└─ TimeController       [TimeController]
-```
-
-### InputSystem 상세
-
-```
-InputSystem
-└─ [PlayerInputHandler]
-      키 바인딩 (Inspector):
-        _keyMoveUp    : UpArrow
-        _keyMoveDown  : DownArrow
-        _keyMoveLeft  : LeftArrow
-        _keyMoveRight : RightArrow
-        _keyDash      : Space
-        _keyAttack    : A
-        _keySeal      : S
-        _keyInteract  : E
-        _keyCancel    : LeftShift
-        _keyMenu      : Escape
-      이벤트:
-        OnMove / OnDash / OnAttack / OnAttackReleased
-        OnSeal / OnInteract / OnCancel / OnMenu
-```
-
-> 현재 구현 상태: PlayerInputHandler ✅ 구현 완료 (v1.1)
-
----
-
-## CameraRoot
-
-카메라 관련 오브젝트를 모아둔다.
-
-```
-CameraRoot
-├─ Main Camera          [Camera] [AudioListener]
-└─ CinemachineCamera    [CinemachineCamera] [CinemachineFollow]
-                         ← Player.Transform 타겟 연결 필요
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## PlayerRoot ✅ 핵심 구현 영역
-
-플레이어 관련 오브젝트를 모아둔다.  
-현재 v0.1 ~ v0.4 구현 내용이 반영된 구조.
-
-```
-PlayerRoot
-└─ Player
-   │  [Rigidbody2D]          GravityScale=0 / FreezeRotation Z=true / Continuous
-   │  [SpriteRenderer]
-   │  [CapsuleCollider2D]    플레이어 본체 충돌
-   │  [PlayerMoveController] ← PlayerDataSO 연결
-   │  [PlayerAttackController]  ← PlayerAttackDataSO 연결
-   │  [PlayerWeaponSwingController] ← PlayerAttackDataSO 연결
-   │  [ObjectDirectionController]   ← Visual SpriteRenderer 연결
-   │  [PlayerAttackHitboxManager]   ← Enemy 레이어 + 히트박스 콜라이더
-   │
-   ├─ Visual                 [SpriteRenderer] ← 스쿼시/스트레치 DOTween 대상
-   │                          _visualTransform 참조 오브젝트
-   │
-   ├─ HitBox                 [Collider2D] isTrigger=true  ← 적 공격 피격 수신
-   │
-   ├─ HurtBox                [Collider2D] isTrigger=true  ← 적 공격 판정 감지
-   │
-   ├─ WeaponPivot            공격 방향으로 Z회전하는 피벗
-   │  │  (컴포넌트 없음 — PlayerWeaponSwingController 가 제어)
-   │  │  _weaponPivot 참조 오브젝트
-   │  │
-   │  └─ Weapon              실제 무기 스프라이트 오브젝트
-   │        [SpriteRenderer]
-   │        (DOLocalMove + DOLocalRotate 연출 대상)
-   │        _weapon 참조 오브젝트
-   │
-   └─ StateMachine           (추후 StateMachine 컴포넌트 부착 예정)
-```
-
-### Player 오브젝트 컴포넌트 연결 상세
-
-| 컴포넌트 | 연결 필드 | 연결 대상 |
-|---|---|---|
-| `PlayerMoveController` | `_data` | `PlayerDataSO` 에셋 |
-| `PlayerMoveController` | `_visualTransform` | `Visual` 오브젝트 |
-| `PlayerAttackController` | `_data` | `PlayerAttackDataSO` 에셋 |
-| `PlayerAttackController` | `_visualTransform` | `Visual` 오브젝트 |
-| `PlayerWeaponSwingController` | `_data` | `PlayerAttackDataSO` 에셋 |
-| `PlayerWeaponSwingController` | `_weaponPivot` | `WeaponPivot` 오브젝트 |
-| `PlayerWeaponSwingController` | `_weapon` | `Weapon` 오브젝트 |
-| `PlayerWeaponSwingController` | `_visualTransform` | `Visual` 오브젝트 |
-| `ObjectDirectionController` | `_spriteRenderers` | `Visual` SpriteRenderer |
-| `ObjectDirectionController` | `_swingController` | `PlayerWeaponSwingController` (선택) |
-| `PlayerAttackHitboxManager` | `_hitboxes` | Weapon 하위 4개 Collider2D |
-| `PlayerAttackHitboxManager` | `_enemyLayer` | Enemy 레이어 마스크 |
-
-### PlayerDataSO 에셋 주요 수치
-
-| 항목 | 값 | 설명 |
-|---|---|---|
-| MoveSpeed | 5f | 이동 속도 |
-| MoveAcceleration | 50f | 가속도 (0=즉시) |
-| MoveDeceleration | 80f | 감속도 |
-| NormalizeMovement | true | 대각선 정규화 |
-| DashSpeed | 18f | 대시 속도 |
-| DashDuration | 0.15f | 대시 지속 시간 |
-| DashCooldown | 0.6f | 대시 쿨타임 |
-| MaxDashCount | 1 | 최대 대시 충전 |
-| DashPunchScale | 0.2f | 대시 스케일 펀치 |
-| MoveSquashAmount | 0.08f | 이동 스쿼시 |
-
-### PlayerAttackDataSO 에셋 주요 수치
-
-| 항목 | 값 | 설명 |
-|---|---|---|
-| BackswingDuration | 0.08f | 백스윙 시간 |
-| AttackDuration | 0.08f | 타격 시간 |
-| ReturnDuration | 0.15f | 복귀 시간 |
-| Combo1SealAmount | 10f | 1콤보 봉인도 |
-| Combo2SealAmount | 12f | 2콤보 봉인도 |
-| Combo3SealAmount | 18f | 3콤보 봉인도 (피니셔) |
-| ChargeSealAmount | 30f | 강공격 봉인도 |
-| HitboxRadius | 0.8f | 히트박스 반경 |
-| HitboxOffset | 1.0f | 히트박스 오프셋 |
-| HitStopDuration | 0.05f | 기본 히트스톱 |
-| ChargeHitStopDuration | 0.12f | 강공격 히트스톱 |
-| ChargeMinHoldTime | 0.35f | 강공격 최소 홀드 |
-
-### Rigidbody2D 필수 설정
-
-| 항목 | 값 |
-|---|---|
-| Gravity Scale | **0** (탑뷰 — 중력 없음) |
-| Freeze Rotation | **Z 체크** (물리 회전 방지) |
-| Collision Detection | **Continuous** |
-| Interpolate | Interpolate |
-
-> 현재 구현 상태:
-> - PlayerInputHandler ✅ v1.1
-> - PlayerDataSO ✅ v1.1
-> - PlayerMoveController ✅ v1.1
-> - PlayerAttackDataSO ✅ v2.0
-> - PlayerAttackController ✅ v2.0
-> - PlayerWeaponSwingController ✅ v1.0
-
----
-
-## StageRoot
-
-현재 스테이지 구조물을 모아둔다.
-
-```
-StageRoot
-├─ Tilemap              [Tilemap] [TilemapRenderer] [TilemapCollider2D]
-├─ Walls                벽 콜라이더 오브젝트 모음
-├─ Obstacles            장애물 오브젝트 모음
-├─ SpawnPoints          적 스폰 포인트 모음
-├─ NodeEntrance         노드 진입 포인트
-└─ NodeExit             노드 탈출 포인트
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## EnemyRoot
-
-일반 몬스터, 엘리트, 미니보스를 런타임에 생성하여 모아둔다.
-
-```
-EnemyRoot
-├─ NormalEnemies        일반 몬스터 런타임 생성 부모
-├─ EliteEnemies         엘리트 런타임 생성 부모
-└─ MiniBosses           미니보스 런타임 생성 부모
-```
-
-### 일반 몬스터 Prefab 예시 구조 (추후)
-
-```
-Enemy_Normal
-│  [Rigidbody2D]
-│  [SpriteRenderer]
-│  [CapsuleCollider2D]
-│  [EnemyBase]        ← EnemyDataSO 연결
-│  [EnemyAI]
-│
-├─ Visual             [SpriteRenderer]
-├─ HitBox             [Collider2D] isTrigger=true
-└─ SealOverlay        [SpriteRenderer]  봉인 오버레이 아이콘
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
+# SEAL_Hierarchy.md — BossRoot 섹션 최신화
+## 기준: 2026-06-05 / Boss_Warden.prefab 최신 구조 반영
 
 ---
 
 ## BossRoot
 
-보스 전투 전용 오브젝트를 모아둔다.
-
 ```
-BossRoot
-└─ Boss
+BossRoot                                    Layer: Default
+└─ Boss_Warden                              Layer: Enemy
+   │  localScale = (1, 1, 1)               ← 반드시 균등 Scale 유지
+   │                                           SetParent worldPositionStays 시
+   │                                           비균등 Scale → 팔 Scale 왜곡 누적
+   │
+   │  ── 컴포넌트 ─────────────────────────────────────────────
    │  [Rigidbody2D]
-   │  [SpriteRenderer]
-   │  [EnemyBossBase]     ← BossDataSO 연결
-   │  [BossAI]
+   │      BodyType         = Dynamic
+   │      GravityScale     = 0
+   │      FreezeRotation Z = true
+   │      CollisionDetection = Continuous
    │
-   ├─ Visual
-   ├─ Parts
-   │  ├─ HeadPart         [BossPartComponent] ← 봉인 가능 부위
-   │  ├─ LeftArmPart      [BossPartComponent]
-   │  ├─ RightArmPart     [BossPartComponent]
-   │  └─ LegPart          [BossPartComponent]
+   │  [CapsuleCollider2D]                   isTrigger = false
    │
-   ├─ Core                [CoreSealTarget]  그로기 시 활성화
-   ├─ PatternPoints       패턴 기준점 오브젝트 모음
-   └─ StateMachine        (보스 StateMachine 컴포넌트)
+   │  [SpriteRenderer]                      SortingLayer = Enemy
+   │
+   │  [BossWardenCore]                      v2.0
+   │      _data            → BossWardenDataSO 에셋
+   │      _armL            → LeftArm / BossWardenArmPart
+   │      _armR            → RightArm / BossWardenArmPart
+   │      _armLSealable    → LeftArm / SealableComponent       ← 신규 v2.0
+   │      _armRSealable    → RightArm / SealableComponent      ← 신규 v2.0
+   │      _coreSealable    → Core / SealableComponent          ← 신규 v2.0
+   │      _sealExecutor    → Boss_Warden / SealExecutor        ← 신규 v2.0
+   │      _coreObject      → Core GameObject
+   │      _shockwave       → BossWardenShockwave
+   │
+   │  [BossWardenAI]
+   │      _data            → BossWardenDataSO 에셋
+   │      _patterns        → 각 BossPattern 컴포넌트 리스트
+   │
+   │  [BossWardenFeedback]                  v2.0  (1개만 부착)
+   │      _data            → BossWardenDataSO 에셋
+   │      _armLPart        → LeftArm / BossWardenArmPart
+   │      _armRPart        → RightArm / BossWardenArmPart
+   │      _bodyRenderer    → Boss_Warden / SpriteRenderer
+   │      _armLRenderer    → LeftArm / SpriteRenderer
+   │      _armRRenderer    → RightArm / SpriteRenderer
+   │      _coreRenderer    → Core / SpriteRenderer
+   │
+   │  [BossWardenAttackRange]
+   │  [BossWardenShockwave]
+   │
+   │  [SealExecutor]                        v1.1   ← 신규 (BossWardenSealExecutor 대체)
+   │      _data            → BossWardenDataSO 에셋
+   │      _attackRange     → BossWardenAttackRange (미연결 시 자동 탐색)
+   │
+   ├─ Boss_WardenBody                       localScale = (5, 7, 1)
+   │    [SpriteRenderer]                    보스 본체 시각
+   │
+   ├─ LeftArm                               localScale = (2, 6, 1)
+   │  │  [SpriteRenderer]
+   │  │  [CapsuleCollider2D]               Layer = Enemy / isTrigger = false
+   │  │
+   │  │  [BossWardenArmPart]               v2.1
+   │  │      _partType         = LeftArm
+   │  │      _ownCollider      → LeftHurtBox / CapsuleCollider2D
+   │  │      _spriteRenderer   → LeftArm / SpriteRenderer
+   │  │      _guardBreakPattern = null      ← LeftArm은 null
+   │  │
+   │  │  [SealableComponent]               신규 (SealGaugeComponent 대체)
+   │  │      grade             = Part
+   │  │      _maxGauge         = 200
+   │  │      _sealRange        = 1.5
+   │  │      _sealHoldTime     = 1.5
+   │  │      _isDilPhaseOnly   = false
+   │  │
+   │  └─ LeftHurtBox
+   │       [CapsuleCollider2D]             Layer = EnemyAttackHitBox
+   │                                        isTrigger = true
+   │
+   ├─ RightArm                              localScale = (2, 6, 1)
+   │  │  [SpriteRenderer]
+   │  │  [CapsuleCollider2D]               Layer = Enemy / isTrigger = false
+   │  │
+   │  │  [BossWardenArmPart]               v2.1
+   │  │      _partType         = RightArm
+   │  │      _ownCollider      → RightHurtBox / CapsuleCollider2D
+   │  │      _spriteRenderer   → RightArm / SpriteRenderer
+   │  │      _guardBreakPattern → Patterns/BossPattern_GuardBreak ← 신규 v2.1
+   │  │
+   │  │  [SealableComponent]               신규 (SealGaugeComponent 대체)
+   │  │      grade             = Part
+   │  │      _maxGauge         = 200
+   │  │      _sealRange        = 1.5
+   │  │      _sealHoldTime     = 1.5
+   │  │      _isDilPhaseOnly   = false
+   │  │
+   │  └─ RightHurtBox
+   │       [CapsuleCollider2D]             Layer = EnemyAttackHitBox
+   │                                        isTrigger = true
+   │
+   ├─ Core                                  localScale = (2, 2, 1)
+   │  │  [SpriteRenderer]
+   │  │  [CapsuleCollider2D]               Layer = EnemyAttackHitBox
+   │  │                                     isTrigger = true
+   │  │  SetActive = false (기본)           BossWardenCore.EnterGroggy() 에서 활성
+   │  │
+   │  │  [SealableComponent]               신규 (BossWardenCoreSealGauge 대체)
+   │  │      grade             = Core
+   │  │      _maxGauge         = 500
+   │  │      _sealRange        = DataSO.coreUnlockRange
+   │  │      _sealHoldTime     = DataSO.coreUnlockHoldTime
+   │  │      _isDilPhaseOnly   = true      ← 딜페이즈에서만 봉인도 누적
+   │  │      _phaseTarget      = DataSO.phase1CoreSealTarget
+   │  │
+   │  └─ CoreHurtBox
+   │
+   ├─ HurtBox                               localScale = (5, 7, 1)
+   │    [CapsuleCollider2D]                isTrigger = false
+   │
+   ├─ Patterns                              localScale = (1, 1, 1)
+   │  ├─ BossPattern_Slam                  [BossPattern_Slam]       v3.3
+   │  │    _armLTransform  → LeftArm Transform
+   │  │    _armLRenderer   → LeftArm SpriteRenderer
+   │  │    _bossTransform  → Boss_Warden Transform (자동 캐싱)
+   │  │    _rigid2D        → Boss_Warden Rigidbody2D (자동 캐싱)
+   │  │
+   │  ├─ BossPattern_Sweep                 [BossPattern_Sweep]      v3.2
+   │  │    _armLTransform  → LeftArm Transform
+   │  │    _armRTransform  → RightArm Transform
+   │  │
+   │  ├─ BossPattern_Charge                [BossPattern_Charge]     v2.3
+   │  │    _armRTransform  → RightArm Transform
+   │  │    _rigid2D        → Boss_Warden Dynamic Rigidbody2D  ← Inspector 직접 연결
+   │  │    _wallLayer      → Wall 레이어만 선택               ← Inspector 설정 필수
+   │  │
+   │  ├─ BossPattern_GuardBreak            [BossPattern_GuardBreak] v3.2
+   │  │    _armRTransform  → RightArm Transform
+   │  │    _armLTransform  → LeftArm Transform
+   │  │    _bodyRenderer   → Boss_WardenBody SpriteRenderer
+   │  │
+   │  └─ BossPattern_RageCharge            [BossPattern_RageCharge] v2.0
+   │
+   └─ AttackVisualRange                     localScale = (1, 1, 1)
+      │  ← 모든 자식 localScale = (1, 1, 1)
+      │  ← 크기는 BossWardenAttackRange 코드에서 런타임 설정
+      │
+      ├─ DiscSlam0         [SpriteRenderer]  반투명 원형 예고 디스크
+      ├─ DiscSlam1         [SpriteRenderer]
+      ├─ DiscSweep         [SpriteRenderer]
+      ├─ DiscGuardBreak    [SpriteRenderer]
+      ├─ ChargeLine        [LineRenderer]
+      ├─ CoreRangeCircle   [SpriteRenderer]  코어 해제 범위
+      ├─ SealRangeCircle   [SpriteRenderer]  봉인 집행 범위
+      ├─ RageChargeLine0   [LineRenderer]
+      ├─ RageChargeLine1   [LineRenderer]
+      └─ RageChargeLine2   [LineRenderer]
 ```
-
-> 현재 구현 상태: 미구현 (추후 개발)
 
 ---
 
-## ProjectileRoot
+## 레이어 설정 (Physics2D Layer Collision Matrix)
 
-투사체와 탄막을 런타임 풀링으로 생성한다.
+| | Player | Enemy | EnemyAttackHitBox | Wall |
+|---|---|---|---|---|
+| Player | ❌ | ❌ | ✅ | ✅ |
+| Enemy | ❌ | ❌ | ❌ | ✅ |
+| EnemyAttackHitBox | ✅ | ❌ | ❌ | ❌ |
 
-```
-ProjectileRoot
-├─ PlayerProjectiles    플레이어 투사체 풀
-├─ EnemyProjectiles     적 투사체 풀
-└─ BossProjectiles      보스 탄막 풀
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## EffectRoot
-
-이펙트 오브젝트를 풀링으로 관리한다.
-
-```
-EffectRoot
-├─ HitEffects           타격 이펙트 풀
-├─ SealEffects          봉인 이펙트 풀 (봉인 파편, 자물쇠 생성)
-├─ CoreEffects          코어 이펙트 풀
-└─ ShockwaveEffects     충격파 이펙트 풀
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
+> `Enemy ↔ EnemyAttackHitBox : OFF` — 보스 본체와 팔 Collider 상호 충돌 방지
+> `EnemyAttackHitBox ↔ EnemyAttackHitBox : OFF` — 팔끼리 충돌 방지
+> `Enemy ↔ Wall : ON` — 보스 본체가 벽을 인식 (Charge 충돌용)
 
 ---
 
-## UIRoot
+## 삭제된 컴포넌트 (Prefab에서 제거 필요)
 
-UI 오브젝트를 모아둔다. Canvas 는 Screen Space - Overlay 사용.
-
-```
-UIRoot
-├─ Canvas_Gameplay      [Canvas] [CanvasScaler] [GraphicRaycaster]
-│  ├─ PlayerHUD
-│  │  ├─ HP_Bar
-│  │  └─ DashCharge_Icons
-│  ├─ SealGaugeUI       봉인도 게이지 (공격 중인 부위만 표시)
-│  ├─ CoreGaugeUI       코어 봉인도 게이지 (딜 페이즈 중만 표시)
-│  └─ BossStatusUI
-│     ├─ BossPhaseIndicator
-│     ├─ PartStatusIcons
-│     └─ GroggyIndicator
-│
-├─ Canvas_Menu          일시정지 / 옵션
-├─ Canvas_Reward        보상 선택 화면
-└─ Canvas_Minimap       미니맵 / 노드 선택 화면
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## DebugRoot
-
-개발 중 디버그 표시. 빌드 시 비활성화.
-
-```
-DebugRoot
-├─ DebugText            [TextMeshPro]  상태 텍스트 표시
-├─ StateViewer          현재 StateMachine 상태 표시
-├─ HitBoxViewer         히트박스 시각화
-└─ SealGaugeViewer      봉인도 수치 표시
-```
-
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## 하이어라키 설계 원칙 (SEAL_README #43)
-
-- 런타임 생성 오브젝트는 반드시 전용 Root 하위에 생성한다.
-- Manager 와 System 은 구분한다.
-- Player / Enemy / Boss 는 서로 다른 Root 에 둔다.
-- UI 는 UIRoot 하위에서만 관리한다.
-- 디버그 오브젝트는 DebugRoot 하위에 둔다.
-- 씬에서 오브젝트를 찾기 쉽게 이름을 명확하게 작성한다.
-
----
-
-## 현재 구현 상태 요약 (v0.4 기준)
-
-| Root | 구현 상태 | 비고 |
-|---|:---:|---|
-| Managers | ❌ | 추후 개발 |
-| Systems / InputSystem | ✅ | PlayerInputHandler v1.1 |
-| CameraRoot | ❌ | 추후 개발 |
-| PlayerRoot | ✅ | v0.1~v0.4 구현 완료 |
-| StageRoot | ❌ | 추후 개발 |
-| EnemyRoot | ❌ | 추후 개발 |
-| BossRoot | ❌ | 추후 개발 |
-| ProjectileRoot | ❌ | 추후 개발 |
-| EffectRoot | ❌ | 추후 개발 |
-| UIRoot | ❌ | 추후 개발 |
-| DebugRoot | ❌ | 추후 개발 |
-
----
-
-*이 파일은 새 오브젝트/컴포넌트 추가 시 반드시 업데이트합니다.*  
-*SEAL_DEVSession 의 "봉인 업데이트 요청" 과 함께 갱신합니다.*
+| 컴포넌트 | 위치 | 대체 |
+|---|---|---|
+| `SealGaugeComponent` | LeftArm / RightArm | `SealableComponent` |
+| `BossWardenCoreSealGauge` | Core | `SealableComponent` |
+| `BossWardenSealExecutor` | Boss_Warden | `SealExecutor` |
+| `BossWardenFeedback` 중복 | Boss_Warden | 1개만 유지 |
