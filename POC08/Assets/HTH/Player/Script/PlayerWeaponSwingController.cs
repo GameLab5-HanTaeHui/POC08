@@ -97,6 +97,7 @@
 using System.Collections;
 using UnityEngine;
 using DG.Tweening;
+using System;
 
 namespace SEAL
 {
@@ -245,6 +246,12 @@ namespace SEAL
         /// 중복 실행 방지.
         /// </summary>
         private Coroutine _hitStopCoroutine;
+
+        /// <summary>
+        /// 복귀 구간 시작 시 발행.
+        /// PlayerAttackController 에서 구독 → _canChangeDir = true 설정.
+        /// </summary>
+        public event Action OnReturnStart;
 
         // ──────────────────────────────────────────
         // 프로퍼티
@@ -557,6 +564,7 @@ namespace SEAL
                     seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
                     // ⑤ 복귀
+                    seq.AppendCallback(() => OnReturnStart?.Invoke());
                     seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutQuart).SetUpdate(true));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutQuart));
                     break;
@@ -587,6 +595,7 @@ namespace SEAL
                     seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
                     // ⑤ 복귀 (OutBounce — 내리찍힌 반동감)
+                    seq.AppendCallback(() => OnReturnStart?.Invoke());
                     seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBounce).SetUpdate(true));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutQuart));
                     break;
@@ -618,6 +627,7 @@ namespace SEAL
                     seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
                     // ⑥ 복귀
+                    seq.AppendCallback(() => OnReturnStart?.Invoke());
                     seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBack).SetUpdate(true));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutBack));
                     break;
@@ -669,6 +679,7 @@ namespace SEAL
             seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
             // ⑤ 복귀
+            seq.AppendCallback(() => OnReturnStart?.Invoke());
             seq.Append(_weapon.DOLocalMove(origin, rD * 1.2f).SetEase(Ease.OutElastic).SetUpdate(true));
             seq.Join(RotateWeapon(0f, rD * 1.2f, Ease.OutElastic));
 

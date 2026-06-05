@@ -139,6 +139,13 @@ namespace SEAL
         /// </summary>
         private bool _isChargeHolding;
 
+        /// <summary>
+        /// 공격 방향 변경 허용 여부.
+        /// true: 복귀 구간 — WASD/마우스 방향으로 _currentAttackDir 변경 가능.
+        /// false: 백스윙/타격/타격완료 — 방향 고정.
+        /// </summary>
+        private bool _canChangeDir;
+
         // ──────────────────────────────────────────
         // 히트박스 참조
         // ──────────────────────────────────────────
@@ -251,6 +258,12 @@ namespace SEAL
                 _moveController.OnDashStarted -= HandleDashStarted;
                 _moveController.OnDashStarted += HandleDashStarted;
             }
+
+            if(_swingController != null)
+            {
+                _swingController.OnReturnStart -= HandleReturnStart;
+                _swingController.OnReturnStart += HandleReturnStart;
+            }
         }
 
         // Update() 제거 — ProcessHitCheck OverlapCircle 경로 삭제
@@ -269,6 +282,9 @@ namespace SEAL
 
             if (_moveController != null)
                 _moveController.OnDashStarted -= HandleDashStarted;
+
+            if (_swingController != null)
+                _swingController.OnReturnStart -= HandleReturnStart;
         }
 
         // ══════════════════════════════════════════════════════
@@ -367,6 +383,13 @@ namespace SEAL
                 _attackCoroutine = null;
             }
 
+            // 콤보 리셋 타이머 중단
+            if(_comboResetCoroutine != null)
+            {
+                StopCoroutine(_comboResetCoroutine);
+                _comboResetCoroutine = null;
+            }
+
             // ② 무기 스윙 DOTween 중단 + 원점 복귀
             _swingController?.CancelSwing();
 
@@ -374,14 +397,32 @@ namespace SEAL
             _hitboxManager?.DisableAllHitboxes();
 
             // ④ 콤보 상태 초기화 ([v2.4] SetMoveLocked(false) 제거)
-            _isAttacking = false;
-            _comboWindowOpen = false;
-            _comboInputQueued = false;
-            _currentCombo = 0;
-            _nextComboDir = Vector2.zero;
-            _isChargeHolding = false;
+            _isAttacking        = false;
+            _comboWindowOpen    = false;
+            _comboInputQueued   = false;
+            _currentCombo       = 0;
+            _nextComboDir       = Vector2.zero;
+            _isChargeHolding    = false;
+            _canChangeDir       = false;
 
             _swingController?.StopChargePulse();
+        }
+
+        /// <summary>
+        /// SwingController.OnReturnStart 수신.
+        /// 복귀 구간 진입 → 방향 변경 허용.
+        /// </summary>
+        private void HandleReturnStart()
+        {
+            _canChangeDir = true;
+
+            // 복귀 시작 시점의 마우스 방향으로 즉시 WeaponPivot 회전
+            Vector2 newDir = GetAttackDirection();
+            if (newDir.sqrMagnitude > 0.01f)
+            {
+                _currentAttackDir = newDir;
+                _swingController.UpdatePivotToFacing(_currentAttackDir);
+            }
         }
 
         // ══════════════════════════════════════════════════════
@@ -424,9 +465,10 @@ namespace SEAL
         /// </summary>
         private IEnumerator ComboAttackRoutine()
         {
-            _isAttacking = true;
-            _comboWindowOpen = false;
-            _comboInputQueued = false;
+            _isAttacking        = true;
+            _comboWindowOpen    = false;
+            _comboInputQueued   = false;
+            _canChangeDir       = false;
 
             OnAttackStarted?.Invoke();
 
@@ -487,12 +529,11 @@ namespace SEAL
             if (_comboInputQueued && _currentCombo < _data.MaxComboCount - 1)
             {
                 _comboInputQueued = false;
-                _currentCombo++;
+                _currentCombo = (_currentCombo + 1) % _data.MaxComboCount;
                 ExecuteComboAttack();
             }
             else
             {
-                // [v2.4] SetMoveLocked(false) 제거
                 StartComboResetTimer();
             }
 
@@ -605,10 +646,10 @@ namespace SEAL
 
         private IEnumerator ComboResetRoutine()
         {
-            yield return new UnityEngine.WaitForSeconds(
-                _data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration);
+            yield return new UnityEngine.WaitForSeconds(_data.ComboResetTime);
             _currentCombo = 0;
             _comboResetCoroutine = null;
+            Debug.Log("콤보 초기화");
         }
 
         // ══════════════════════════════════════════════════════

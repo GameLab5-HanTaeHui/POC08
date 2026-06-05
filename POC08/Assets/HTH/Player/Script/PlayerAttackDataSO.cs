@@ -118,6 +118,14 @@ namespace SEAL
         /// 백스윙 이동 시간 (초).
         /// 짧을수록 빠른 예비동작. 권장: 0.06~0.10.
         /// </summary>
+        [Tooltip("콤보 초기화 시간")]
+        [Range(0.1f, 5f)]
+        public float ComboResetTime = 1.5f;
+
+        /// <summary>
+        /// 백스윙 이동 시간 (초).
+        /// 짧을수록 빠른 예비동작. 권장: 0.06~0.10.
+        /// </summary>
         [Tooltip("백스윙 이동 시간 (초). 권장: 0.06~0.10.")]
         [Range(0.01f, 0.3f)]
         public float BackswingDuration = 0.15f;
