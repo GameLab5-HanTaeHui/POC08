@@ -43,7 +43,7 @@ namespace SEAL
     /// Boss_Warden 루트 통합 상태 관리 컴포넌트. (v2.0)
     /// </summary>
     [DefaultExecutionOrder(-10)]
-    public class BossWardenCore : MonoBehaviour
+    public class BossWardenCore : MonoBehaviour, IBossCore
     {
         // ══════════════════════════════════════════════════════
         // Inspector

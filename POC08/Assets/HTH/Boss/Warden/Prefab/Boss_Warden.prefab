@@ -706,6 +706,8 @@ MonoBehaviour:
   _phaseTarget: 0
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 3641258697330880272}
+  _holdProgressText: {fileID: 0}
+  _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
 --- !u!1 &2815818081025082498
 GameObject:
   m_ObjectHideFlags: 0
@@ -816,9 +818,11 @@ MonoBehaviour:
   _sealRange: 1.5
   _sealHoldTime: 1.5
   _isDilPhaseOnly: 1
-  _phaseTarget: 0
+  _phaseTarget: 1
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 4626551619868309503}
+  _holdProgressText: {fileID: 0}
+  _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
 --- !u!1 &2927865824481869591
 GameObject:
   m_ObjectHideFlags: 0
@@ -1145,6 +1149,12 @@ MonoBehaviour:
   _armLRenderer: {fileID: 3641258697330880272}
   _armRRenderer: {fileID: 667973993591523152}
   _coreRenderer: {fileID: 4626551619868309503}
+  _armLSealBurst: {fileID: 0}
+  _armLSealLoop: {fileID: 0}
+  _armRSealBurst: {fileID: 0}
+  _armRSealLoop: {fileID: 0}
+  _coreSealBurst: {fileID: 0}
+  _coreSealLoop: {fileID: 0}
 --- !u!114 &5298859741369411445
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2301,6 +2311,8 @@ MonoBehaviour:
   _phaseTarget: 0
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 667973993591523152}
+  _holdProgressText: {fileID: 0}
+  _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
 --- !u!1 &7487386312020531751
 GameObject:
   m_ObjectHideFlags: 0

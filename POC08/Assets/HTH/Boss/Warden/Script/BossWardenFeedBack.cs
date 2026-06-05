@@ -1,6 +1,26 @@
 ﻿// ============================================================
-// BossWardenFeedback.cs  v2.0
+// BossWardenFeedback.cs  v2.1
 // Boss_Warden 시각 피드백 컴포넌트
+//
+// [v2.1 추가 — 봉인 완료 파티클 연동]
+//   파티클 구성: 버스트(1회) + 루프(지속) 복합형
+//   부착 위치: 봉인된 오브젝트 기준 (LeftArm / RightArm / Core)
+//
+//   HandleArmLSealed / HandleArmRSealed:
+//     → PlaySealParticle(burst, loop)
+//     → 버스트 1회 재생 + 루프 파티클 지속 재생
+//
+//   HandleArmLReleased / HandleArmRReleased (ForceRelease):
+//     → StopSealLoopParticle(loop)
+//     → 루프 파티클 정지 (버스트는 이미 완료됨)
+//
+//   HandleDead:
+//     → StopAllSealParticles() 즉시 전체 정지
+//
+//   Inspector 연결 필드:
+//     _armLSealBurst / _armLSealLoop : LeftArm 파티클
+//     _armRSealBurst / _armRSealLoop : RightArm 파티클
+//     _coreSealBurst / _coreSealLoop : Core 파티클
 //
 // [v2.0 변경 — SealableComponent 이벤트 구독으로 교체]
 //   제거:
@@ -60,6 +80,39 @@ namespace SEAL
         [SerializeField] private SpriteRenderer _armLRenderer;
         [SerializeField] private SpriteRenderer _armRRenderer;
         [SerializeField] private SpriteRenderer _coreRenderer;
+
+        [Header("── 봉인 완료 파티클 ──────────────────────")]
+
+        /// <summary>
+        /// 왼팔 봉인 완료 버스트 파티클.
+        /// 봉인 집행 완료 순간 1회 재생.
+        /// LeftArm 위치에 배치. Inspector 에서 ParticleSystem 연결.
+        /// </summary>
+        [Tooltip("LeftArm 봉인 완료 버스트 파티클. OnSealCompleted 시 1회 재생.")]
+        [SerializeField] private ParticleSystem _armLSealBurst;
+
+        /// <summary>
+        /// 왼팔 봉인 상태 유지 루프 파티클.
+        /// 봉인 완료 후 지속 재생. ForceRelease 시 정지.
+        /// </summary>
+        [Tooltip("LeftArm 봉인 상태 루프 파티클. 봉인 완료 후 지속.")]
+        [SerializeField] private ParticleSystem _armLSealLoop;
+
+        /// <summary>오른팔 봉인 완료 버스트 파티클.</summary>
+        [Tooltip("RightArm 봉인 완료 버스트 파티클.")]
+        [SerializeField] private ParticleSystem _armRSealBurst;
+
+        /// <summary>오른팔 봉인 상태 유지 루프 파티클.</summary>
+        [Tooltip("RightArm 봉인 상태 루프 파티클.")]
+        [SerializeField] private ParticleSystem _armRSealLoop;
+
+        /// <summary>코어 봉인 완료 버스트 파티클.</summary>
+        [Tooltip("Core 봉인 완료 버스트 파티클.")]
+        [SerializeField] private ParticleSystem _coreSealBurst;
+
+        /// <summary>코어 봉인 상태 유지 루프 파티클.</summary>
+        [Tooltip("Core 봉인 상태 루프 파티클.")]
+        [SerializeField] private ParticleSystem _coreSealLoop;
 
         // ══════════════════════════════════════════════════════
         // 내부 상태
@@ -315,6 +368,9 @@ namespace SEAL
             _armRTween?.Kill();
             _coreTween?.Kill();
 
+            // 모든 봉인 파티클 즉시 정지
+            StopAllSealParticles();
+
             float dur = _data?.colorTransitionDuration ?? 0.3f;
             _bodyRenderer?.DOColor(Color.black, dur).SetUpdate(true);
             _armLRenderer?.DOColor(Color.black, dur).SetUpdate(true);
@@ -356,6 +412,9 @@ namespace SEAL
             Color sealedColor = _data?.colorArmSealed ?? new Color(0.482f, 0.184f, 0.745f);
             _armLRenderer?.DOColor(sealedColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
             _armLPart?.UpdateBaseColor(sealedColor);
+
+            // ✅ 봉인 완료 파티클: 버스트 1회 + 루프 시작
+            PlaySealParticle(_armLSealBurst, _armLSealLoop);
         }
 
         private void HandleArmLReleased()
@@ -364,6 +423,9 @@ namespace SEAL
             Color idleColor = _data?.colorArm0 ?? Color.gray;
             _armLRenderer?.DOColor(idleColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
             _armLPart?.UpdateBaseColor(idleColor);
+
+            // ✅ 봉인 해제 시 루프 파티클 정지
+            StopSealLoopParticle(_armLSealLoop);
         }
 
         // ══════════════════════════════════════════════════════
@@ -398,6 +460,9 @@ namespace SEAL
             Color sealedColor = _data?.colorArmSealed ?? new Color(0.482f, 0.184f, 0.745f);
             _armRRenderer?.DOColor(sealedColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
             _armRPart?.UpdateBaseColor(sealedColor);
+
+            // ✅ 봉인 완료 파티클: 버스트 1회 + 루프 시작
+            PlaySealParticle(_armRSealBurst, _armRSealLoop);
         }
 
         private void HandleArmRReleased()
@@ -406,6 +471,69 @@ namespace SEAL
             Color idleColor = _data?.colorArm0 ?? Color.gray;
             _armRRenderer?.DOColor(idleColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
             _armRPart?.UpdateBaseColor(idleColor);
+
+            // ✅ 봉인 해제 시 루프 파티클 정지
+            StopSealLoopParticle(_armRSealLoop);
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 파티클 헬퍼
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 봉인 완료 파티클 재생.
+        /// 버스트(1회) + 루프(지속) 동시 처리.
+        ///
+        /// [버스트]
+        ///   Play() → ParticleSystem 이 자동으로 1회 재생 후 정지
+        ///   Loop = false 로 설정된 파티클 사용
+        ///
+        /// [루프]
+        ///   Play() → Loop = true 로 설정된 파티클 지속 재생
+        ///   ForceRelease 시 StopSealLoopParticle() 에서 정지
+        /// </summary>
+        private void PlaySealParticle(ParticleSystem burst, ParticleSystem loop)
+        {
+            if (burst != null)
+            {
+                burst.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                burst.Play();
+            }
+
+            if (loop != null)
+            {
+                loop.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                loop.Play();
+            }
+        }
+
+        /// <summary>
+        /// 봉인 루프 파티클 정지.
+        /// ForceRelease (그로기 실패 / 딜 페이즈 종료) 시 호출.
+        /// </summary>
+        private void StopSealLoopParticle(ParticleSystem loop)
+        {
+            if (loop == null) return;
+            loop.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+        }
+
+        /// <summary>
+        /// 모든 봉인 파티클 즉시 정지.
+        /// HandleDead() 에서 호출.
+        /// </summary>
+        private void StopAllSealParticles()
+        {
+            void StopImmediate(ParticleSystem ps)
+            {
+                ps?.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+
+            StopImmediate(_armLSealBurst);
+            StopImmediate(_armLSealLoop);
+            StopImmediate(_armRSealBurst);
+            StopImmediate(_armRSealLoop);
+            StopImmediate(_coreSealBurst);
+            StopImmediate(_coreSealLoop);
         }
 
         // ══════════════════════════════════════════════════════
