@@ -456,11 +456,12 @@ namespace SEAL
             if (newFacing == _facingDirection) return;
 
             _facingDirection = newFacing;
-            OnFacingChanged?.Invoke(_facingDirection);
 
             // [v1.3 추가] 공격 중(IsSwinging)이면 flipX / 회전 변경 금지
             // WeaponPivot 과 flipX 모두 공격 시작 시점 방향으로 고정
             if (_swingController != null && _swingController.IsSwinging) return;
+
+            OnFacingChanged?.Invoke(_facingDirection);
 
             if (_rotateTowardsMoveDirection)
             {
