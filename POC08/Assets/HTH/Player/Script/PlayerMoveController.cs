@@ -388,11 +388,14 @@ namespace SEAL
         /// </summary>
         private void ApplyMovement()
         {
+            // 이동 잠금 시 → velocity 건드리지 않음
+            // PlayerController.AttackMoveRoutine 이 velocity 직접 제어
+            if (_isMoveLocked) return;
+
             Vector2 targetVelocity = _moveInput * _data.MoveSpeed;
 
             if (_data.MoveAcceleration > 0f)
             {
-                // 가속/감속 보간
                 float rate = (_moveInput.sqrMagnitude > 0.01f)
                     ? _data.MoveAcceleration
                     : _data.MoveDeceleration;
@@ -404,7 +407,6 @@ namespace SEAL
             }
             else
             {
-                // 즉시 적용 (가속 없음)
                 _currentVelocity = targetVelocity;
             }
 
@@ -693,11 +695,13 @@ namespace SEAL
         {
             _isMoveLocked = locked;
 
-            // 즉시 정지 (잠금 진입 시 velocity 초기화)
+            // 잠금 시 _moveInput 만 zero 초기화
+            // velocity 는 건드리지 않음
+            // → AttackMoveRoutine 이 velocity 를 부드럽게 이어받음
+            // → 잠금 해제 시 ApplyMovement 가 WASD velocity 로 자연스럽게 전환
             if (locked)
             {
                 _moveInput = Vector2.zero;
-                _rigid2D.linearVelocity = Vector2.zero;
                 _currentVelocity = Vector2.zero;
             }
         }

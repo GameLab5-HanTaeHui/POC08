@@ -183,7 +183,13 @@ namespace SEAL
         {
             if (_data == null || _weapon == null || _weaponPivot == null) return;
 
-            CancelSwing();
+            // 콤보 연결 시 현재 무기 위치에서 부드럽게 이어줌
+            // 처음 공격이거나 완전히 종료된 후라면 원점에서 시작
+            if (_isSwinging)
+                SoftCancelSwing();
+            else
+                CancelSwing();
+
             _swingCoroutine = StartCoroutine(SwingRoutine(combo, attackDir, sealAmount));
         }
 
@@ -207,6 +213,37 @@ namespace SEAL
         }
 
         /// <summary>
+        /// 소프트 캔슬.
+        /// 콤보 연결 시 현재 무기 위치를 유지하며 DOTween 만 중단.
+        /// SnapWeaponToOrigin 호출 없음.
+        /// → 현재 위치에서 다음 콤보 백스윙으로 부드럽게 이어짐.
+        ///
+        /// [일반 CancelSwing 과의 차이]
+        ///   CancelSwing    → DOTween Kill + 무기 원점 순간이동
+        ///   SoftCancelSwing → DOTween Kill + 현재 위치 유지
+        /// </summary>
+        private void SoftCancelSwing()
+        {
+            _swingSequence?.Kill();
+
+            if (_swingCoroutine != null)
+            {
+                StopCoroutine(_swingCoroutine);
+                _swingCoroutine = null;
+            }
+
+            if (_hitStopCoroutine != null)
+            {
+                StopCoroutine(_hitStopCoroutine);
+                _hitStopCoroutine = null;
+                Time.timeScale = 1f;
+            }
+
+            _isSwinging = false;
+            // SnapWeaponToOrigin 호출 없음 — 현재 위치 유지
+        }
+
+        /// <summary>
         /// 스윙 즉시 중단 + 무기 원점 복귀.
         /// CancelAttack / 봉인 집행 / 피격 시 호출.
         /// </summary>
@@ -225,7 +262,7 @@ namespace SEAL
             {
                 StopCoroutine(_hitStopCoroutine);
                 _hitStopCoroutine = null;
-                Time.timeScale = 1f;  // ← 추가
+                Time.timeScale = 1f;
             }
 
             _isSwinging = false;
@@ -259,7 +296,10 @@ namespace SEAL
 
             _hitboxManager?.DisableAllHitboxes();
             RotatePivotToAttackDir(attackDir);
-            SnapWeaponToOrigin();
+
+            // SoftCancelSwing 으로 진입 시 현재 위치 유지
+            // CancelSwing 으로 진입 시 이미 SnapWeaponToOrigin 완료됨
+            // → 여기서는 SnapWeaponToOrigin 호출 없음
 
             bool done = false;
             _swingSequence = BuildComboSequence(combo, sealAmount);
@@ -302,6 +342,9 @@ namespace SEAL
 
             Vector3 origin = _weaponOriginLocalPos;
 
+            // 현재 무기 위치 (콤보 연결 시 현재 위치에서 백스윙 시작)
+            Vector3 currentPos = _weapon.localPosition;
+
             switch (combo)
             {
                 case ComboIndex.Combo1:
@@ -312,7 +355,7 @@ namespace SEAL
                         float rotAtk = _data.Combo1RotAtk;
                         float delta = CalcSwingDelta(rotBack, rotAtk, _data.Combo1Clockwise);
 
-                        // ① 백스윙
+                        // ① 백스윙 (현재 위치 → 백스윙 위치)
                         seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart).SetUpdate(true));
                         seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
@@ -362,7 +405,6 @@ namespace SEAL
                         Vector3 backPos = ToV3(_data.Combo3BackPos);
                         Vector3 atkPos = ToV3(_data.Combo3AttackPos);
 
-                        // 찌르기 — 직선 이동
                         seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart).SetUpdate(true));
 
                         seq.AppendCallback(() => _hitboxManager?.EnableHitbox(2, sealAmount));

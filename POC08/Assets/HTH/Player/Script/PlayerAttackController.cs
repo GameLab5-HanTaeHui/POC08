@@ -254,14 +254,16 @@ namespace SEAL
 
         /// <summary>
         /// 마우스 좌클릭 released.
-        /// 좌클릭 = 항상 기본 콤보 공격. 강공격 없음.
         ///
         /// [분기 규칙]
-        ///   _isHeld = false → (HandlePress 미호출) → 무시
-        ///   IsActionBlocked → 리턴
-        ///   !_isAttacking   → ExecuteCombo()
-        ///   _isAttacking + _comboWindowOpen → 콤보 예약
-        ///   _isAttacking + !_comboWindowOpen → 무시
+        ///   _isHeld = false              → 무시
+        ///   IsActionBlocked              → 무시
+        ///   _isAttacking = true          → 완전 무시 (공격 중 입력 불가)
+        ///   _isAttacking = false         → ExecuteCombo()
+        ///
+        /// [콤보 예약]
+        ///   공격 중 입력은 HandleReturnStart (공격 끝 시점) 에서만 처리
+        ///   HandleRelease 에서는 공격 중 일체 입력 받지 않음
         /// </summary>
         private void HandleRelease()
         {
@@ -270,26 +272,16 @@ namespace SEAL
             _isHeld = false;
             _swingController?.StopChargePulse();
 
-            // 차단 상태
+            // 차단 상태 → 무시
             if (PlayerInputHandler.Instance != null &&
                 PlayerInputHandler.Instance.IsActionBlocked)
                 return;
 
-            // 공격 중 아님 → 즉시 실행
-            if (!_isAttacking)
-            {
-                ExecuteCombo();
-                return;
-            }
+            // 공격 중 → 완전 무시 (예외 없음)
+            if (_isAttacking) return;
 
-            // 공격 중 + 콤보 윈도우 열림 → 콤보 예약
-            if (_comboWindowOpen)
-            {
-                _comboInputQueued = true;
-                _nextComboDir = _moveController != null
-                    ? _moveController.FacingDirection
-                    : Vector2.zero;
-            }
+            // 공격 중 아님 → 즉시 실행
+            ExecuteCombo();
         }
 
         /// <summary>
@@ -304,13 +296,28 @@ namespace SEAL
         }
 
         /// <summary>
-        /// SwingController 복귀 구간 진입 시 방향 변경 허용.
+        /// SwingController.OnReturnStart 수신 = 공격 끝 시점.
+        ///
+        /// [공격 끝 시점에 처리할 것]
+        ///   1. 이동 제어권 WASD 복귀 → OnAttackEnded 발행
+        ///   2. 콤보 윈도우 열림 (단 1회 입력만 허용)
+        ///   3. 방향 변경 허용
+        ///
+        /// [콤보 윈도우 규칙]
+        ///   _comboWindowOpen = true 설정
+        ///   HandleRelease 에서 입력 받으면 _comboInputQueued = true + 윈도우 즉시 닫힘
+        ///   무기 복귀 모션 완료 후 ComboRoutine 이 _comboInputQueued 확인하여 순환
         /// </summary>
         private void HandleReturnStart()
         {
             _canChangeDir = true;
+            _comboWindowOpen = true;   // 콤보 윈도우 열림
+            _isAttacking = false;  // 공격 끝 → HandleRelease 에서 입력 허용
 
-            // 복귀 시작 시점 마우스 방향으로 WeaponPivot 갱신
+            // 이동 제어권 WASD 복귀
+            OnAttackEnded?.Invoke();
+
+            // 방향 변경
             Vector2 newDir = GetAttackDir();
             if (newDir.sqrMagnitude > 0.01f)
             {
@@ -319,15 +326,53 @@ namespace SEAL
             }
         }
 
+        /// <summary>
+        /// 콤보 윈도우가 열린 상태에서 마우스 좌클릭 released 시 호출.
+        /// HandleRelease 에서 직접 호출하지 않고
+        /// HandleReturnStart 이후 HandleRelease 가 자동으로 처리.
+        ///
+        /// [HandleRelease 에서 공격 중 무시로 변경했으므로]
+        ///   콤보 윈도우 입력은 별도 처리 필요.
+        ///   HandleReturnStart 이후 _isAttacking = false 로 변경하여
+        ///   HandleRelease 가 ExecuteCombo 를 호출하도록 유도.
+        /// </summary>
+
         // ══════════════════════════════════════════════════════
         // 공격 실행
         // ══════════════════════════════════════════════════════
 
-        /// <summary>기본 공격 실행. 이미 공격 중이면 무시.</summary>
+        /// <summary>
+        /// 기본 공격 실행.
+        /// _isAttacking = false 일 때만 진입 가능.
+        ///
+        /// [콤보 윈도우에서 호출 시]
+        ///   HandleReturnStart 에서 _isAttacking = false + _comboWindowOpen = true
+        ///   HandleRelease → ExecuteCombo 호출
+        ///   _comboWindowOpen = true 이면 → 다음 콤보로 순환
+        ///   _comboWindowOpen = false 이면 → 1콤보부터 시작
+        ///
+        /// [콤보 윈도우 닫힘 처리]
+        ///   ExecuteCombo 진입 즉시 _comboWindowOpen = false
+        ///   → 단 1회 입력만 허용 보장
+        /// </summary>
         private void ExecuteCombo()
         {
             if (_isAttacking) return;
+
             StopResetTimer();
+
+            // 콤보 윈도우 열림 상태 → 다음 콤보 순환
+            if (_comboWindowOpen)
+            {
+                _comboWindowOpen = false;  // 즉시 닫힘 (단 1회 입력 보장)
+                _currentCombo = (_currentCombo + 1) % _data.MaxComboCount;
+            }
+            else
+            {
+                // 콤보 윈도우 밖 → 1콤보부터 시작
+                _currentCombo = 0;
+            }
+
             _attackCoroutine = StartCoroutine(ComboRoutine());
         }
 
@@ -361,8 +406,6 @@ namespace SEAL
             OnAttackStarted?.Invoke();
 
             // ── 공격 방향 결정 ──────────────────────
-            // 1콤보 시작: 마우스 방향으로 새로 결정
-            // 2/3콤보:    콤보 윈도우 시점 스냅샷 사용 (없으면 이전 방향 유지)
             if (_currentCombo == 0)
                 _currentAttackDir = GetAttackDir();
             else if (_nextComboDir.sqrMagnitude > 0.01f)
@@ -377,10 +420,16 @@ namespace SEAL
 
             _swingController.PlaySwing(comboIndex, _currentAttackDir, sealAmount);
 
-            // IsSwinging = true 가 될 때까지 1프레임 대기 (코루틴 시작 보장)
+            // 1프레임 대기 (IsSwinging = true 보장)
             yield return null;
 
             // ── 스윙 완료 대기 ──────────────────────
+            // OnReturnStart 콜백이 발행되면:
+            //   _isAttacking = false
+            //   _comboWindowOpen = true
+            //   OnAttackEnded 발행
+            // 이후 플레이어가 클릭하면 HandleRelease → ExecuteCombo
+            // ExecuteCombo 에서 CancelSwing 후 다음 콤보 DOTween 시작
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 2f;
             float elapsed = 0f;
             while (_swingController.IsSwinging && elapsed < maxWait)
@@ -389,30 +438,11 @@ namespace SEAL
                 yield return null;
             }
 
-            // ── 콤보 윈도우 ──────────────────────
-            _comboWindowOpen = true;
-            float windowTime = _data.BackswingDuration
-                                + _data.AttackDuration * (1f - _data.ComboWindowStartRatio);
-            float windowElapsed = 0f;
-
-            while (windowElapsed < windowTime)
-            {
-                windowElapsed += Time.deltaTime;
-                yield return null;
-            }
-
+            // ── 스윙 완전 종료 (콤보 입력 없었을 때) ──────────────────────
             _comboWindowOpen = false;
             _isAttacking = false;
-            OnAttackEnded?.Invoke();
 
-            // ── 콤보 순환 or 리셋 ──────────────────────
-            if (_comboInputQueued)
-            {
-                _comboInputQueued = false;
-                _currentCombo = (_currentCombo + 1) % _data.MaxComboCount;
-                _attackCoroutine = StartCoroutine(ComboRoutine());
-            }
-            else
+            if (!_comboInputQueued)
             {
                 OnAttackEnded?.Invoke();
                 StartResetTimer();
