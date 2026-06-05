@@ -12,22 +12,25 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9c8e2c0fa03f57244ab3b1f4e68f2dc5, type: 3}
   m_Name: PlayerAttackData
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.PlayerAttackDataSO
+  AttackMoveSpeed: 3
+  AttackMoveDuration: 0.35
+  ComboResetTime: 1.5
   BackswingDuration: 0.15
   AttackDuration: 0.2
   ReturnDuration: 0.4
   MaxComboCount: 3
   ComboWindowStartRatio: 0.8
-  Combo1BackPos: {x: 0.4, y: -0.5}
-  Combo1AttackPos: {x: 3, y: 1}
-  Combo1RotBack: -150
-  Combo1RotAtk: 25
+  Combo1BackPos: {x: 0.5, y: -1.5}
+  Combo1AttackPos: {x: 0.5, y: 1.5}
+  Combo1RotBack: -180
+  Combo1RotAtk: 90
   Combo1Clockwise: 0
   Combo1SealAmount: 10
   Combo1ArcHeight: 0.8
-  Combo2BackPos: {x: 1, y: 1}
-  Combo2AttackPos: {x: 3, y: -1.5}
-  Combo2RotBack: 120
-  Combo2RotAtk: -40
+  Combo2BackPos: {x: 0.5, y: 1.5}
+  Combo2AttackPos: {x: 0.5, y: -1.5}
+  Combo2RotBack: 180
+  Combo2RotAtk: -90
   Combo2Clockwise: 1
   Combo2SealAmount: 12
   Combo2ArcHeight: -0.6
@@ -54,5 +57,3 @@ MonoBehaviour:
     m_Bits: 4194304
   HitStopDuration: 0.05
   HitStopTimeScale: 0.02
-  LungeDistance: 0.2
-  LungeDuration: 0.07
