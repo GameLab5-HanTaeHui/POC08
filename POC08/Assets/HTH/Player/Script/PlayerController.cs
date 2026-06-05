@@ -219,6 +219,7 @@ namespace SEAL
             switch (state)
             {
                 case PlayerState.Attack:
+                    _mover.SetMoveLocked(true);
                     StartAttackMove();
                     break;
 
@@ -244,6 +245,7 @@ namespace SEAL
                 case PlayerState.Attack:
                     // 공격 이동 종료 → WASD 복귀
                     StopAttackMove();
+                    _mover.SetMoveLocked(false);
                     break;
 
                 case PlayerState.Seal:
