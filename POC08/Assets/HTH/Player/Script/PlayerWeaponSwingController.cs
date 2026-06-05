@@ -240,7 +240,11 @@ namespace SEAL
             }
 
             _isSwinging = false;
-            // SnapWeaponToOrigin 호출 없음 — 현재 위치 유지
+
+            // 위치는 현재 위치 유지, 회전만 원점으로 초기화
+            // Combo 연결 시 이전 콤보의 회전 잔상이 남아 다음 콤보 방향이 뒤틀리는 문제 방지
+            if (_weapon != null)
+                _weapon.localRotation = Quaternion.identity;
         }
 
         /// <summary>
