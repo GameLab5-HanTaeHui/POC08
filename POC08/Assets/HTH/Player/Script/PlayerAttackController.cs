@@ -141,11 +141,11 @@ namespace SEAL
         /// <summary>적 적중 시 발행. (적중 위치, 봉인도)</summary>
         public event Action<Vector2, float> OnHitTarget;
 
-        /// <summary>기본 공격 시작 시 발행.</summary>
+        /// <summary>기본 공격 시작 시 발행. PlayerController 가 Attack 상태 진입에 사용.</summary>
         public event Action OnAttackStarted;
 
-        /// <summary>강공격 시작 시 발행.</summary>
-        public event Action OnChargeAttackStarted;
+        /// <summary>공격 완전 종료 시 발행. PlayerController 가 상태 복귀에 사용.</summary>
+        public event Action OnAttackEnded;
 
         // ══════════════════════════════════════════════════════
         // 프로퍼티
@@ -254,13 +254,12 @@ namespace SEAL
 
         /// <summary>
         /// 마우스 좌클릭 released.
-        /// holdTime 기준으로 기본 공격 / 강공격 분기.
+        /// 좌클릭 = 항상 기본 콤보 공격. 강공격 없음.
         ///
         /// [분기 규칙]
-        ///   _isHeld = false 이면 (HandlePress 미호출) → 무시
-        ///   IsActionBlocked = true → 맥동만 종료 후 리턴
-        ///   holdTime >= ChargeMinHoldTime + !_isAttacking → 강공격
-        ///   holdTime <  ChargeMinHoldTime + !_isAttacking → 기본 공격
+        ///   _isHeld = false → (HandlePress 미호출) → 무시
+        ///   IsActionBlocked → 리턴
+        ///   !_isAttacking   → ExecuteCombo()
         ///   _isAttacking + _comboWindowOpen → 콤보 예약
         ///   _isAttacking + !_comboWindowOpen → 무시
         /// </summary>
@@ -268,22 +267,18 @@ namespace SEAL
         {
             if (!_isHeld) return;
 
-            float holdTime = Time.time - _pressTime;
             _isHeld = false;
             _swingController?.StopChargePulse();
 
-            // 차단 상태 → 공격 진입 불가
+            // 차단 상태
             if (PlayerInputHandler.Instance != null &&
                 PlayerInputHandler.Instance.IsActionBlocked)
                 return;
 
-            // 공격 중 아닌 경우
+            // 공격 중 아님 → 즉시 실행
             if (!_isAttacking)
             {
-                if (holdTime >= _data.ChargeMinHoldTime)
-                    ExecuteCharge();
-                else
-                    ExecuteCombo();
+                ExecuteCombo();
                 return;
             }
 
@@ -328,24 +323,12 @@ namespace SEAL
         // 공격 실행
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 기본 공격 실행. 이미 공격 중이면 무시.
-        /// </summary>
+        /// <summary>기본 공격 실행. 이미 공격 중이면 무시.</summary>
         private void ExecuteCombo()
         {
             if (_isAttacking) return;
             StopResetTimer();
             _attackCoroutine = StartCoroutine(ComboRoutine());
-        }
-
-        /// <summary>
-        /// 강공격 실행. 이미 공격 중이면 무시.
-        /// </summary>
-        private void ExecuteCharge()
-        {
-            if (_isAttacking) return;
-            StopResetTimer();
-            _attackCoroutine = StartCoroutine(ChargeRoutine());
         }
 
         // ══════════════════════════════════════════════════════
@@ -420,6 +403,7 @@ namespace SEAL
 
             _comboWindowOpen = false;
             _isAttacking = false;
+            OnAttackEnded?.Invoke();
 
             // ── 콤보 순환 or 리셋 ──────────────────────
             if (_comboInputQueued)
@@ -434,42 +418,6 @@ namespace SEAL
             }
 
             _attackCoroutine = null;
-        }
-
-        /// <summary>
-        /// 강공격 코루틴.
-        ///
-        /// [이동]
-        ///   SetMoveLocked 호출 없음.
-        ///   PlayerMoveController 가 WASD 이동 독립 처리.
-        /// </summary>
-        private IEnumerator ChargeRoutine()
-        {
-            _isAttacking = true;
-            _canChangeDir = false;
-
-            OnChargeAttackStarted?.Invoke();
-
-            _currentAttackDir = GetAttackDir();
-            _swingController.PlayChargeSwing(_currentAttackDir, _data.ChargeSealAmount);
-
-            // 1프레임 대기
-            yield return null;
-
-            // 스윙 완료 대기
-            float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 3f;
-            float elapsed = 0f;
-            while (_swingController.IsSwinging && elapsed < maxWait)
-            {
-                elapsed += Time.deltaTime;
-                yield return null;
-            }
-
-            _currentCombo = 0;
-            _isAttacking = false;
-            _attackCoroutine = null;
-
-            StartResetTimer();
         }
 
         // ══════════════════════════════════════════════════════
@@ -504,6 +452,7 @@ namespace SEAL
             _canChangeDir = false;
 
             _swingController?.StopChargePulse();
+            OnAttackEnded?.Invoke();
 
             Debug.Log("[PlayerAttackController] 공격 캔슬");
         }

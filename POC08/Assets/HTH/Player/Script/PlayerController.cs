@@ -81,21 +81,14 @@ namespace SEAL
         // Inspector
         // ══════════════════════════════════════════════════════
 
-        [Header("── 데이터 SO ──────────────────────")]
+        [Header("── 공격 이동 ──────────────────────")]
 
         /// <summary>
-        /// 공격 이동 속도.
-        /// 공격 중 플레이어 전진 속도.
+        /// 공격 중 이동 속도.
+        /// 공격 상태 동안 Rigidbody velocity 에 적용.
         /// </summary>
-        [Tooltip("공격 이동 속도. 공격 중 전진 속도. 권장: 2~4.")]
+        [Tooltip("공격 중 이동 속도. 권장: 2~4.")]
         [SerializeField] private float _attackMoveSpeed = 3f;
-
-        /// <summary>
-        /// 공격 이동 지속 시간.
-        /// BackswingDuration + AttackDuration 과 동일하게 맞추는 것 권장.
-        /// </summary>
-        [Tooltip("공격 이동 지속 시간. BackswingDuration + AttackDuration 권장.")]
-        [SerializeField] private float _attackMoveDuration = 0.3f;
 
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조
@@ -155,8 +148,8 @@ namespace SEAL
             // 공격 시작/종료 구독
             _attacker.OnAttackStarted -= HandleAttackStarted;
             _attacker.OnAttackStarted += HandleAttackStarted;
-            _attacker.OnChargeAttackStarted -= HandleAttackStarted;
-            _attacker.OnChargeAttackStarted += HandleAttackStarted;
+            _attacker.OnAttackEnded -= HandleAttackEnded;
+            _attacker.OnAttackEnded += HandleAttackEnded;
 
             // 대시 시작/종료 구독
             _mover.OnDashStarted -= HandleDashStarted;
@@ -170,7 +163,7 @@ namespace SEAL
             if (_attacker != null)
             {
                 _attacker.OnAttackStarted -= HandleAttackStarted;
-                _attacker.OnChargeAttackStarted -= HandleAttackStarted;
+                _attacker.OnAttackEnded -= HandleAttackEnded;
             }
 
             if (_mover != null)
@@ -280,9 +273,17 @@ namespace SEAL
         }
 
         /// <summary>
-        /// PlayerMoveController 대시 시작 수신.
-        /// Dash 최우선 → 공격 캔슬.
+        /// PlayerAttackController.OnAttackEnded 수신.
+        /// 공격 완전 종료 → Idle/Move 복귀.
         /// </summary>
+        private void HandleAttackEnded()
+        {
+            if (_state != PlayerState.Attack) return;
+
+            SetState(_input != null && _input.MoveInput.sqrMagnitude > 0.01f
+                ? PlayerState.Move
+                : PlayerState.Idle);
+        }
         private void HandleDashStarted()
         {
             if (_state == PlayerState.Seal) return;
@@ -335,47 +336,27 @@ namespace SEAL
 
         /// <summary>
         /// 공격 이동 코루틴.
-        ///
-        /// [이동 방향 결정]
-        ///   WASD 입력 있음 → WASD 방향으로 AttackMoveSpeed 이동
-        ///   WASD 입력 없음 → 공격 방향(FacingDirection)으로 AttackMoveSpeed 이동
-        ///
-        /// [무기 방향]
-        ///   마우스 방향 고정 (PlayerAttackController 가 결정)
-        ///
-        /// [공격 종료]
-        ///   _attackMoveDuration 경과 or Attack 상태 종료 시
-        ///   SetMoveLocked(false) → WASD 이동 자연 복귀
+        /// Attack 상태인 동안 계속 실행.
+        /// OnAttackEnded → HandleAttackEnded → SetState 로 종료.
         /// </summary>
         private IEnumerator AttackMoveRoutine()
         {
-            float elapsed = 0f;
-
-            while (elapsed < _attackMoveDuration && _state == PlayerState.Attack)
+            // _isAttacking 이 true 인 동안 계속 공격 이동 적용
+            // OnAttackEnded 발행 시 HandleAttackEnded → SetState(Move/Idle)
+            // → _state != Attack → 루프 종료
+            while (_state == PlayerState.Attack)
             {
-                // WASD 입력 확인 (잠금 무관 실제 입력)
                 Vector2 wasdInput = _input != null
                     ? _input.MoveInput
                     : Vector2.zero;
 
-                // 이동 방향 결정
                 Vector2 moveDir = wasdInput.sqrMagnitude > 0.01f
-                    ? wasdInput.normalized          // WASD 방향
-                    : _mover.FacingDirection;        // 공격(마우스) 방향
+                    ? wasdInput.normalized
+                    : _mover.FacingDirection;
 
-                // Rigidbody velocity 직접 설정
                 _rigid2D.linearVelocity = moveDir * _attackMoveSpeed;
 
-                elapsed += Time.fixedDeltaTime;
                 yield return new WaitForFixedUpdate();
-            }
-
-            // 공격 이동 완료 → Attack 상태 종료 → WASD 복귀
-            if (_state == PlayerState.Attack)
-            {
-                SetState(_input.MoveInput.sqrMagnitude > 0.01f
-                    ? PlayerState.Move
-                    : PlayerState.Idle);
             }
 
             _attackMoveCoroutine = null;
