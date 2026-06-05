@@ -1,39 +1,36 @@
 ﻿// ============================================================
-// PlayerTopViewMover.cs  v1.0
+// PlayerMoveController.cs  v1.1
 // 탑뷰 플레이어 이동 핵심 컴포넌트
 //
-// [POC07 참고 스크립트]
-//   PlayerMover.cs (횡스크롤 이동)
-//   → 수직 이동(점프/중력/Gravity) 제거
-//   → 1D 수평 이동 → 2D Vector2 8방향 이동으로 전환
-//   → Rigidbody2D.linearVelocity 직접 제어 (X/Y 평면)
-//   → 대시 방향: 입력 방향 기준 (입력 없으면 마지막 이동 방향)
-//   → DOTween 스케일 피드백 (스프라이트 스쿼시 / 대시 펀치)
+// [v1.1 변경 — 공격 이동 모드 추가]
 //
-// [이동 처리 방식]
-//   Rigidbody2D.linearVelocity 직접 설정.
-//   MoveAcceleration > 0: 가속/감속 보간.
-//   MoveAcceleration = 0: 즉시 최고속도 (권장: 탑뷰 액션).
+//   [추가 기능: SetAttackMove(bool, Vector2)]
+//     공격 시작 → PlayerAttackController 가 SetAttackMove(true, attackDir) 호출
+//     공격 종료 → PlayerAttackController 가 SetAttackMove(false, zero) 호출
 //
-// [대시 처리]
-//   DashDuration 동안 DashSpeed 로 고정 이동.
-//   대시 중 입력 이동 차단 (Rigidbody 에 대시 속도만 적용).
-//   쿨타임 / 충전 횟수 관리.
+//   [공격 이동 규칙]
+//     _isAttackMoving = true 구간:
+//       WASD 입력 있음 → WASD 방향으로 AttackMoveSpeed 전진
+//       WASD 입력 없음 → 공격 방향(_attackMoveDir)으로 AttackMoveSpeed 전진
+//     일반 WASD 이동(ApplyMovement)은 이 구간 동안 velocity 덮어쓰기 금지
 //
-// [DOTween 피드백 — Sprite Sheet 없이 역동적 표현]
-//   대시 시작: PunchScale (DOTween)
-//   이동 중  : 방향별 스쿼시 (Squash & Stretch)
+//   [설계 원칙]
+//     SetMoveLocked 호출 없음 — 공격 중에도 WASD 입력은 살아있음
+//     ApplyMovement 에서 _isAttackMoving 체크 후 공격 이동 분기
+//     대시 중(_isDashing)에는 공격 이동 무시 (대시 최우선)
+//     Seal(_isMoveLocked)에는 공격 이동 무시
 //
-// [방향 표현]
-//   SpriteRenderer.flipX 로 좌우 반전.
-//   탑뷰에서는 이동 방향으로 Sprite 회전 (선택 사항, 인스펙터 토글).
+//   [콤보 방향 전환]
+//     SetAttackMove(true, newDir) 을 콤보마다 호출하여 전진 방향 갱신
+//     WASD 입력이 있으면 newDir 무시하고 WASD 방향 우선
 //
-// [요구 컴포넌트]
-//   Rigidbody2D  (GravityScale = 0 필수)
-//   SpriteRenderer
-//   PlayerInputHandler (씬 내 존재 필요)
+// [v1.0 유지 사항]
+//   Rigidbody2D.linearVelocity 직접 제어
+//   대시: DashDuration 동안 DashSpeed 고정 이동
+//   DOTween 스쿼시/대시 펀치 피드백
+//   마우스 방향 기반 FacingDirection
 //
-// [네임스페이스]
+// [namespace]
 //   namespace : SEAL
 // ============================================================
 
@@ -45,227 +42,193 @@ using DG.Tweening;
 namespace SEAL
 {
     /// <summary>
-    /// 탑뷰 플레이어 이동 핵심 컴포넌트. (v1.0)
+    /// 탑뷰 플레이어 이동 핵심 컴포넌트. (v1.1)
     ///
     /// ────────────────────────────────────────────────────
-    /// [외부 API 사용 예시]
+    /// [외부 API]
+    ///   SetMoveLocked(bool)              → Seal 전용 이동 차단
+    ///   SetAttackMove(bool, Vector2)     → 공격 이동 모드 on/off
+    ///   FacingDirection                  → 현재 마우스 방향
+    ///   IsDashing                        → 대시 중 여부
     ///
-    ///   // 이동 차단 (봉인 집행 상태 진입 시)
-    ///   _mover.SetMoveLocked(true);
-    ///
-    ///   // 현재 바라보는 방향 읽기
-    ///   Vector2 dir = _mover.FacingDirection;
-    ///
-    ///   // 대시 중 여부 확인
-    ///   bool isDashing = _mover.IsDashing;
+    /// [공격 이동 흐름]
+    ///   공격 시작 → SetAttackMove(true, attackDir)
+    ///   공격 중   → WASD 있으면 WASD방향 / 없으면 attackDir 로 AttackMoveSpeed 전진
+    ///   공격 종료 → SetAttackMove(false, zero) → 일반 WASD 이동 복귀
     ///
     /// [Rigidbody2D 설정]
-    ///   GravityScale = 0 (탑뷰 — 중력 없음)
-    ///   Collision Detection = Continuous
-    ///   Freeze Rotation Z = true
+    ///   GravityScale = 0 / Collision Detection = Continuous / Freeze Rotation Z = true
     /// ────────────────────────────────────────────────────
     /// </summary>
     [RequireComponent(typeof(Rigidbody2D))]
     [RequireComponent(typeof(SpriteRenderer))]
     public class PlayerMoveController : MonoBehaviour
     {
-        // ──────────────────────────────────────────
-        // Inspector — 데이터 연결
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // Inspector
+        // ══════════════════════════════════════════════════════
 
         [Header("── 데이터 SO ──────────────────────")]
 
         /// <summary>
         /// 이동 수치 ScriptableObject.
         /// MoveSpeed / DashSpeed / DashDuration 등 포함.
-        /// 미연결 시 컴포넌트 비활성화.
         /// </summary>
-        [Tooltip("이동 수치 SO. PlayerTopViewDataSO 연결 필수.")]
+        [Tooltip("이동 수치 SO. PlayerDataSO 연결 필수.")]
         [SerializeField] private PlayerDataSO _data;
 
-        // ──────────────────────────────────────────
-        // Inspector — 방향 표현
-        // ──────────────────────────────────────────
+        [Header("── 공격 이동 ──────────────────────")]
+
+        /// <summary>
+        /// 공격 중 이동 속도.
+        /// PlayerAttackDataSO.AttackMoveSpeed 를 직접 참조하지 않고
+        /// PlayerAttackController 가 SetAttackMove 호출 시 전달.
+        /// 여기서는 폴백용으로 인스펙터에서 조절 가능.
+        /// </summary>
+        [Tooltip("공격 중 전진 속도. PlayerAttackDataSO.AttackMoveSpeed 와 동기화 권장.")]
+        [SerializeField] private float _attackMoveSpeed = 3f;
 
         [Header("── 방향 표현 ──────────────────────")]
 
         /// <summary>
         /// 이동 방향으로 Sprite 를 회전시킬지 여부.
-        /// true: 이동 방향으로 오브젝트 회전 (8방향 회전).
-        /// false: 좌우(X)만 flipX 로 반전 (기본 탑뷰 스타일).
+        /// false: 좌우만 flipX 반전 (엔터 더 건전 / 세피리아 스타일).
         /// </summary>
         [Tooltip("이동 방향으로 오브젝트 Z 회전. false=좌우만 flipX 반전.")]
         [SerializeField] private bool _rotateTowardsMoveDirection = false;
 
-        /// <summary>
-        /// 방향 전환 시 Sprite 회전 보간 속도.
-        /// _rotateTowardsMoveDirection = true 일 때만 적용.
-        /// </summary>
-        [Tooltip("방향 전환 회전 보간 속도. 높을수록 즉시 회전.")]
+        [Tooltip("방향 전환 회전 보간 속도.")]
         [SerializeField] private float _rotationSpeed = 720f;
-
-        // ──────────────────────────────────────────
-        // Inspector — 비주얼 연결
-        // ──────────────────────────────────────────
 
         [Header("── 비주얼 연결 ──────────────────────")]
 
-        /// <summary>
-        /// 스쿼시/스트레치 대상 Transform.
-        /// 플레이어 Visual 자식 오브젝트 연결.
-        /// null 이면 자신 transform 사용.
-        /// </summary>
-        [Tooltip("스쿼시/스트레치 대상 Visual 오브젝트. null=자신 transform.")]
+        /// <summary>스쿼시/스트레치 대상 Visual Transform. null 이면 자신 사용.</summary>
+        [Tooltip("스쿼시/스트레치 대상 Visual 오브젝트. null=자신.")]
         [SerializeField] private Transform _visualTransform;
 
-        // ──────────────────────────────────────────
-        // 컴포넌트 참조 (런타임)
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // 컴포넌트 참조
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// Rigidbody2D. Awake 에서 자동 취득.
-        /// GravityScale = 0 설정 필수.
-        /// </summary>
+        /// <summary>Rigidbody2D. Awake 에서 취득. GravityScale = 0 필수.</summary>
         private Rigidbody2D _rigid2D;
 
-        /// <summary>
-        /// SpriteRenderer. Awake 에서 자동 취득.
-        /// flipX 좌우 반전에 사용.
-        /// </summary>
+        /// <summary>SpriteRenderer. flipX 좌우 반전에 사용.</summary>
         private SpriteRenderer _spriteRenderer;
 
-        // ──────────────────────────────────────────
-        // 이동 상태
-        // ──────────────────────────────────────────
-
         /// <summary>
-        /// 현재 이동 입력 벡터. PlayerInputHandler.OnMove 콜백으로 수신.
-        /// FixedUpdate 에서 물리 이동에 사용.
-        /// </summary>
-        private Vector2 _moveInput;
-
-        /// <summary>
-        /// 현재 실제 이동 속도 벡터.
-        /// 가속/감속이 있을 경우 목표 속도로 보간됨.
-        /// </summary>
-        private Vector2 _currentVelocity;
-
-        /// <summary>
-        /// 마지막으로 이동한 방향. 대시 방향 결정에 사용.
-        /// 입력이 없어도 유지됨.
-        /// </summary>
-        private Vector2 _lastMoveDirection = Vector2.right;
-
-        /// <summary>
-        /// 현재 바라보는 방향 벡터.
-        /// 무기 공격 방향, 투사체 방향 결정에 사용.
-        /// 기본값: 오른쪽.
-        /// </summary>
-        private Vector2 _facingDirection = Vector2.right;
-
-        /// <summary>
-        /// 이동 잠금 여부.
-        /// true: 입력 이동 차단 (대시 중, 봉인 집행 중 등).
-        /// </summary>
-        private bool _isMoveLocked;
-
-        // ──────────────────────────────────────────
-        // 컴포넌트 참조
-        // ──────────────────────────────────────────
-
-        /// <summary>
-        /// 무기 스윙 컨트롤러 참조.
-        /// UpdateFacingDirection() 에서 IsSwinging 체크에 사용.
-        /// 공격 중 flipX / 회전 변경 금지를 위해 참조.
+        /// 무기 스윙 컨트롤러. UpdateFacingDirection 에서 IsSwinging 체크.
+        /// 공격 중 flipX/회전 변경 금지를 위해 참조.
         /// </summary>
         private PlayerWeaponSwingController _swingController;
 
-        // ──────────────────────────────────────────
-        // 대시 상태
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // 이동 상태
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>현재 WASD 입력 벡터. OnMove 콜백으로 수신.</summary>
+        private Vector2 _moveInput;
+
+        /// <summary>현재 실제 이동 속도 벡터. 가속/감속 보간용.</summary>
+        private Vector2 _currentVelocity;
+
+        /// <summary>마지막 이동 방향. 대시 방향 결정에 사용.</summary>
+        private Vector2 _lastMoveDirection = Vector2.right;
+
+        /// <summary>현재 바라보는 방향. 마우스 기준. 무기 공격 방향에 사용.</summary>
+        private Vector2 _facingDirection = Vector2.right;
 
         /// <summary>
-        /// 현재 대시 중 여부.
-        /// true: DashDuration 동안 대시 속도로 이동.
+        /// Seal 이동 잠금 여부.
+        /// true: 모든 이동 차단. SetMoveLocked(true) 로 진입.
         /// </summary>
+        private bool _isMoveLocked;
+
+        // ══════════════════════════════════════════════════════
+        // 공격 이동 상태 (v1.1 추가)
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 공격 이동 모드 여부.
+        /// true: 공격 중 전진 이동 적용.
+        /// PlayerAttackController.SetAttackMove(true) 로 진입.
+        /// PlayerAttackController.SetAttackMove(false) 로 해제.
+        /// </summary>
+        private bool _isAttackMoving;
+
+        /// <summary>
+        /// 공격 전진 방향.
+        /// SetAttackMove(true, dir) 에서 설정.
+        /// WASD 입력이 없을 때 이 방향으로 전진.
+        /// 콤보 연결 시 SetAttackMove(true, newDir) 로 갱신.
+        /// </summary>
+        private Vector2 _attackMoveDir;
+
+        /// <summary>
+        /// 공격 이동 속도 (런타임).
+        /// SetAttackMove(true, dir, speed) 로 설정.
+        /// </summary>
+        private float _attackMoveSpeedRuntime;
+
+        // ══════════════════════════════════════════════════════
+        // 대시 상태
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>현재 대시 중 여부.</summary>
         private bool _isDashing;
 
-        /// <summary>
-        /// 현재 남은 대시 충전 횟수.
-        /// 대시 시 1 감소, 쿨타임 후 1 회복.
-        /// </summary>
+        /// <summary>남은 대시 충전 횟수.</summary>
         private int _remainingDashCount;
 
-        /// <summary>
-        /// 대시 쿨타임 진행 코루틴 참조.
-        /// 중복 실행 방지에 사용.
-        /// </summary>
+        /// <summary>대시 쿨타임 코루틴 참조.</summary>
         private Coroutine _dashCooldownCoroutine;
 
-        /// <summary>
-        /// 대시 실행 코루틴 참조.
-        /// 대시 강제 중단 시 StopCoroutine 에 사용.
-        /// </summary>
+        /// <summary>대시 실행 코루틴 참조.</summary>
         private Coroutine _dashCoroutine;
 
-        // ──────────────────────────────────────────
-        // DOTween 참조 (중복 방지)
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // DOTween 참조
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 이동 방향 스쿼시 Tween 참조.
-        /// 새 이동 입력 시 이전 tween Kill 후 재실행.
-        /// </summary>
+        /// <summary>이동 스쿼시 Tween 참조. 중복 방지용.</summary>
         private Tweener _squashTween;
 
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // 이벤트
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 대시 시작 시 1회 발행.
-        /// UI 대시 아이콘 업데이트, 오디오 등에서 구독.
-        /// </summary>
+        /// <summary>대시 시작 시 1회 발행.</summary>
         public event Action OnDashStarted;
 
-        /// <summary>
-        /// 대시 종료 시 1회 발행.
-        /// </summary>
+        /// <summary>대시 종료 시 1회 발행.</summary>
         public event Action OnDashEnded;
 
-        /// <summary>
-        /// 바라보는 방향이 바뀔 때 1회 발행.
-        /// 파라미터: 새 방향 벡터.
-        /// 무기 피벗 방향 전환 등에서 구독.
-        /// </summary>
+        /// <summary>바라보는 방향이 바뀔 때 발행. 파라미터: 새 방향.</summary>
         public event Action<Vector2> OnFacingChanged;
 
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
         // 프로퍼티
-        // ──────────────────────────────────────────
+        // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 현재 바라보는 방향 벡터.
-        /// 무기 공격 방향, 투사체 발사 방향 등에 사용.
-        /// </summary>
+        /// <summary>현재 마우스 방향 벡터. 무기/투사체 방향에 사용.</summary>
         public Vector2 FacingDirection => _facingDirection;
 
-        /// <summary> 현재 대시 중 여부. </summary>
+        /// <summary>현재 대시 중 여부.</summary>
         public bool IsDashing => _isDashing;
 
-        /// <summary> 현재 이동 중 여부. </summary>
+        /// <summary>현재 WASD 이동 중 여부.</summary>
         public bool IsMoving => _moveInput.sqrMagnitude > 0.01f;
 
-        /// <summary>
-        /// 현재 남은 대시 충전 횟수.
-        /// UI 대시 아이콘 표시에 사용.
-        /// </summary>
+        /// <summary>현재 공격 이동 모드 여부.</summary>
+        public bool IsAttackMoving => _isAttackMoving;
+
+        /// <summary>남은 대시 충전 횟수.</summary>
         public int RemainingDashCount => _remainingDashCount;
 
-        /// <summary> 연결된 데이터 SO. 외부 수치 읽기용. </summary>
+        /// <summary>연결된 데이터 SO.</summary>
         public PlayerDataSO Data => _data;
 
-        /// <summary>현재 Rigidbody2D velocity. PlayerController 공격 이동에서 참조.</summary>
+        /// <summary>현재 Rigidbody2D velocity.</summary>
         public Vector2 CurrentVelocity => _currentVelocity;
 
         // ══════════════════════════════════════════════════════
@@ -274,39 +237,32 @@ namespace SEAL
 
         private void Awake()
         {
-            // ── 컴포넌트 취득 ──────────────────────
             _rigid2D = GetComponent<Rigidbody2D>();
             _spriteRenderer = GetComponent<SpriteRenderer>();
             _swingController = GetComponent<PlayerWeaponSwingController>();
 
-            // Visual Transform 미설정 시 자신 transform 사용
             if (_visualTransform == null)
                 _visualTransform = transform;
 
-            // ── 데이터 유효성 확인 ──────────────────────
             if (_data == null)
             {
-                Debug.LogError("[PlayerTopViewMover] PlayerTopViewDataSO 가 연결되지 않았습니다.");
+                Debug.LogError("[PlayerMoveController] PlayerDataSO 미연결.");
                 enabled = false;
                 return;
             }
 
-            // ── Rigidbody2D 탑뷰 설정 ──────────────────────
-            // 탑뷰는 중력이 없어야 함
+            // 탑뷰 Rigidbody2D 설정
             _rigid2D.gravityScale = 0f;
-            _rigid2D.freezeRotation = true; // 물리 충돌로 인한 Z축 회전 방지
+            _rigid2D.freezeRotation = true;
 
-            // ── 대시 충전 초기화 ──────────────────────
             _remainingDashCount = _data.MaxDashCount;
         }
 
         private void Start()
         {
-            // ── InputHandler 이벤트 구독 ──────────────────────
-            // Start 에서 구독 (Awake 실행 순서 보장)
             if (PlayerInputHandler.Instance == null)
             {
-                Debug.LogError("[PlayerTopViewMover] PlayerInputHandler 가 씬에 없습니다.");
+                Debug.LogError("[PlayerMoveController] PlayerInputHandler 없음.");
                 enabled = false;
                 return;
             }
@@ -317,29 +273,24 @@ namespace SEAL
 
         private void OnDestroy()
         {
-            // ── 이벤트 구독 해제 (메모리 누수 방지) ──────────────────────
             if (PlayerInputHandler.Instance != null)
             {
                 PlayerInputHandler.Instance.OnMove -= HandleMoveInput;
                 PlayerInputHandler.Instance.OnDash -= HandleDashInput;
             }
 
-            // DOTween Kill (오브젝트 파괴 시 정리)
             _squashTween?.Kill();
             DOTween.Kill(_visualTransform);
         }
 
         private void FixedUpdate()
         {
-            // 대시 중에는 이동 물리 적용 안 함 (대시 코루틴이 직접 처리)
             if (_isDashing) return;
-
             ApplyMovement();
         }
 
         private void Update()
         {
-            // 방향 / 회전 업데이트 (렌더링과 동기화 위해 Update 에서 처리)
             UpdateFacingDirection();
         }
 
@@ -349,23 +300,18 @@ namespace SEAL
 
         /// <summary>
         /// PlayerInputHandler.OnMove 콜백.
-        /// 이동 입력 벡터를 수신하여 _moveInput 에 저장.
-        ///
-        /// [정규화 처리]
-        ///   _data.NormalizeMovement = true 시 대각선 속도 보정.
-        ///   예: (1, 1) → (0.707, 0.707) — 대각선도 동일 속도.
+        /// _isMoveLocked 시 zero 강제. 공격 이동 중에도 입력은 살아있음.
         /// </summary>
-        /// <param name="input">PlayerInputHandler 에서 전달된 입력 벡터.</param>
         private void HandleMoveInput(Vector2 input)
         {
-            // 이동 잠금 시 강제 zero
+            // Seal 잠금 시 강제 zero
             if (_isMoveLocked)
             {
                 _moveInput = Vector2.zero;
                 return;
             }
 
-            // 대각선 속도 정규화 (8방향 동일 속도 보장)
+            // 대각선 속도 정규화
             if (_data.NormalizeMovement && input.sqrMagnitude > 1f)
                 input = input.normalized;
 
@@ -377,26 +323,47 @@ namespace SEAL
         }
 
         /// <summary>
-        /// FixedUpdate 에서 호출. 실제 Rigidbody2D 속도를 적용한다.
+        /// FixedUpdate 에서 호출. Rigidbody2D velocity 적용.
         ///
-        /// [가속도 처리]
-        ///   _data.MoveAcceleration > 0: Vector2.MoveTowards 로 보간.
-        ///   _data.MoveAcceleration = 0: 즉시 최고속도 (탑뷰 액션 권장).
+        /// [v1.1 공격 이동 분기]
+        ///   _isAttackMoving = true:
+        ///     WASD 입력 있음 → rawInput 방향으로 AttackMoveSpeed
+        ///     WASD 입력 없음 → _attackMoveDir 방향으로 AttackMoveSpeed
+        ///   _isAttackMoving = false:
+        ///     일반 WASD 이동 (MoveSpeed, 가속/감속 보간)
         ///
-        /// [감속 처리]
-        ///   입력 없을 때 MoveDeceleration 으로 0 으로 수렴.
+        /// [우선순위]
+        ///   Seal(_isMoveLocked) > 대시(_isDashing) > 공격이동 > 일반이동
         /// </summary>
         private void ApplyMovement()
         {
-            // 이동 잠금 시 → velocity 건드리지 않음
-            // PlayerController.AttackMoveRoutine 이 velocity 직접 제어
+            // Seal 잠금 시 velocity 건드리지 않음
             if (_isMoveLocked) return;
 
+            // ── 공격 이동 모드 ──────────────────────
+            if (_isAttackMoving)
+            {
+                // 실제 눌린 WASD 읽기 (잠금 무관)
+                Vector2 rawInput = PlayerInputHandler.Instance != null
+                    ? PlayerInputHandler.Instance.MoveInput
+                    : Vector2.zero;
+
+                // WASD 있으면 그 방향 / 없으면 공격 방향
+                Vector2 moveDir = rawInput.sqrMagnitude > 0.01f
+                    ? rawInput.normalized
+                    : _attackMoveDir;
+
+                _currentVelocity = moveDir * _attackMoveSpeedRuntime;
+                _rigid2D.linearVelocity = _currentVelocity;
+                return;
+            }
+
+            // ── 일반 WASD 이동 ──────────────────────
             Vector2 targetVelocity = _moveInput * _data.MoveSpeed;
 
             if (_data.MoveAcceleration > 0f)
             {
-                float rate = (_moveInput.sqrMagnitude > 0.01f)
+                float rate = _moveInput.sqrMagnitude > 0.01f
                     ? _data.MoveAcceleration
                     : _data.MoveDeceleration;
 
@@ -418,47 +385,25 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// Update 에서 호출. 마우스 포인터 방향으로 FacingDirection 을 갱신한다.
-        ///
-        /// [v1.3 변경 — 마우스 방향 기반]
-        ///   기존: _moveInput(이동 방향) 기준으로 FacingDirection 갱신
-        ///         → 이동을 멈추면 방향이 갱신되지 않음
-        ///         → 이동 방향 = 공격 방향 (분리 불가)
-        ///
-        ///   변경: 마우스 월드 좌표 기준으로 FacingDirection 갱신
-        ///         → 플레이어는 항상 마우스를 향해 바라봄
-        ///         → WASD 이동 방향과 공격 방향이 완전히 독립
-        ///         → 멈춰있어도 마우스를 따라 방향 전환
-        ///
-        /// [flipX 처리]
-        ///   마우스가 플레이어 기준 왼쪽 → flipX = true
-        ///   마우스가 플레이어 기준 오른쪽 → flipX = false
-        ///
-        /// [최소 거리 임계값]
-        ///   마우스가 플레이어와 너무 가까우면 (< 0.1f) 방향 갱신 스킵
-        ///   → 플레이어 위에 마우스를 올렸을 때 방향이 진동하는 문제 방지
+        /// Update 에서 호출. 마우스 방향으로 FacingDirection 갱신.
+        /// 스윙 중에는 OnFacingChanged 발행 금지 (DOTween 간섭 방지).
         /// </summary>
         private void UpdateFacingDirection()
         {
             if (PlayerInputHandler.Instance == null) return;
 
-            // 마우스 월드 좌표 → 플레이어 기준 방향 계산
             Vector2 mouseWorld = PlayerInputHandler.Instance.MouseWorldPosition;
             Vector2 playerPos = (Vector2)transform.position;
             Vector2 toMouse = mouseWorld - playerPos;
 
-            // 최소 거리 임계값 (마우스가 플레이어 위에 있으면 스킵)
             if (toMouse.sqrMagnitude < 0.01f) return;
 
             Vector2 newFacing = toMouse.normalized;
-
-            // 방향이 바뀌었을 때만 처리
             if (newFacing == _facingDirection) return;
 
             _facingDirection = newFacing;
 
-            // [v1.3 추가] 공격 중(IsSwinging)이면 flipX / 회전 변경 금지
-            // WeaponPivot 과 flipX 모두 공격 시작 시점 방향으로 고정
+            // 스윙 중 → flipX/회전/WeaponPivot 변경 금지
             if (_swingController != null && _swingController.IsSwinging) return;
 
             OnFacingChanged?.Invoke(_facingDirection);
@@ -467,15 +412,11 @@ namespace SEAL
             {
                 float angle = Mathf.Atan2(_facingDirection.y, _facingDirection.x) * Mathf.Rad2Deg;
                 Quaternion targetRot = Quaternion.Euler(0f, 0f, angle - 90f);
-
                 transform.rotation = Quaternion.RotateTowards(
-                    transform.rotation,
-                    targetRot,
-                    _rotationSpeed * Time.deltaTime);
+                    transform.rotation, targetRot, _rotationSpeed * Time.deltaTime);
             }
             else
             {
-                // flipX: 마우스가 왼쪽이면 flipX = true
                 if (_facingDirection.x != 0f)
                     _spriteRenderer.flipX = _facingDirection.x < 0f;
             }
@@ -487,59 +428,23 @@ namespace SEAL
 
         /// <summary>
         /// PlayerInputHandler.OnDash 콜백.
-        /// 대시 가능 조건 확인 후 대시 코루틴 시작.
-        ///
-        /// [대시 가능 조건]
-        ///   _remainingDashCount > 0 (충전 횟수 남음)
-        ///   !_isDashing (중복 대시 방지)
-        /// </summary>
-        /// <summary>
-        /// PlayerInputHandler.OnDash 콜백.
-        /// 대시 가능 조건 확인 후 대시 코루틴 시작.
-        ///
-        /// [대시 가능 조건]
-        ///   _remainingDashCount > 0 (충전 횟수 남음)
-        ///   !_isDashing (중복 대시 방지)
-        ///
-        /// [대시 방향 결정 — v1.2 수정]
-        ///   기존: _moveInput 기준
-        ///         → 공격 중 _isMoveLocked = true 이면 _moveInput = zero
-        ///         → 항상 _lastMoveDirection (공격 시작 방향) 으로 대시
-        ///
-        ///   변경: PlayerInputHandler.Instance.MoveInput 기준 (실제 눌린 키)
-        ///         → 잠금 여부와 무관하게 현재 방향키 입력 그대로 참조
-        ///         → 방향키 입력 있으면 → 그 방향으로 대시
-        ///         → 방향키 입력 없으면 → _lastMoveDirection (마지막 이동 방향)
-        ///
-        ///   [결과]
-        ///     공격 준비/복귀 중 대시 → 방향키 방향으로 대시 (공격 방향 무관)
-        ///     방향키 미입력 중 대시  → 마지막 이동 방향으로 대시 (기존 동작 유지)
+        /// 실제 눌린 WASD 기준 대시 방향 결정.
+        /// WASD 없으면 FacingDirection(마우스 방향)으로 대시.
         /// </summary>
         private void HandleDashInput()
         {
             if (_isDashing) return;
             if (_remainingDashCount <= 0) return;
 
-            // 실제 눌린 WASD 입력 참조 (잠금 여부 무관)
             Vector2 wasdInput = PlayerInputHandler.Instance != null
                 ? PlayerInputHandler.Instance.MoveInput
                 : Vector2.zero;
 
-            Vector2 dashDir;
-
-            if (wasdInput.sqrMagnitude > 0.01f)
-            {
-                // WASD 입력 있음 → WASD 방향으로 대시
-                dashDir = wasdInput.normalized;
-            }
-            else
-            {
-                // WASD 입력 없음 → 마우스 방향(FacingDirection)으로 대시
-                // 플레이어가 바라보는 방향으로 대시
-                dashDir = _facingDirection.sqrMagnitude > 0.01f
+            Vector2 dashDir = wasdInput.sqrMagnitude > 0.01f
+                ? wasdInput.normalized
+                : (_facingDirection.sqrMagnitude > 0.01f
                     ? _facingDirection
-                    : _lastMoveDirection;
-            }
+                    : _lastMoveDirection);
 
             if (_dashCoroutine != null)
                 StopCoroutine(_dashCoroutine);
@@ -548,31 +453,17 @@ namespace SEAL
         }
 
         /// <summary>
-        /// 대시 코루틴.
-        /// DashDuration 동안 DashSpeed 로 고정 이동 후 종료.
-        ///
-        /// [대시 흐름]
-        ///   1. 상태 진입 → _isDashing = true
-        ///   2. 이동 잠금 (일반 이동 차단)
-        ///   3. DashDuration 동안 linearVelocity 고정
-        ///   4. 종료 → 이동 잠금 해제, 쿨타임 시작
+        /// 대시 코루틴. DashDuration 동안 DashSpeed 고정 이동.
+        /// 대시 중 공격 이동 무시 (대시 최우선).
         /// </summary>
-        /// <param name="dashDir">대시 방향 (정규화된 Vector2).</param>
         private IEnumerator DashRoutine(Vector2 dashDir)
         {
-            // ── 대시 시작 ──────────────────────
             _isDashing = true;
             _remainingDashCount--;
 
-            // 대시 중 일반 이동 차단
-            _isMoveLocked = true;
-
             OnDashStarted?.Invoke();
-
-            // DOTween 대시 시작 스케일 펀치
             PlayDashPunch();
 
-            // ── 대시 이동 (DashDuration 동안) ──────────────────────
             float elapsed = 0f;
             Vector2 dashVelocity = dashDir * _data.DashSpeed;
 
@@ -583,34 +474,24 @@ namespace SEAL
                 yield return new WaitForFixedUpdate();
             }
 
-            // ── 대시 종료 ──────────────────────
             _rigid2D.linearVelocity = Vector2.zero;
             _isDashing = false;
-            _isMoveLocked = false;  // 항상 잠금 해제 (공격 이동잠금 제거로 단순화)
 
             OnDashEnded?.Invoke();
 
-            // ── 쿨타임 시작 ──────────────────────
             if (_dashCooldownCoroutine != null)
                 StopCoroutine(_dashCooldownCoroutine);
-
             _dashCooldownCoroutine = StartCoroutine(DashCooldownRoutine());
 
             _dashCoroutine = null;
         }
 
-        /// <summary>
-        /// 대시 쿨타임 코루틴.
-        /// DashCooldown 시간 후 충전 횟수 1 회복.
-        /// MaxDashCount 미만일 때만 회복.
-        /// </summary>
+        /// <summary>대시 쿨타임 코루틴. DashCooldown 후 충전 1 회복.</summary>
         private IEnumerator DashCooldownRoutine()
         {
             yield return new WaitForSeconds(_data.DashCooldown);
-
             if (_remainingDashCount < _data.MaxDashCount)
                 _remainingDashCount++;
-
             _dashCooldownCoroutine = null;
         }
 
@@ -618,19 +499,11 @@ namespace SEAL
         // DOTween 피드백
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 대시 시작 시 스케일 펀치 연출 (DOTween).
-        /// _data.DashPunchScale > 0 일 때 실행.
-        ///
-        /// [연출]
-        ///   대시 방향으로 약간 늘어났다 복귀하는 효과.
-        ///   스프라이트 시트 없이 역동적인 대시감 표현.
-        /// </summary>
+        /// <summary>대시 시작 스케일 펀치 연출.</summary>
         private void PlayDashPunch()
         {
             if (_data.DashPunchScale <= 0f || _visualTransform == null) return;
 
-            // 기존 Tween Kill 후 재실행
             DOTween.Kill(_visualTransform, complete: false);
             _visualTransform.localScale = Vector3.one;
 
@@ -642,24 +515,14 @@ namespace SEAL
                 .SetUpdate(UpdateType.Normal);
         }
 
-        /// <summary>
-        /// 이동 방향 변경 시 스쿼시/스트레치 연출 (DOTween).
-        /// _data.MoveSquashAmount > 0 일 때 실행.
-        ///
-        /// [연출]
-        ///   이동 방향으로 약간 늘어나고, 수직 방향으로 눌리는 효과.
-        ///   Squash and Stretch 원리. 탑뷰 이동에 생동감 부여.
-        /// </summary>
+        /// <summary>이동 방향 변경 스쿼시/스트레치 연출.</summary>
         private void PlayMoveSquash()
         {
             if (_data.MoveSquashAmount <= 0f || _visualTransform == null) return;
 
             float stretch = _data.MoveSquashAmount;
-
-            // 이전 스쿼시 Tween 종료
             _squashTween?.Kill(complete: true);
 
-            // 이동 방향 축: X 이동 → X 늘어남, Y이동 → Y 늘어남
             Vector3 targetScale = Vector3.one;
             if (Mathf.Abs(_moveInput.x) > Mathf.Abs(_moveInput.y))
                 targetScale = new Vector3(1f + stretch, 1f - stretch * 0.5f, 1f);
@@ -671,7 +534,6 @@ namespace SEAL
                 .SetEase(Ease.OutQuad)
                 .OnComplete(() =>
                 {
-                    // 원래 크기로 복귀
                     _squashTween = _visualTransform
                         .DOScale(Vector3.one, 0.1f)
                         .SetEase(Ease.InOutSine);
@@ -683,34 +545,58 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 이동 잠금 상태를 설정한다.
-        /// true: 이동 차단 (Rigidbody velocity = 0).
+        /// Seal 이동 잠금 설정.
+        /// true: 모든 이동 차단 (Seal 상태 전용).
         /// false: 이동 허용.
-        ///
-        /// [사용 예시]
-        ///   봉인 집행 상태 Enter → SetMoveLocked(true)
-        ///   봉인 집행 상태 Exit  → SetMoveLocked(false)
         /// </summary>
-        /// <param name="locked">true = 이동 차단.</param>
         public void SetMoveLocked(bool locked)
         {
             _isMoveLocked = locked;
 
-            // 잠금 시 _moveInput 만 zero 초기화
-            // velocity 는 건드리지 않음
-            // → AttackMoveRoutine 이 velocity 를 부드럽게 이어받음
-            // → 잠금 해제 시 ApplyMovement 가 WASD velocity 로 자연스럽게 전환
             if (locked)
             {
                 _moveInput = Vector2.zero;
                 _currentVelocity = Vector2.zero;
+                // 공격 이동도 함께 해제
+                _isAttackMoving = false;
+                _attackMoveDir = Vector2.zero;
             }
         }
 
         /// <summary>
-        /// 대시를 강제로 중단한다.
-        /// 피격 경직, 컷씬 진입 등에서 호출.
+        /// 공격 이동 모드 설정. (v1.1 신규)
+        /// PlayerAttackController 에서 호출.
+        ///
+        /// [사용 흐름]
+        ///   ComboRoutine 시작 → SetAttackMove(true, attackDir, attackMoveSpeed)
+        ///   콤보 연결 시     → SetAttackMove(true, newDir, attackMoveSpeed) 갱신
+        ///   ComboRoutine 종료 → SetAttackMove(false, zero, 0)
+        ///   CancelAttack 시  → SetAttackMove(false, zero, 0)
+        ///
+        /// [이동 규칙]
+        ///   WASD 입력 있음 → WASD 방향으로 speed 전진
+        ///   WASD 입력 없음 → attackDir 방향으로 speed 전진
         /// </summary>
+        /// <param name="active">true = 공격 이동 on / false = off.</param>
+        /// <param name="attackDir">공격 전진 기본 방향 (정규화 Vector2).</param>
+        /// <param name="speed">공격 이동 속도.</param>
+        public void SetAttackMove(bool active, Vector2 attackDir, float speed = 0f)
+        {
+            _isAttackMoving = active;
+            _attackMoveDir = active ? attackDir.normalized : Vector2.zero;
+            _attackMoveSpeedRuntime = active ? (speed > 0f ? speed : _attackMoveSpeed) : 0f;
+
+            // 공격 이동 해제 시 velocity 즉시 zero → 다음 프레임 WASD 이동으로 부드럽게 전환
+            if (!active)
+            {
+                _currentVelocity = Vector2.zero;
+                _rigid2D.linearVelocity = Vector2.zero;
+            }
+
+            Debug.Log($"[PlayerMoveController] 공격이동: {active} | 방향: {attackDir} | 속도: {speed}");
+        }
+
+        /// <summary>대시 강제 중단.</summary>
         public void ForceStopDash()
         {
             if (!_isDashing) return;
@@ -722,42 +608,44 @@ namespace SEAL
             }
 
             _isDashing = false;
-            _isMoveLocked = false;
             _rigid2D.linearVelocity = Vector2.zero;
 
             OnDashEnded?.Invoke();
         }
 
-        /// <summary>
-        /// 대시 충전 횟수를 최대로 즉시 회복한다.
-        /// 어빌리티 열쇠(반전 열쇠: 봉인 집행 성공 시 대시 회복) 등에서 호출.
-        /// </summary>
+        /// <summary>대시 충전 횟수 최대로 즉시 회복.</summary>
         public void RestoreAllDash()
         {
             _remainingDashCount = _data.MaxDashCount;
         }
 
         // ══════════════════════════════════════════════════════
-        // Gizmos — 에디터 디버그 표시
+        // Gizmos
         // ══════════════════════════════════════════════════════
 
 #if UNITY_EDITOR
         private void OnDrawGizmosSelected()
         {
-            // 바라보는 방향 표시 (씬 뷰)
+            // 마우스 방향 (파랑)
             Gizmos.color = Color.cyan;
             Gizmos.DrawRay(transform.position, (Vector3)_facingDirection * 1.2f);
 
-            // 대시 방향 표시
+            // 대시/이동 방향 (노랑)
             Gizmos.color = Color.yellow;
             Gizmos.DrawRay(transform.position, (Vector3)_lastMoveDirection * 0.8f);
 
-            // 대시 충전 수 표시
+            // 공격 이동 방향 (빨강)
+            if (_isAttackMoving)
+            {
+                Gizmos.color = Color.red;
+                Gizmos.DrawRay(transform.position, (Vector3)_attackMoveDir * 1.5f);
+            }
+
             UnityEditor.Handles.color = Color.white;
             UnityEditor.Handles.Label(
                 transform.position + Vector3.up * 1.5f,
                 $"대시: {_remainingDashCount}/{(_data != null ? _data.MaxDashCount : 0)} | " +
-                $"대시중: {_isDashing} | 잠금: {_isMoveLocked}");
+                $"대시중: {_isDashing} | 잠금: {_isMoveLocked} | 공격이동: {_isAttackMoving}");
         }
 #endif
     }

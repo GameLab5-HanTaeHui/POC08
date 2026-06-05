@@ -1149,12 +1149,12 @@ MonoBehaviour:
   _armLRenderer: {fileID: 3641258697330880272}
   _armRRenderer: {fileID: 667973993591523152}
   _coreRenderer: {fileID: 4626551619868309503}
-  _armLSealBurst: {fileID: 0}
-  _armLSealLoop: {fileID: 0}
-  _armRSealBurst: {fileID: 0}
-  _armRSealLoop: {fileID: 0}
-  _coreSealBurst: {fileID: 0}
-  _coreSealLoop: {fileID: 0}
+  _armLSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _armLSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _armRSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _armRSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _coreSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _coreSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
 --- !u!114 &5298859741369411445
 MonoBehaviour:
   m_ObjectHideFlags: 0
