@@ -1,6 +1,19 @@
 ﻿// ============================================================
-// SealableComponent.cs  v1.0
+// SealableComponent.cs  v1.1
 // 봉인 가능 부위/코어 통합 컴포넌트
+//
+// [v1.1 추가 — 홀드 진행 UI]
+//   _holdProgressText : 자기 자식 TextMeshPro 연결
+//   _progressTextLocalOffset : 텍스트 로컬 위치 오프셋 (기본 위 1.5)
+//
+//   ShowHoldProgress()          : 집행 시작 시 SealExecutor 에서 호출
+//   UpdateHoldProgress(float)   : 홀드 루프 매 프레임 SealExecutor 에서 호출
+//   CompleteHoldProgress()      : 완료 시 호출 → 보라색 + DOFade 소멸
+//   CancelHoldProgress()        : 취소 시 호출 → 빠른 DOFade 소멸
+//
+//   [위치 방식]
+//   텍스트가 자기 자식이므로 부위가 이동해도 자동으로 따라감
+//   SealExecutor 에서 위치를 추적할 필요 없음
 //
 // [기존 파일 통합]
 //   SealGaugeComponent     → 팔 부위 봉인도 관리
@@ -36,6 +49,7 @@
 
 using System;
 using UnityEngine;
+using TMPro;
 using DG.Tweening;
 
 namespace SEAL
@@ -147,6 +161,34 @@ namespace SEAL
         /// </summary>
         [Tooltip("피격 점멸용 SpriteRenderer. 미연결 시 자동 탐색.")]
         [SerializeField] private SpriteRenderer _spriteRenderer;
+
+        [Header("── 홀드 진행 UI ──────────────────────")]
+
+        /// <summary>
+        /// 봉인 집행 홀드 진행도 텍스트.
+        /// 이 오브젝트의 자식 TextMeshPro 연결.
+        ///
+        /// [씬 구성 예시]
+        ///   LeftArm
+        ///     ├─ SealableComponent (이 컴포넌트)
+        ///     └─ SealProgressText [TextMeshPro]
+        ///          Font Size = 3
+        ///          Alignment = Center / Middle
+        ///          기본 SetActive = false
+        ///
+        /// SealExecutor.ExecuteSeal() 에서
+        ///   ShowHoldProgress() / UpdateHoldProgress(float) /
+        ///   CompleteHoldProgress() / CancelHoldProgress() 호출.
+        /// </summary>
+        [Tooltip("홀드 진행도 TMP. 자기 자식 오브젝트로 연결. 미연결 시 텍스트 생략.")]
+        [SerializeField] private TextMeshPro _holdProgressText;
+
+        /// <summary>
+        /// 텍스트 오브젝트의 로컬 위치 오프셋.
+        /// 기본값 (0, 1.5, 0) — 부위 위 1.5 유닛.
+        /// </summary>
+        [Tooltip("진행 텍스트 로컬 오프셋. 기본: (0, 1.5, 0).")]
+        [SerializeField] private Vector3 _progressTextLocalOffset = new Vector3(0f, 1.5f, 0f);
 
         // ══════════════════════════════════════════════════════
         // 프로퍼티 (SealExecutor 참조용)
@@ -267,6 +309,7 @@ namespace SEAL
         private void OnDestroy()
         {
             _flashTween?.Kill();
+            _holdProgressText?.DOKill();
         }
 
         // ══════════════════════════════════════════════════════
@@ -417,8 +460,98 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 내부 유틸
+        // 홀드 진행 UI (SealExecutor 에서 호출)
         // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 봉인 집행 시작 시 호출.
+        /// 진행 텍스트를 로컬 오프셋 위치에 표시 + DOFade 페이드인.
+        ///
+        /// SealExecutor.ExecuteSeal() 진입 직후 호출.
+        /// </summary>
+        public void ShowHoldProgress()
+        {
+            if (_holdProgressText == null) return;
+
+            _holdProgressText.DOKill();
+            _holdProgressText.transform.localPosition = _progressTextLocalOffset;
+            _holdProgressText.text = "0%";
+            _holdProgressText.color = new Color(1f, 1f, 1f, 0f);
+            _holdProgressText.gameObject.SetActive(true);
+
+            _holdProgressText
+                .DOFade(1f, 0.15f)
+                .SetUpdate(true); // 슬로우 중에도 정상 동작
+        }
+
+        /// <summary>
+        /// 홀드 진행도 갱신.
+        /// SealExecutor 홀드 루프에서 매 프레임 호출.
+        ///
+        /// 파라미터 progress: 0.0(시작) ~ 1.0(완료)
+        /// 표시: "0%" ~ "100%"
+        /// </summary>
+        public void UpdateHoldProgress(float progress)
+        {
+            if (_holdProgressText == null || !_holdProgressText.gameObject.activeSelf) return;
+
+            int percent = Mathf.Clamp(Mathf.RoundToInt(progress * 100f), 0, 100);
+            _holdProgressText.text = $"{percent}%";
+        }
+
+        /// <summary>
+        /// 집행 완료 처리.
+        /// "100%" 표시 → 짧은 대기 → DOFade 소멸.
+        ///
+        /// SealExecutor 에서 ExecuteSeal() 완료 후 호출.
+        /// </summary>
+        public void CompleteHoldProgress()
+        {
+            if (_holdProgressText == null) return;
+
+            _holdProgressText.DOKill();
+            _holdProgressText.text = "100%";
+
+            // 완료 색상 (보라색으로 강조)
+            _holdProgressText.color = new Color(0.78f, 0.49f, 1f, 1f);
+
+            _holdProgressText
+                .DOFade(0f, 0.3f)
+                .SetDelay(0.1f)
+                .SetUpdate(true)
+                .OnComplete(() =>
+                {
+                    if (_holdProgressText != null)
+                        _holdProgressText.gameObject.SetActive(false);
+                });
+        }
+
+        /// <summary>
+        /// 집행 취소 처리.
+        /// 빠른 DOFade 소멸.
+        ///
+        /// 키 해제 / 범위 이탈 시 SealExecutor 에서 호출.
+        /// </summary>
+        public void CancelHoldProgress()
+        {
+            if (_holdProgressText == null || !_holdProgressText.gameObject.activeSelf) return;
+
+            _holdProgressText.DOKill();
+            _holdProgressText
+                .DOFade(0f, 0.1f)
+                .SetUpdate(true)
+                .OnComplete(() =>
+                {
+                    if (_holdProgressText != null)
+                        _holdProgressText.gameObject.SetActive(false);
+                });
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 피격 점멸
+        // ══════════════════════════════════════════════════════
+
+        private void PlayHitFlash()
 
         /// <summary>
         /// 봉인도 단계 변화 체크 (0/25/50/75/100%).
