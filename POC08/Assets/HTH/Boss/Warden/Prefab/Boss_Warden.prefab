@@ -577,7 +577,7 @@ GameObject:
   - component: {fileID: 3641258697330880272}
   - component: {fileID: 7437632202807975409}
   - component: {fileID: 4585807861786295039}
-  - component: {fileID: 794984356774534731}
+  - component: {fileID: 8126104515186921542}
   m_Layer: 21
   m_Name: LeftArm
   m_TagString: Untagged
@@ -710,10 +710,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenArmPart
   _partType: 0
-  _spriteRenderer: {fileID: 3641258697330880272}
   _ownCollider: {fileID: 1412219600664688225}
+  _spriteRenderer: {fileID: 3641258697330880272}
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
---- !u!114 &794984356774534731
+  _guardBreakPattern: {fileID: 0}
+--- !u!114 &8126104515186921542
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -722,11 +723,17 @@ MonoBehaviour:
   m_GameObject: {fileID: 2634589276354884261}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a24a0aac1adb6b14798a0e9d3191df06, type: 3}
+  m_Script: {fileID: 11500000, guid: 46f8435d06b25254fb7c744c28a76db4, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeComponent
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealableComponent
+  grade: 1
   _maxGauge: 200
+  _sealRange: 1.5
+  _sealHoldTime: 1.5
+  _isDilPhaseOnly: 0
+  _phaseTarget: 0
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _spriteRenderer: {fileID: 3641258697330880272}
 --- !u!1 &2815818081025082498
 GameObject:
   m_ObjectHideFlags: 0
@@ -738,7 +745,7 @@ GameObject:
   - component: {fileID: 1396612535062583916}
   - component: {fileID: 4626551619868309503}
   - component: {fileID: 1162775052732643821}
-  - component: {fileID: 1550287276941150864}
+  - component: {fileID: 5129514092272054624}
   m_Layer: 20
   m_Name: Core
   m_TagString: Untagged
@@ -871,7 +878,7 @@ PolygonCollider2D:
       - {x: -0.5, y: -0.28866667}
       - {x: 0.5, y: -0.28866667}
   m_UseDelaunayMesh: 1
---- !u!114 &1550287276941150864
+--- !u!114 &5129514092272054624
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -880,9 +887,15 @@ MonoBehaviour:
   m_GameObject: {fileID: 2815818081025082498}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d6cbb54243677124c8cc16a45083ee17, type: 3}
+  m_Script: {fileID: 11500000, guid: 46f8435d06b25254fb7c744c28a76db4, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenCoreSealGauge
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealableComponent
+  grade: 2
+  _maxGauge: 200
+  _sealRange: 1.5
+  _sealHoldTime: 1.5
+  _isDilPhaseOnly: 1
+  _phaseTarget: 0
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 4626551619868309503}
 --- !u!1 &2927865824481869591
@@ -1027,9 +1040,9 @@ GameObject:
   - component: {fileID: 6556072117920470920}
   - component: {fileID: 1510995343637259522}
   - component: {fileID: 367445595963278709}
-  - component: {fileID: 5193651684130213381}
   - component: {fileID: 5298859741369411445}
   - component: {fileID: 7116612192379757486}
+  - component: {fileID: 8185960455452908859}
   - component: {fileID: 6966774668998716745}
   m_Layer: 0
   m_Name: Boss_Warden
@@ -1182,30 +1195,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenFeedback
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _core: {fileID: 0}
+  _ai: {fileID: 0}
+  _armLPart: {fileID: 4585807861786295039}
+  _armRPart: {fileID: 4394930287480848199}
   _bodyRenderer: {fileID: 3534132678184260611}
   _armLRenderer: {fileID: 3641258697330880272}
   _armRRenderer: {fileID: 667973993591523152}
   _coreRenderer: {fileID: 4626551619868309503}
-  _armLPart: {fileID: 4585807861786295039}
-  _armRPart: {fileID: 4394930287480848199}
---- !u!114 &5193651684130213381
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3153932892854605847}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f6cb6ed47bb5aeb4ca2f99e4d9dbc2dc, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenSealExecutor
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _armL: {fileID: 4585807861786295039}
-  _armR: {fileID: 4394930287480848199}
-  _coreObject: {fileID: 2815818081025082498}
-  _coreSealGauge: {fileID: 1550287276941150864}
-  _attackRange: {fileID: 5298859741369411445}
 --- !u!114 &5298859741369411445
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1245,9 +1242,26 @@ MonoBehaviour:
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
+  _armLSealable: {fileID: 8126104515186921542}
+  _armRSealable: {fileID: 5246646074738677253}
+  _coreSealable: {fileID: 5129514092272054624}
+  _sealExecutor: {fileID: 8185960455452908859}
   _coreObject: {fileID: 2815818081025082498}
-  _coreSealGauge: {fileID: 1550287276941150864}
   _shockwave: {fileID: 6966774668998716745}
+--- !u!114 &8185960455452908859
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 82d806a45a22a824ea915c35fb2ef7b3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutor
+  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _attackRange: {fileID: 5298859741369411445}
 --- !u!114 &6966774668998716745
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2209,7 +2223,7 @@ GameObject:
   - component: {fileID: 667973993591523152}
   - component: {fileID: 8933926576004407134}
   - component: {fileID: 4394930287480848199}
-  - component: {fileID: 1172787042423395168}
+  - component: {fileID: 5246646074738677253}
   m_Layer: 21
   m_Name: RightArm
   m_TagString: Untagged
@@ -2342,10 +2356,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenArmPart
   _partType: 1
-  _spriteRenderer: {fileID: 667973993591523152}
   _ownCollider: {fileID: 5537126293119943448}
+  _spriteRenderer: {fileID: 667973993591523152}
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
---- !u!114 &1172787042423395168
+  _guardBreakPattern: {fileID: 8802318017502285533}
+--- !u!114 &5246646074738677253
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -2354,11 +2369,17 @@ MonoBehaviour:
   m_GameObject: {fileID: 7263643612136954821}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a24a0aac1adb6b14798a0e9d3191df06, type: 3}
+  m_Script: {fileID: 11500000, guid: 46f8435d06b25254fb7c744c28a76db4, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeComponent
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealableComponent
+  grade: 1
   _maxGauge: 200
+  _sealRange: 1.5
+  _sealHoldTime: 1.5
+  _isDilPhaseOnly: 0
+  _phaseTarget: 0
   _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _spriteRenderer: {fileID: 667973993591523152}
 --- !u!1 &7487386312020531751
 GameObject:
   m_ObjectHideFlags: 0

@@ -539,7 +539,7 @@ namespace SEAL
                     rotAtk = _data.Combo1RotAtk;
 
                     // ① 백스윙
-                    seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart));
+                    seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart).SetUpdate(true));
                     seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
                     // ② 백스윙 완료 직후 → 히트박스 활성 (타격 Append 시작 전 보장)
@@ -557,7 +557,7 @@ namespace SEAL
                     seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
                     // ⑤ 복귀
-                    seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutQuart));
+                    seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutQuart).SetUpdate(true));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutQuart));
                     break;
 
@@ -569,7 +569,7 @@ namespace SEAL
                     rotAtk = _data.Combo2RotAtk;
 
                     // ① 백스윙
-                    seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart));
+                    seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart).SetUpdate(true));
                     seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
                     // ② 백스윙 완료 직후 → 히트박스 활성
@@ -587,7 +587,7 @@ namespace SEAL
                     seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
                     // ⑤ 복귀 (OutBounce — 내리찍힌 반동감)
-                    seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBounce));
+                    seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBounce).SetUpdate(true));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutQuart));
                     break;
 
@@ -599,7 +599,7 @@ namespace SEAL
                     rotAtk = 0f;
 
                     // ① 백스윙
-                    seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart));
+                    seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutQuart).SetUpdate(true));
                     seq.Join(RotateWeapon(rotBack, bD, Ease.OutQuart));
 
                     // ② 찌르기 직전 예비동작 딜레이 (0.03초)
@@ -618,7 +618,7 @@ namespace SEAL
                     seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
                     // ⑥ 복귀
-                    seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBack));
+                    seq.Append(_weapon.DOLocalMove(origin, rD).SetEase(Ease.OutBack).SetUpdate(true));
                     seq.Join(RotateWeapon(0f, rD, Ease.OutBack));
                     break;
             }
@@ -650,7 +650,7 @@ namespace SEAL
             float rotAtk = _data.ChargeRotAtk;
 
             // ① 백스윙
-            seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutBack));
+            seq.Append(_weapon.DOLocalMove(backPos, bD).SetEase(Ease.OutBack).SetUpdate(true));
             seq.Join(RotateWeapon(rotBack, bD, Ease.OutBack));
 
             // ② 백스윙 완료 직후 → 히트박스 활성 (강공격 전용 인덱스)
@@ -669,7 +669,7 @@ namespace SEAL
             seq.AppendCallback(() => _hitboxManager?.DisableAllHitboxes());
 
             // ⑤ 복귀
-            seq.Append(_weapon.DOLocalMove(origin, rD * 1.2f).SetEase(Ease.OutElastic));
+            seq.Append(_weapon.DOLocalMove(origin, rD * 1.2f).SetEase(Ease.OutElastic).SetUpdate(true));
             seq.Join(RotateWeapon(0f, rD * 1.2f, Ease.OutElastic));
 
             return seq;
@@ -751,7 +751,8 @@ namespace SEAL
         {
             return _weapon
                 .DOLocalRotate(new Vector3(0f, 0f, zAngle), duration, RotateMode.Fast)
-                .SetEase(ease);
+                .SetEase(ease)
+                .SetUpdate(true);
         }
 
         /// <summary>
@@ -777,7 +778,8 @@ namespace SEAL
         {
             return _weapon
                 .DOLocalRotate(new Vector3(0f, 0f, delta), duration, RotateMode.LocalAxisAdd)
-                .SetEase(ease);
+                .SetEase(ease)
+                .SetUpdate(true);
         }
 
         /// <summary>
@@ -805,8 +807,7 @@ namespace SEAL
         ///   Charge 강타    : +1.5 (크게 볼록 — 원호 스윙)
         ///   Combo3 찌르기  : 직선 컨셉 → ArcPath 미사용 (DOLocalMove 유지)
         /// </summary>
-        private Tweener ArcPath(Vector3 backPos, Vector3 attackPos, float arcHeight,
-                                float duration, Ease ease)
+        private Tweener ArcPath(Vector3 backPos, Vector3 attackPos, float arcHeight, float duration, Ease ease)
         {
             // ──────────────────────────────────────────────────────
             // [8방향 대응 원리]
@@ -836,7 +837,8 @@ namespace SEAL
 
             return _weapon
                 .DOLocalPath(path, duration, PathType.CatmullRom, PathMode.Ignore)
-                .SetEase(ease);
+                .SetEase(ease)
+                .SetUpdate(true);
         }
 
         // ══════════════════════════════════════════════════════
