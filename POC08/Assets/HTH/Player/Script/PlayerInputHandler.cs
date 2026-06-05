@@ -229,6 +229,8 @@ namespace SEAL
         /// </summary>
         public bool IsSealHeld => _isSealHeld;
 
+        public bool IsActionBlocked => _actionBlocked;
+
         /// <summary>
         /// 마우스 스크린 좌표.
         /// </summary>
@@ -370,7 +372,7 @@ namespace SEAL
             _actionAttack.performed += _ =>
             {
                 _isAttackHeld = true;
-                if (!_actionBlocked) OnAttack?.Invoke();
+                OnAttack?.Invoke();
             };
             _actionAttack.canceled += _ =>
             {

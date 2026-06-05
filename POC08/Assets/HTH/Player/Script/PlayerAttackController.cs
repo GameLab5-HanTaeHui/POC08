@@ -309,7 +309,8 @@ namespace SEAL
             _attackPressTime = Time.time;
             _isChargeHolding = true;
 
-            _swingController.StartChargePulse();
+            if(PlayerInputHandler.Instance != null && !PlayerInputHandler.Instance.IsActionBlocked)
+                _swingController.StartChargePulse();
         }
 
         /// <summary>
@@ -323,6 +324,9 @@ namespace SEAL
             float holdTime = Time.time - _attackPressTime;
             _isChargeHolding = false;
             _swingController.StopChargePulse();
+
+            if (PlayerInputHandler.Instance !=  null && PlayerInputHandler.Instance.IsActionBlocked)
+                return;
 
             // 강공격: 홀드 충족 + 현재 공격 중 아님
             if (holdTime >= _data.ChargeMinHoldTime && !_isAttacking)
@@ -439,6 +443,8 @@ namespace SEAL
         /// </summary>
         private void ExecuteComboAttack()
         {
+            if (_isAttacking) return;
+
             if (_attackCoroutine != null) StopCoroutine(_attackCoroutine);
             _attackCoroutine = StartCoroutine(ComboAttackRoutine());
         }
@@ -448,6 +454,8 @@ namespace SEAL
         /// </summary>
         private void ExecuteChargeAttack()
         {
+            if (_isAttacking) return;
+
             if (_attackCoroutine != null) StopCoroutine(_attackCoroutine);
             _attackCoroutine = StartCoroutine(ChargeAttackRoutine());
         }
@@ -506,6 +514,7 @@ namespace SEAL
             float sealAmount = GetComboSealAmount();
 
             _swingController.PlaySwing(comboIndex, _currentAttackDir, sealAmount);
+            yield return null;
 
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 2f;
             float elapsed = 0f;
@@ -560,6 +569,7 @@ namespace SEAL
             // [v2.4] SetMoveLocked 제거 — 공격 중 이동 자유
 
             _swingController.PlayChargeSwing(_currentAttackDir, _data.ChargeSealAmount);
+            yield return null;
 
             // 복귀 구간 - WASD 이동 복구 + 방향 번경 허용
             _moveController.SetMoveLocked(false);
