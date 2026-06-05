@@ -108,6 +108,25 @@ namespace SEAL
         order = 1)]
     public class PlayerAttackDataSO : ScriptableObject
     {
+        [Header("── 공격 이동 ──────────────────────")]
+
+        /// <summary>
+        /// 공격 중 플레이어 이동 속도.
+        /// WASD 입력 있으면 WASD 방향 / 없으면 공격 방향으로 이 속도로 이동.
+        /// </summary>
+        [Tooltip("공격 중 이동 속도. 권장: 2~4.")]
+        [Min(0f)]
+        public float AttackMoveSpeed = 3f;
+
+        /// <summary>
+        /// 공격 이동 지속 시간 (백스윙 + 타격 구간).
+        /// BackswingDuration + AttackDuration 과 동일하게 맞추는 것 권장.
+        /// </summary>
+        [Tooltip("공격 이동 지속 시간. BackswingDuration + AttackDuration 권장.")]
+        [Range(0.01f, 1f)]
+        public float AttackMoveDuration = 0.35f;
+
+
         // ──────────────────────────────────────────
         // 공통 타이밍
         // ──────────────────────────────────────────
@@ -493,27 +512,6 @@ namespace SEAL
         [Tooltip("히트스톱 중 TimeScale. 0=완전 정지. 권장: 0.0~0.05.")]
         [Range(0f, 0.2f)]
         public float HitStopTimeScale = 0.02f;
-
-        // ──────────────────────────────────────────
-        // 플레이어 전진 (Lunge)
-        // ──────────────────────────────────────────
-
-        [Header("── 공격 전진 (Lunge) ──────────────────────")]
-
-        /// <summary>
-        /// 공격 시 플레이어 Visual 이 공격 방향으로 소량 전진하는 거리.
-        /// Rigidbody 가 아닌 Visual Transform 만 이동 (물리계와 분리).
-        /// </summary>
-        [Tooltip("공격 시 Visual 전진 거리. 0=비활성. 권장: 0.15~0.3.")]
-        [Min(0f)]
-        public float LungeDistance = 0.2f;
-
-        /// <summary>
-        /// 공격 전진 지속 시간 (초).
-        /// </summary>
-        [Tooltip("공격 전진 지속 시간 (초). 권장: 0.06~0.10.")]
-        [Range(0.01f, 0.3f)]
-        public float LungeDuration = 0.07f;
 
         // ══════════════════════════════════════════════════════
         // 유틸리티 메서드 — SwingController 에서 사용

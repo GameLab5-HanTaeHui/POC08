@@ -118,6 +118,9 @@ namespace SEAL
         /// </summary>
         private Coroutine _attackCoroutine;
 
+        /// <summary>공격 이동 코루틴 참조.</summary>
+        private Coroutine _attackMoveCoroutine;
+
         /// <summary>
         /// 콤보 리셋 타이머 코루틴 참조.
         /// 일정 시간 입력 없을 때 콤보 초기화.
@@ -396,6 +399,8 @@ namespace SEAL
             // ③ 히트박스 비활성화
             _hitboxManager?.DisableAllHitboxes();
 
+            _moveController?.SetMoveLocked(false);
+
             // ④ 콤보 상태 초기화 ([v2.4] SetMoveLocked(false) 제거)
             _isAttacking        = false;
             _comboWindowOpen    = false;
@@ -501,7 +506,6 @@ namespace SEAL
             float sealAmount = GetComboSealAmount();
 
             _swingController.PlaySwing(comboIndex, _currentAttackDir, sealAmount);
-            PlayLunge(_currentAttackDir);
 
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 2f;
             float elapsed = 0f;
@@ -510,6 +514,8 @@ namespace SEAL
                 elapsed += Time.deltaTime;
                 yield return null;
             }
+            // 복귀 구간 - WASD 이동 복구 + 방향 번경 허용
+            _moveController.SetMoveLocked(false);
 
             // ── 콤보 윈도우 ──────────────────────
             _comboWindowOpen = true;
@@ -554,7 +560,9 @@ namespace SEAL
             // [v2.4] SetMoveLocked 제거 — 공격 중 이동 자유
 
             _swingController.PlayChargeSwing(_currentAttackDir, _data.ChargeSealAmount);
-            PlayLunge(_currentAttackDir);
+
+            // 복귀 구간 - WASD 이동 복구 + 방향 번경 허용
+            _moveController.SetMoveLocked(false);
 
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 3f;
             float elapsed = 0f;
@@ -604,30 +612,56 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 전진 연출 (Lunge)
+        // 공격 전진 연출 (Lunge)
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 공격 시 플레이어 Visual 소량 전진 연출.
-        /// Rigidbody 가 아닌 Visual Transform 만 DOTween 이동.
-        /// 물리 이동계와 분리되어 충돌에 영향을 주지 않음.
+        /// 공격 이동 시작.
+        /// 공격 중 WASD 이동을 차단하고 공격 이동으로 대체.
+        ///
+        /// [이동 방향 결정]
+        ///   WASD 입력 있음 → WASD 방향으로 이동
+        ///   WASD 입력 없음 → 공격 방향(_currentAttackDir)으로 이동
+        ///
+        /// [공격 방향과 이동 방향 독립]
+        ///   오른쪽 공격 + A키 → 공격 방향=오른쪽, 이동=왼쪽
+        ///
+        /// [공격 종료 시]
+        ///   SetMoveLocked(false) → WASD 이동으로 자연스럽게 복귀
         /// </summary>
-        private void PlayLunge(Vector2 attackDir)
+        private void StartAttackMove()
         {
-            if (_data.LungeDistance <= 0f) return;
+            if (_attackMoveCoroutine != null)
+                StopCoroutine(_attackMoveCoroutine);
 
-            DOTween.Kill(_visualTransform, complete: false);
+            _attackMoveCoroutine = StartCoroutine(AttackMoveRoutine());
+        }
 
-            Vector3 originPos = _visualTransform.localPosition;
-            Vector3 lungePos = originPos + (Vector3)(attackDir * _data.LungeDistance);
+        private IEnumerator AttackMoveRoutine()
+        {
+            float elapsed = 0f;
+            float duration = _data.AttackMoveDuration;
 
-            DOTween.Sequence()
-                .Append(_visualTransform
-                    .DOLocalMove(lungePos, _data.LungeDuration)
-                    .SetEase(Ease.OutQuad))
-                .Append(_visualTransform
-                    .DOLocalMove(originPos, _data.LungeDuration * 1.5f)
-                    .SetEase(Ease.InOutSine));
+            while (elapsed < duration && _isAttacking)
+            {
+                // WASD 입력 확인 (잠금 무관 실제 입력)
+                Vector2 wasdInput = PlayerInputHandler.Instance != null
+                    ? PlayerInputHandler.Instance.MoveInput
+                    : Vector2.zero;
+
+                // 이동 방향 결정
+                Vector2 moveDir = wasdInput.sqrMagnitude > 0.01f
+                    ? wasdInput.normalized      // WASD 방향
+                    : _currentAttackDir;        // 공격 방향
+
+                // Rigidbody 직접 설정 (WASD 이동 대체)
+                _rigid2D.linearVelocity = moveDir * _data.AttackMoveSpeed;
+
+                elapsed += Time.fixedDeltaTime;
+                yield return new WaitForFixedUpdate();
+            }
+
+            _attackMoveCoroutine = null;
         }
 
         // ══════════════════════════════════════════════════════
