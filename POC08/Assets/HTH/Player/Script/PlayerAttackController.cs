@@ -523,8 +523,6 @@ namespace SEAL
                 elapsed += Time.deltaTime;
                 yield return null;
             }
-            // 복귀 구간 - WASD 이동 복구 + 방향 번경 허용
-            _moveController.SetMoveLocked(false);
 
             // ── 콤보 윈도우 ──────────────────────
             _comboWindowOpen = true;
@@ -581,7 +579,6 @@ namespace SEAL
 
             _currentCombo = 0;
             _isAttacking = false;
-            // [v2.4] SetMoveLocked(false) 제거
             _attackCoroutine = null;
         }
 
@@ -616,59 +613,6 @@ namespace SEAL
 
             Debug.Log($"[PlayerAttackController] 적중: {hitCol.name} | " +
                       $"봉인도 +{sealAmount:F1} | 콤보: {_currentCombo + 1} | 위치: {hitPos}");
-        }
-
-        // ══════════════════════════════════════════════════════
-        // 공격 전진 연출 (Lunge)
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 공격 이동 시작.
-        /// 공격 중 WASD 이동을 차단하고 공격 이동으로 대체.
-        ///
-        /// [이동 방향 결정]
-        ///   WASD 입력 있음 → WASD 방향으로 이동
-        ///   WASD 입력 없음 → 공격 방향(_currentAttackDir)으로 이동
-        ///
-        /// [공격 방향과 이동 방향 독립]
-        ///   오른쪽 공격 + A키 → 공격 방향=오른쪽, 이동=왼쪽
-        ///
-        /// [공격 종료 시]
-        ///   SetMoveLocked(false) → WASD 이동으로 자연스럽게 복귀
-        /// </summary>
-        private void StartAttackMove()
-        {
-            if (_attackMoveCoroutine != null)
-                StopCoroutine(_attackMoveCoroutine);
-
-            _attackMoveCoroutine = StartCoroutine(AttackMoveRoutine());
-        }
-
-        private IEnumerator AttackMoveRoutine()
-        {
-            float elapsed = 0f;
-            float duration = _data.AttackMoveDuration;
-
-            while (elapsed < duration && _isAttacking)
-            {
-                // WASD 입력 확인 (잠금 무관 실제 입력)
-                Vector2 wasdInput = PlayerInputHandler.Instance != null
-                    ? PlayerInputHandler.Instance.MoveInput
-                    : Vector2.zero;
-
-                // 이동 방향 결정
-                Vector2 moveDir = wasdInput.sqrMagnitude > 0.01f
-                    ? wasdInput.normalized      // WASD 방향
-                    : _currentAttackDir;        // 공격 방향
-
-                // Rigidbody 직접 설정 (WASD 이동 대체)
-                _rigid2D.linearVelocity = moveDir * _data.AttackMoveSpeed;
-
-                elapsed += Time.fixedDeltaTime;
-                yield return new WaitForFixedUpdate();
-            }
-
-            _attackMoveCoroutine = null;
         }
 
         // ══════════════════════════════════════════════════════
