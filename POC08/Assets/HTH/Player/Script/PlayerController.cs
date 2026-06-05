@@ -157,8 +157,6 @@ namespace SEAL
             _attacker.OnAttackStarted += HandleAttackStarted;
             _attacker.OnChargeAttackStarted -= HandleAttackStarted;
             _attacker.OnChargeAttackStarted += HandleAttackStarted;
-            _attacker.OnAttackEnded -= HandleAttackEnded;
-            _attacker.OnAttackEnded += HandleAttackEnded;
 
             // 대시 시작/종료 구독
             _mover.OnDashStarted -= HandleDashStarted;
@@ -381,15 +379,6 @@ namespace SEAL
             }
 
             _attackMoveCoroutine = null;
-        }
-
-        private void HandleAttackEnded()
-        {
-            if (_state != PlayerState.Attack) return;
-
-            SetState(_input.MoveInput.sqrMagnitude > 0.01f
-                ? PlayerState.Move
-                : PlayerState.Idle);
         }
 
         // ══════════════════════════════════════════════════════

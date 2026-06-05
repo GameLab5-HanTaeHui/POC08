@@ -147,9 +147,6 @@ namespace SEAL
         /// <summary>강공격 시작 시 발행.</summary>
         public event Action OnChargeAttackStarted;
 
-        /// <summary>공격 완전 종료 시 발행. PlayerController 상태 복귀용.</summary>
-        public event Action OnAttackEnded;
-
         // ══════════════════════════════════════════════════════
         // 프로퍼티
         // ══════════════════════════════════════════════════════
@@ -423,7 +420,6 @@ namespace SEAL
 
             _comboWindowOpen = false;
             _isAttacking = false;
-            OnAttackEnded?.Invoke();
 
             // ── 콤보 순환 or 리셋 ──────────────────────
             if (_comboInputQueued)
@@ -471,8 +467,6 @@ namespace SEAL
 
             _currentCombo = 0;
             _isAttacking = false;
-            OnAttackEnded?.Invoke();
-
             _attackCoroutine = null;
 
             StartResetTimer();
@@ -502,8 +496,6 @@ namespace SEAL
             _hitboxManager?.DisableAllHitboxes();
 
             _isAttacking = false;
-            OnAttackEnded?.Invoke();
-
             _comboWindowOpen = false;
             _comboInputQueued = false;
             _currentCombo = 0;

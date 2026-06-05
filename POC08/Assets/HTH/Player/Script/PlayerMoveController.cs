@@ -265,6 +265,9 @@ namespace SEAL
         /// <summary> 연결된 데이터 SO. 외부 수치 읽기용. </summary>
         public PlayerDataSO Data => _data;
 
+        /// <summary>현재 Rigidbody2D velocity. PlayerController 공격 이동에서 참조.</summary>
+        public Vector2 CurrentVelocity => _currentVelocity;
+
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
         // ══════════════════════════════════════════════════════

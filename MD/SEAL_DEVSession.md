@@ -1107,3 +1107,187 @@ Color.Lerp(colorCoreDilPhase, colorCoreFinalSeal, UIPercent / 100f)
 | 봉인 시스템 연결 구조 버그 수정 | ✅ |
 | 색상 기획 변경 | ✅ |
 | 전체 루프 통합 테스트 | ⬜ |
+
+---
+
+## v1.2 — 봉인도 색상 실시간 보간 + BossWardenFeedback v1.2
+
+**단계**: 핵심 메카닉 구현 (1단계) / STEP 09 진입  
+**작업**: 부위 봉인도 색상을 단계별 점프 → 실시간 DOColor 보간 방식으로 변경
+
+---
+
+### 변경 파일
+
+| 파일 | 버전 | 변경 내용 |
+|---|---|---|
+| `BossWardenFeedback.cs` | v1.1 → v1.2 | OnGaugeChanged 실시간 Lerp + DOColor 보정 |
+| `BossWardenDataSO.cs` | v1.0 → v1.1 | 색상 9개 변경 (부위 보라색 / 코어 노랑→빨강) |
+| `BossWardenArmPart.cs` | v1.1 → v1.2 | _ownCollider Inspector 직접 연결 |
+| `BossWardenCoreSealGauge.cs` | v1.1 → v1.2 | OnEnable 구독 + 코어 색상 보간 |
+
+---
+
+### BossWardenFeedback v1.2 핵심 변경
+
+```
+기존 (v1.0~v1.1):
+  OnStageChanged(int stage) 구독
+  → 4단계(0/25/50/75/100%) 점프 방식
+  → 때려도 단계 돌파 전까지 색상 변화 없음
+
+변경 (v1.2):
+  OnGaugeChanged(float UIPercent) 구독
+  → AddGauge 호출마다 발행
+  → t = UIPercent / 100f
+  → targetColor = Color.Lerp(colorArm0, colorArm100, t)
+  → tween?.Kill() → DOColor(targetColor, colorTransitionDuration)
+  → 플레이어가 때릴 때마다 색상이 자연스럽게 밝아지는 보정 효과
+
+OnSealReady 추가 구독:
+  → 봉인도 100% 도달 시 연보라 빠른 Pulse (집행 가능 상태 강조)
+
+OnStageChanged 구독 제거 / _armStageColors 배열 제거
+```
+
+---
+
+### 현재 전체 스크립트 버전 현황 (v1.2 기준)
+
+#### 플레이어 시스템
+
+| 파일 | 버전 |
+|---|---|
+| `PlayerInputHandler.cs` | v1.2 |
+| `PlayerMoveController.cs` | v1.2 |
+| `PlayerAttackDataSO.cs` | v2.2 |
+| `PlayerAttackController.cs` | v2.3 |
+| `PlayerWeaponSwingController.cs` | v1.3 |
+| `ObjectDirectionController.cs` | v1.1 |
+| `PlayerAttackHitboxManager.cs` | v1.1 |
+| `HitFeedbackController.cs` | v2.0 |
+
+#### Boss_Warden 시스템
+
+| 파일 | 버전 |
+|---|---|
+| `BossWardenDataSO.cs` | v1.1 |
+| `BossWardenArmPart.cs` | v1.2 |
+| `BossWardenCoreSealGauge.cs` | v1.2 |
+| `BossWardenFeedback.cs` | v1.2 |
+| `BossWardenSealExecutor.cs` | v1.1 |
+| `BossWardenCore.cs` | v1.1 |
+| `BossWardenAI.cs` | v1.2 |
+| `SealGaugeComponent.cs` | v1.2 |
+| `BossPatternBase.cs` | v1.2 |
+| `BossPattern_Charge.cs` | v1.3 |
+| `BossPattern_RageCharge.cs` | v1.1 |
+| 나머지 패턴 | v3.0 |
+
+### STEP 09 진행 현황
+
+| 항목 | 상태 |
+|---|---|
+| 플레이어 디테일링 1~7단계 | ✅ |
+| Boss 패턴 업데이트 | ✅ |
+| HitFeedback Pool 방식 재설계 | ✅ |
+| 봉인 시스템 연결 구조 버그 수정 | ✅ |
+| 색상 기획 변경 + 실시간 보간 | ✅ |
+| 전체 루프 통합 테스트 | ⬜ |
+
+---
+
+## v1.3 — PlayerController 신규 + 플레이어 시스템 전면 리팩토링
+
+**단계**: 핵심 메카닉 구현 (1단계) / STEP 09  
+**작업**: 세피리아 이동 로직 기반 PlayerController 총괄 관리자 신규 설계
+
+---
+
+### 리팩토링 배경
+
+기존 코드는 수정이 반복되면서 다음 문제가 누적됨:
+- `SetMoveLocked` 호출이 공격/대시/봉인 코드에 분산되어 충돌
+- 행동 우선순위가 각 컴포넌트에 분산되어 관리 불가
+- 이동 중 공격이 작동하지 않는 근본 원인: 설계 구조 문제
+
+---
+
+### 새로운 설계 원칙
+
+```
+PlayerInputHandler       → 입력 수신만
+PlayerMoveController     → 이동만 (WASD + 대시)
+PlayerAttackController   → 공격/콤보만 (스윙 명령 + 히트박스)
+PlayerWeaponSwingController → DOTween 연출만
+PlayerController         → 위 4개 총괄 + 상태 관리 + 우선순위 결정
+```
+
+---
+
+### PlayerController 상태 / 우선순위
+
+```
+상태: Idle / Move / Attack / Dash / Seal
+우선순위: Seal > Dash > Attack > Move > Idle
+
+이동 주도권 전환:
+  Idle/Move  → PlayerMoveController 가 WASD 처리
+  Attack     → PlayerController 가 공격 이동 처리
+               SetMoveLocked(true)
+               AttackMoveRoutine:
+                 WASD 있으면 → WASD 방향으로 AttackMoveSpeed 전진
+                 WASD 없으면 → 마우스 방향으로 AttackMoveSpeed 전진
+  Attack 종료 → SetMoveLocked(false) → WASD 이동 자연 복귀
+  Dash       → PlayerMoveController 대시 처리
+  Seal       → SetMoveLocked(true) + CancelAttack
+```
+
+---
+
+### 변경 파일 목록
+
+| 파일 | 버전 | 변경 내용 |
+|---|---|---|
+| `PlayerController.cs` | v1.0 (신규) | 상태 관리 총괄, 공격 이동, 우선순위 |
+| `PlayerAttackController.cs` | v2.4 → v3.0 | SetMoveLocked 전부 제거, AttackMoveRoutine 제거, OnAttackEnded 이벤트 추가 |
+| `PlayerMoveController.cs` | 수정 | DashRoutine wasMoveLocked 제거, CurrentVelocity 프로퍼티 추가 |
+
+---
+
+### POC08 적용 체크리스트
+
+```
+[ ] Player 오브젝트에 PlayerController 컴포넌트 추가
+
+[ ] PlayerAttackController.cs
+    → ComboRoutine: _isAttacking = false 후 OnAttackEnded?.Invoke() 추가
+    → ChargeRoutine: _isAttacking = false 후 OnAttackEnded?.Invoke() 추가
+    → CancelAttack: _isAttacking = false 후 OnAttackEnded?.Invoke() 추가
+    → SetMoveLocked 호출 전부 제거 확인
+
+[ ] PlayerMoveController.cs
+    → DashRoutine: wasMoveLocked 제거 → _isMoveLocked = false 명시
+    → CurrentVelocity 프로퍼티 추가
+
+[ ] BossWardenSealExecutor.cs
+    → BlockPlayerInput():   _playerController.EnterSeal() 로 변경
+    → UnblockPlayerInput(): _playerController.ExitSeal()  로 변경
+    → PlayerController 참조 추가 (FindObjectsByType)
+
+[ ] PlayerController Inspector
+    → _attackMoveSpeed:    3f
+    → _attackMoveDuration: 0.3f (BackswingDuration + AttackDuration 기준)
+```
+
+---
+
+### STEP 09 진행 현황
+
+| 항목 | 상태 |
+|---|---|
+| PlayerController 신규 설계 | ✅ |
+| PlayerAttackController v3.0 | ✅ |
+| PlayerMoveController 수정 | ✅ |
+| BossWardenSealExecutor 연동 | ⬜ |
+| 전체 루프 통합 테스트 | ⬜ |
