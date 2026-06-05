@@ -410,10 +410,11 @@ namespace SEAL
             {
                 _comboInputQueued = false;
                 _currentCombo = (_currentCombo + 1) % _data.MaxComboCount;
-                ExecuteCombo();
+                _attackCoroutine = StartCoroutine(ComboRoutine());
             }
             else
             {
+                OnAttackEnded?.Invoke();
                 StartResetTimer();
             }
 

@@ -545,13 +545,7 @@ namespace SEAL
                     if (_holdProgressText != null)
                         _holdProgressText.gameObject.SetActive(false);
                 });
-        }
-
-        // ══════════════════════════════════════════════════════
-        // 피격 점멸
-        // ══════════════════════════════════════════════════════
-
-        private void PlayHitFlash()
+        }   
 
         /// <summary>
         /// 봉인도 단계 변화 체크 (0/25/50/75/100%).

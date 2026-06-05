@@ -161,7 +161,11 @@ namespace SEAL
         {
             _swingSequence?.Kill();
             _chargePulseTween?.Kill();
-            if (_hitStopCoroutine != null) Time.timeScale = 1f;
+            if (_hitStopCoroutine != null)
+            {
+                StopCoroutine(_hitStopCoroutine);
+                Time.timeScale = 1f;  // ← 추가
+            }
         }
 
         // ══════════════════════════════════════════════════════
@@ -214,6 +218,14 @@ namespace SEAL
             {
                 StopCoroutine(_swingCoroutine);
                 _swingCoroutine = null;
+            }
+
+            // 히트스톱 코루틴 중단 시 TimeScale 반드시 복귀
+            if (_hitStopCoroutine != null)
+            {
+                StopCoroutine(_hitStopCoroutine);
+                _hitStopCoroutine = null;
+                Time.timeScale = 1f;  // ← 추가
             }
 
             _isSwinging = false;
