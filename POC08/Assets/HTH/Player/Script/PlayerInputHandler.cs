@@ -473,9 +473,10 @@ namespace SEAL
         /// </summary>
         public void BlockAction()
         {
-            _actionBlocked = true;
-            _isSealHeld = false;
-            _isAttackHeld = false;
+            Debug.Log($"[PlayerInputHandler] BlockAction 호출 — {System.Environment.StackTrace}");
+            _actionBlocked  = true;
+            _isSealHeld     = false;
+            _isAttackHeld   = false;
         }
 
         /// <summary>공격 / 봉인 / 상호작용 입력 차단 해제.</summary>

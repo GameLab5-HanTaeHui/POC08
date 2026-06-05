@@ -571,9 +571,6 @@ namespace SEAL
             _swingController.PlayChargeSwing(_currentAttackDir, _data.ChargeSealAmount);
             yield return null;
 
-            // 복귀 구간 - WASD 이동 복구 + 방향 번경 허용
-            _moveController.SetMoveLocked(false);
-
             float maxWait = (_data.BackswingDuration + _data.AttackDuration + _data.ReturnDuration) * 3f;
             float elapsed = 0f;
             while (_swingController.IsSwinging && elapsed < maxWait)

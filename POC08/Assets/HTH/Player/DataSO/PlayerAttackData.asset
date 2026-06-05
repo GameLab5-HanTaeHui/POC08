@@ -39,10 +39,10 @@ MonoBehaviour:
   Combo3SealAmount: 18
   Combo3HitStopDuration: 0.1
   ChargeMinHoldTime: 0.5
-  ChargeBackPos: {x: -0.5, y: 1}
-  ChargeAttackPos: {x: 2, y: -1}
-  ChargeRotBack: -150
-  ChargeRotAtk: -70
+  ChargeBackPos: {x: -2, y: 1}
+  ChargeAttackPos: {x: 2, y: 1}
+  ChargeRotBack: -180
+  ChargeRotAtk: 90
   ChargeClockwise: 1
   ChargeSealAmount: 30
   ChargeHitStopDuration: 0.1
