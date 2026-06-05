@@ -1,13 +1,18 @@
 ﻿// ============================================================
-// SealExecutor.cs  v1.1
+// SealExecutor.cs  v1.2
 // 봉인 집행 관리자 — 적 캐릭터 1개당 1개 보유
 //
-// [v1.1 수정]
-//   BossWardenAttackRange 연동 추가
-//   HandleSealRequested() → ShowSealRange() / ShowCoreRange() 호출
-//   HandleForceReleased() → HideSealRange() / HideCoreRange() 호출
-//   ExecuteSeal() 완료 시 → HideSealRange() / HideCoreRange() 호출
-//   Initialize() 에서 _attackRange 자동 탐색 추가
+// [v1.2 추가 — 집행 홀드 진행 % 텍스트 UI]
+//   집행 시작 → 대상 위 World Space TextMeshPro 에 "0%" 표시
+//   홀드 루프마다 → elapsed / holdTime × 100 → "XX%" 실시간 갱신
+//   완료 → DOFade(0) 소멸 + 완료 이펙트
+//   취소 → DOFade(0) 소멸
+//
+//   _holdProgressText : TextMeshPro (World Space Canvas 자식)
+//   _progressTextOffset : 텍스트 위치 오프셋 (기본 위로 1.5 유닛)
+//
+// [v1.1 유지]
+//   BossWardenAttackRange 연동 / 딕셔너리 캐싱
 //
 // [역할]
 //   자기 적의 SealableComponent 들에서 발행된
@@ -47,6 +52,8 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using TMPro;
+using DG.Tweening;
 
 namespace SEAL
 {
@@ -90,6 +97,30 @@ namespace SEAL
         /// </summary>
         [Tooltip("BossWardenAttackRange. 미연결 시 자동 탐색.")]
         [SerializeField] private BossWardenAttackRange _attackRange;
+
+        [Header("── 홀드 진행 텍스트 UI ──────────────────────")]
+
+        /// <summary>
+        /// 홀드 진행도 표시 TextMeshPro.
+        /// World Space Canvas 하위 TMP 오브젝트 연결.
+        /// 집행 중 대상 위에 "XX%" 실시간 표시.
+        ///
+        /// [씬 구성]
+        ///   Player (or SealExecutor 오브젝트)
+        ///   └─ SealProgressCanvas [Canvas] RenderMode=WorldSpace
+        ///        └─ SealProgressText [TextMeshPro]
+        ///             Font Size = 3 / Alignment = Center
+        ///             기본 SetActive=false
+        /// </summary>
+        [Tooltip("홀드 진행도 TMP. World Space Canvas 하위 연결. 미연결 시 텍스트 생략.")]
+        [SerializeField] private TextMeshPro _holdProgressText;
+
+        /// <summary>
+        /// 텍스트 오브젝트가 대상 Transform 위에 표시될 오프셋.
+        /// 기본값 (0, 1.5, 0) — 대상 위 1.5 유닛.
+        /// </summary>
+        [Tooltip("진행 텍스트 오프셋. 기본: (0, 1.5, 0).")]
+        [SerializeField] private Vector3 _progressTextOffset = new Vector3(0f, 1.5f, 0f);
 
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조
@@ -397,6 +428,10 @@ namespace SEAL
                 Debug.Log($"[SealExecutor] Core 슬로우 시작 → {_data.dilPhaseSlowTimeScale}");
             }
 
+            // ── 홀드 진행 텍스트 초기화 ──────────────────────
+            // 대상 위치 + 오프셋에 텍스트 배치 후 표시
+            ShowProgressText(target.transform.position, "0%");
+
             // 홀드 대기
             float elapsed = 0f;
             bool completed = false;
@@ -405,7 +440,7 @@ namespace SEAL
             {
                 if (_input == null || !_input.IsSealHeld)
                 {
-                    Debug.Log("[SealExecutor] S키 해제 → 집행 취소");
+                    Debug.Log("[SealExecutor] 키 해제 → 집행 취소");
                     break;
                 }
 
@@ -418,6 +453,12 @@ namespace SEAL
 
                 elapsed += Time.unscaledDeltaTime;
 
+                // ── % 텍스트 실시간 갱신 ──────────────────────
+                // 대상이 이동할 수 있으므로 매 프레임 위치도 갱신
+                int percent = Mathf.Clamp(
+                    Mathf.RoundToInt((elapsed / target.SealHoldTime) * 100f), 0, 100);
+                UpdateProgressText(target.transform.position, $"{percent}%");
+
                 if (elapsed >= target.SealHoldTime)
                     completed = true;
 
@@ -426,6 +467,12 @@ namespace SEAL
 
             if (completed)
             {
+                // ── 완료 텍스트 연출 후 소멸 ──────────────────────
+                // "100%" 표시 → 짧은 대기 → DOFade 소멸
+                UpdateProgressText(target.transform.position, "100%");
+                yield return new WaitForSecondsRealtime(0.1f);
+                HideProgressText();
+
                 // 집행 완료
                 target.ExecuteSeal();
                 _sealReadyList.Remove(target);
@@ -445,6 +492,11 @@ namespace SEAL
                     Debug.Log($"[SealExecutor] Part 슬로우 시작 → {_data.partSealSlowTimeScale}");
                     yield return new WaitForSecondsRealtime(_data.partSealSlowDuration);
                 }
+            }
+            else
+            {
+                // ── 취소 텍스트 소멸 ──────────────────────
+                HideProgressText();
             }
 
             RestoreTimeScale();
@@ -469,6 +521,70 @@ namespace SEAL
         {
             _input?.UnblockAll();
         }
+
+        // ══════════════════════════════════════════════════════
+        // 홀드 진행 텍스트 헬퍼
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// 홀드 진행 텍스트를 대상 위에 표시한다.
+        ///
+        /// [표시 방식]
+        ///   _holdProgressText 오브젝트를 대상 위치 + _progressTextOffset 으로 이동
+        ///   gameObject.SetActive(true) 후 텍스트 설정
+        ///   DOFade(1) 로 페이드인
+        /// </summary>
+        private void ShowProgressText(Vector3 targetWorldPos, string text)
+        {
+            if (_holdProgressText == null) return;
+
+            _holdProgressText.DOKill();
+            _holdProgressText.transform.position = targetWorldPos + _progressTextOffset;
+            _holdProgressText.text = text;
+            _holdProgressText.color = new Color(1f, 1f, 1f, 0f);
+            _holdProgressText.gameObject.SetActive(true);
+
+            _holdProgressText
+                .DOFade(1f, 0.15f)
+                .SetUpdate(true); // 슬로우 중에도 정상 동작
+        }
+
+        /// <summary>
+        /// 홀드 진행 텍스트를 갱신한다.
+        /// 대상이 이동 중일 수 있으므로 위치도 함께 갱신.
+        /// </summary>
+        private void UpdateProgressText(Vector3 targetWorldPos, string text)
+        {
+            if (_holdProgressText == null || !_holdProgressText.gameObject.activeSelf) return;
+
+            _holdProgressText.transform.position = targetWorldPos + _progressTextOffset;
+            _holdProgressText.text = text;
+        }
+
+        /// <summary>
+        /// 홀드 진행 텍스트를 DOFade 로 소멸시킨다.
+        ///
+        /// [완료 시]: 0.2초 페이드아웃
+        /// [취소 시]: 0.1초 빠른 페이드아웃
+        /// </summary>
+        private void HideProgressText(float duration = 0.2f)
+        {
+            if (_holdProgressText == null || !_holdProgressText.gameObject.activeSelf) return;
+
+            _holdProgressText.DOKill();
+            _holdProgressText
+                .DOFade(0f, duration)
+                .SetUpdate(true)
+                .OnComplete(() =>
+                {
+                    if (_holdProgressText != null)
+                        _holdProgressText.gameObject.SetActive(false);
+                });
+        }
+
+        // ══════════════════════════════════════════════════════
+        // TimeScale 복구
+        // ══════════════════════════════════════════════════════
 
         private void RestoreTimeScale()
         {
