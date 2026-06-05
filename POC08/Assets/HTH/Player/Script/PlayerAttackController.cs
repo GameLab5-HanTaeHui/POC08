@@ -310,24 +310,6 @@ namespace SEAL
             _isChargeHolding = true;
 
             _swingController.StartChargePulse();
-
-            if (!_isAttacking)
-            {
-                ExecuteComboAttack();
-                return;
-            }
-
-            if (_comboWindowOpen)
-            {
-                _comboInputQueued = true;
-
-                // [마우스 방향 기반]
-                // 콤보 입력 시점의 마우스 방향(FacingDirection)을 스냅샷으로 저장
-                // 다음 콤보는 이 시점의 마우스 방향으로 실행
-                _nextComboDir = _moveController != null
-                    ? _moveController.FacingDirection
-                    : Vector2.zero;
-            }
         }
 
         /// <summary>
@@ -340,12 +322,30 @@ namespace SEAL
 
             float holdTime = Time.time - _attackPressTime;
             _isChargeHolding = false;
-
             _swingController.StopChargePulse();
 
-            // 강공격: 최소 홀드 시간 충족 + 현재 공격 중 아님
+            // 강공격: 홀드 충족 + 현재 공격 중 아님
             if (holdTime >= _data.ChargeMinHoldTime && !_isAttacking)
+            {
                 ExecuteChargeAttack();
+                return;
+            }
+
+            // 기본 공격: 짧게 클릭
+            if (!_isAttacking)
+            {
+                ExecuteComboAttack();
+                return;
+            }
+
+            // 공격 중 + 콤보 윈도우 열림 → 콤보 예약
+            if (_comboWindowOpen)
+            {
+                _comboInputQueued = true;
+                _nextComboDir = _moveController != null
+                    ? _moveController.FacingDirection
+                    : Vector2.zero;
+            }
         }
 
         /// <summary>
