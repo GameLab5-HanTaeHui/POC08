@@ -427,7 +427,17 @@ namespace SEAL
 
         private void CheckChaseTransition()
         {
+            // 패턴 실행 중 (Warning / Active / Recovery) 이면 Chase 전환 금지.
+            // Warning 예고가 시작되면 보스는 반드시 Active 까지 패턴을 완수해야 한다.
+            if (_currentPattern != null) return;
+
+            // DilPhase 중 (_isStopped = true) 이면 Chase 전환 금지.
+            // _isStopped 가드는 FixedUpdate 에서 이미 처리하지만
+            // ChangeState 호출 자체를 막아 상태 오염을 방지한다.
+            if (_isStopped) return;
+
             if (_playerTransform == null || _data == null) return;
+
             float dist = Vector2.Distance(transform.position, _playerTransform.position);
             if (dist > _data.patternRange)
                 ChangeState(WardenAIState.Chase);
@@ -465,7 +475,13 @@ namespace SEAL
 
         private void TrySelectPattern()
         {
+            // 이미 패턴 실행 중이면 무시.
             if (_currentPattern != null) return;
+
+            // DilPhase 중 (_isStopped = true) 이면 패턴 선택 금지.
+            // DilPhase 진입 직후 1프레임 내 패턴 선택을 방지.
+            if (_isStopped) return;
+
             if (_patterns == null || _patterns.Count == 0) return;
 
             _availablePatterns.Clear();
@@ -490,27 +506,38 @@ namespace SEAL
         /// 패턴 실행 코루틴. Warning → Active → Recovery.
         /// 각 단계 전후 _isStopped 이중 체크.
         /// </summary>
+        /// <summary>
+        /// 패턴 실행 코루틴. Warning → Active → Recovery.
+        ///
+        /// [중단 조건 — _isStopped 단독 가드]
+        ///   _isStopped = true 는 DilPhase 진입 / Dead 시에만 발생.
+        ///   Warning 중 Chase 전환은 CheckChaseTransition() 에서 이미 차단되므로
+        ///   _currentState 체크는 불필요. _isStopped 만으로 충분.
+        ///
+        /// [패턴 완수 원칙]
+        ///   Warning 이 시작되면 _isStopped 가 아닌 한 Active 까지 반드시 완수.
+        ///   플레이어가 범위 밖으로 나가도 패턴은 끝까지 실행된다.
+        /// </summary>
         private IEnumerator ExecutePattern(BossPatternBase pattern)
         {
             string pName = pattern.GetType().Name;
 
-            // Warning
+            // ── Warning ──
             Debug.Log($"[BossWardenAI] ▶ [{pName}] Warning");
             ChangeState(WardenAIState.Warning);
             yield return StartCoroutine(pattern.ExecuteWarning());
 
-            if (_isStopped || _currentState != WardenAIState.Warning)
-            { CleanupPattern(); yield break; }
+            // DilPhase 진입 등 강제 중단 시에만 취소
+            if (_isStopped) { CleanupPattern(); yield break; }
 
-            // Active
+            // ── Active ──
             Debug.Log($"[BossWardenAI] ▶ [{pName}] Active");
             ChangeState(WardenAIState.Active);
             yield return StartCoroutine(pattern.ExecuteActive());
 
-            if (_isStopped || _currentState != WardenAIState.Active)
-            { CleanupPattern(); yield break; }
+            if (_isStopped) { CleanupPattern(); yield break; }
 
-            // Recovery
+            // ── Recovery ──
             Debug.Log($"[BossWardenAI] ▶ [{pName}] Recovery");
             ChangeState(WardenAIState.Recovery);
             SetArmsRecoveryVuln(true);
@@ -519,10 +546,9 @@ namespace SEAL
 
             SetArmsRecoveryVuln(false);
 
-            if (_isStopped)
-            { CleanupPattern(); yield break; }
+            if (_isStopped) { CleanupPattern(); yield break; }
 
-            // 정상 완료
+            // ── 정상 완료 ──
             Debug.Log($"[BossWardenAI] ✅ [{pName}] 패턴 완료 → Idle");
             CleanupPattern();
             ChangeState(WardenAIState.Idle);
