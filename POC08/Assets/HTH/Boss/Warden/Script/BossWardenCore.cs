@@ -321,6 +321,8 @@ namespace SEAL
             if (_rigid2D != null)
                 _rigid2D.linearVelocity = Vector2.zero;
 
+            OnGroggyEnter?.Invoke();
+
             Debug.Log("[BossWardenCore] ▶ Groggy 진입 브리지");
         }
 
@@ -332,6 +334,8 @@ namespace SEAL
         {
             _ai?.OnGroggyExit();
             _feedback?.OnGroggyExit();
+
+            OnGroggyExit?.Invoke();
 
             Debug.Log("[BossWardenCore] ■ Groggy 실패 종료 브리지");
         }
@@ -345,6 +349,8 @@ namespace SEAL
             _ai?.OnDilPhaseEnter();
             _feedback?.OnDilPhaseEnter();
 
+            OnDilPhaseEnter?.Invoke();
+
             Debug.Log("[BossWardenCore] ▶ DilPhase 진입 브리지");
         }
 
@@ -356,6 +362,8 @@ namespace SEAL
         {
             _ai?.OnDilPhaseExit();
             _feedback?.OnDilPhaseExit();
+
+            OnDilPhaseExit?.Invoke();
 
             Debug.Log("[BossWardenCore] ■ DilPhase 종료 브리지");
         }

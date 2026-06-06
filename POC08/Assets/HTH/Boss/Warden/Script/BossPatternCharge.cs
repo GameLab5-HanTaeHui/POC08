@@ -444,7 +444,7 @@ namespace SEAL
             {
                 _armColorTween?.Kill();
                 _armColorTween = _armRRenderer
-                    .DOColor(_armOriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
+                    .DOColor(_armOriginColor, _data?.ColorData.colorLerpDuration ?? 0.1f)
                     .SetUpdate(true);
             }
 
