@@ -12,35 +12,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f06c30a364e6bb34bbf5664ea8f41721, type: 3}
   m_Name: BossWardenDataSO
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenDataSO
-  armSealGaugeMax: 200
-  sealResistMultipliers:
-  - 1
-  - 0.8
-  - 0.6
-  - 0.4
-  coreSealGaugeMax: 500
-  phase1CoreSealTarget: 250
-  phase2CoreSealTarget: 500
-  coreBasicAttackGain: 25
-  coreChargeAttackGain: 75
-  sealExecutionRange: 1.5
-  sealExecutionHoldTime: 1.5
-  partSealSlowTimeScale: 0.5
-  partSealSlowDuration: 0.25
-  coreUnlockRange: 1.5
-  coreUnlockHoldTime: 3
-  dilPhaseSlowTimeScale: 0.3
-  finalSealHoldTime: 2
-  finalSealSlowTimeScale: 0.1
-  groggyDuration: 5
-  dilPhaseDuration: 10
-  shockwaveRadius: 6
-  shockwaveKnockbackForce: 12
-  shockwaveKnockbackDuration: 0.2
+  _sealData: {fileID: 11400000, guid: f5548782e3d315f4b8609704d6ad3d38, type: 2}
+  _colorData: {fileID: 11400000, guid: 6fbc249b8b06b334394c72c2237e633f, type: 2}
+  colorIdle: {r: 0.533, g: 0.533, b: 0.533, a: 1}
+  colorWarning: {r: 1, g: 0.533, b: 0, a: 1}
+  colorActive: {r: 1, g: 1, b: 1, a: 1}
+  colorRecovery: {r: 0.8, g: 0.133, b: 0, a: 1}
+  colorGroggy: {r: 1, g: 0.933, b: 0, a: 1}
+  colorDilPhase: {r: 1, g: 0.4, b: 0, a: 1}
+  colorPhase2: {r: 0.6, g: 0, b: 0, a: 1}
+  colorDead: {r: 0.067, g: 0.067, b: 0.067, a: 1}
+  colorWarningRange: {r: 1, g: 0, b: 0, a: 0.4}
   moveSpeed: 3.5
   phase2MoveSpeed: 4.5
   patternRange: 5
   flipCooldown: 0.5
+  dilPhaseDuration: 10
+  shockwaveRadius: 6
+  shockwaveKnockbackForce: 12
+  shockwaveKnockbackDuration: 0.2
+  recoveryVulnMultiplier: 1.5
   chargeSpeed: 12
   phase2ChargeSpeed: 16
   chargeDistance: 8
@@ -58,27 +49,3 @@ MonoBehaviour:
   rageChargeSpeed: 18
   rageChargeCount: 3
   rageChargeInterval: 0.2
-  recoveryVulnMultiplier: 1.5
-  colorIdle: {r: 0.533, g: 0.533, b: 0.533, a: 1}
-  colorWarning: {r: 1, g: 0.533, b: 0, a: 1}
-  colorActive: {r: 1, g: 1, b: 1, a: 1}
-  colorRecovery: {r: 0.8, g: 0.133, b: 0, a: 1}
-  colorGroggy: {r: 1, g: 0.933, b: 0, a: 1}
-  colorDilPhase: {r: 1, g: 0.4, b: 0, a: 1}
-  colorPhase2: {r: 0.6, g: 0, b: 0, a: 1}
-  colorDead: {r: 0.067, g: 0.067, b: 0.067, a: 1}
-  colorArm0: {r: 0.667, g: 0.667, b: 0.667, a: 1}
-  colorArm25: {r: 1, g: 0.867, b: 0, a: 1}
-  colorArm50: {r: 1, g: 0.533, b: 0, a: 1}
-  colorArm75: {r: 1, g: 0.133, b: 0, a: 1}
-  colorArm100: {r: 0, g: 0.533, b: 1, a: 1}
-  colorArmSealed: {r: 0, g: 0.267, b: 0.8, a: 1}
-  colorCoreActive: {r: 1, g: 0.933, b: 0, a: 1}
-  colorCoreDilPhase: {r: 1, g: 1, b: 1, a: 1}
-  colorCoreFinalSeal: {r: 0.667, g: 0.867, b: 1, a: 1}
-  colorWarningRange: {r: 1, g: 0, b: 0, a: 0.4}
-  colorSealRange: {r: 0, g: 0.533, b: 1, a: 1}
-  colorCoreRange: {r: 1, g: 0.933, b: 0, a: 1}
-  colorTransitionDuration: 0.1
-  pulsePeriod: 0.4
-  hitFlashDuration: 0.07

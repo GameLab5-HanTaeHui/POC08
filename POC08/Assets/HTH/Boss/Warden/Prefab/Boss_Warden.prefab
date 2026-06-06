@@ -165,11 +165,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2758901375154016836}
-  - component: {fileID: 2450433757874556660}
-  - component: {fileID: 8732218318763563352}
-  - component: {fileID: 46603506791278058}
-  - component: {fileID: 8802318017502285533}
-  - component: {fileID: 412645545033403399}
   m_Layer: 0
   m_Name: Patterns
   m_TagString: Untagged
@@ -189,172 +184,14 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
-  m_Children: []
+  m_Children:
+  - {fileID: 1158021419399430277}
+  - {fileID: 7094160609015440656}
+  - {fileID: 681061284965940886}
+  - {fileID: 4594540211661857858}
+  - {fileID: 1070660889804721541}
   m_Father: {fileID: 6340535644284860753}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &2450433757874556660
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 885906216481785606}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d61a7c5cc303e7e41bf925040c2fb136, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_Charge
-  _cooldown: 5
-  _warningDuration: 1
-  _recoveryDuration: 0.8
-  _triggerGroggyOnRecovery: 0
-  _linkedArmPart: {fileID: 4394930287480848199}
-  _isPhase2Only: 0
-  _attackRange: {fileID: 5298859741369411445}
-  _rigid2D: {fileID: 6556072117920470920}
-  _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _armRTransform: {fileID: 3847391736941397255}
-  _armRRenderer: {fileID: 667973993591523152}
-  _playerLayer:
-    serializedVersion: 2
-    m_Bits: 256
-  _wallLayer:
-    serializedVersion: 2
-    m_Bits: 1073741824
-  _windupPullAmount: 0.5
-  _thrustAmount: 0.4
---- !u!114 &8732218318763563352
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 885906216481785606}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0cae9c08e9272954f98c2619a648ca90, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_Slam
-  _cooldown: 5
-  _warningDuration: 1
-  _recoveryDuration: 0.8
-  _triggerGroggyOnRecovery: 0
-  _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 0
-  _attackRange: {fileID: 5298859741369411445}
-  _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _armLTransform: {fileID: 8941543154467429545}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _playerLayer:
-    serializedVersion: 2
-    m_Bits: 256
-  _windupPullAmount: 0.3
-  _windupLiftAmount: 0.3
-  _slamMoveDuration: 0.15
-  _slamVulnDuration: 2
-  _slamVulnMultiplier: 2
-  _returnDuration: 0.25
---- !u!114 &46603506791278058
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 885906216481785606}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2facacfe60fd74b4da381c2f1518412f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_Sweep
-  _cooldown: 5
-  _warningDuration: 1
-  _recoveryDuration: 0.8
-  _triggerGroggyOnRecovery: 0
-  _linkedArmPart: {fileID: 4585807861786295039}
-  _isPhase2Only: 0
-  _attackRange: {fileID: 5298859741369411445}
-  _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _armLTransform: {fileID: 8941543154467429545}
-  _armRTransform: {fileID: 3847391736941397255}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _armRRenderer: {fileID: 667973993591523152}
-  _bodyRenderer: {fileID: 3534132678184260611}
-  _playerLayer:
-    serializedVersion: 2
-    m_Bits: 4194304
-  _armSpreadAmount: 0.5
-  _flyDistance: 1.5
-  _flyDuration: 0.2
-  _flyVulnDuration: 1.5
-  _returnDuration: 0.3
---- !u!114 &8802318017502285533
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 885906216481785606}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c0de8a6820ff7a34c8efb5acc6fa65df, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_GuardBreak
-  _cooldown: 5
-  _warningDuration: 1
-  _recoveryDuration: 0.8
-  _triggerGroggyOnRecovery: 0
-  _linkedArmPart: {fileID: 4394930287480848199}
-  _isPhase2Only: 0
-  _attackRange: {fileID: 5298859741369411445}
-  _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _armRTransform: {fileID: 3847391736941397255}
-  _armLTransform: {fileID: 8941543154467429545}
-  _armRRenderer: {fileID: 667973993591523152}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _bodyRenderer: {fileID: 3534132678184260611}
-  _playerLayer:
-    serializedVersion: 2
-    m_Bits: 256
-  _guardForwardAmount: 0.4
-  _windupPullAmount: 0.5
-  _thrustDistance: 1
-  _thrustDuration: 0.08
---- !u!114 &412645545033403399
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 885906216481785606}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 958a081575eec9545ad4ae72618e7ecf, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_RageCharge
-  _cooldown: 5
-  _warningDuration: 1
-  _recoveryDuration: 0.8
-  _triggerGroggyOnRecovery: 0
-  _linkedArmPart: {fileID: 0}
-  _isPhase2Only: 1
-  _attackRange: {fileID: 5298859741369411445}
-  _rigid2D: {fileID: 6556072117920470920}
-  _ai: {fileID: 1510995343637259522}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _bodyRenderer: {fileID: 3534132678184260611}
-  _armLTransform: {fileID: 8941543154467429545}
-  _armRTransform: {fileID: 3847391736941397255}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _armRRenderer: {fileID: 667973993591523152}
-  _playerLayer:
-    serializedVersion: 2
-    m_Bits: 256
-  _windupPullAmount: 0.4
-  _thrustAmount: 0.3
 --- !u!1 &1780939362410602824
 GameObject:
   m_ObjectHideFlags: 0
@@ -537,6 +374,71 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!1 &2620868806402189393
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 681061284965940886}
+  - component: {fileID: 2665662239375131634}
+  m_Layer: 0
+  m_Name: GuardBreak
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &681061284965940886
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2620868806402189393}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2758901375154016836}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2665662239375131634
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2620868806402189393}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0de8a6820ff7a34c8efb5acc6fa65df, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_GuardBreak
+  _cooldown: 5
+  _warningDuration: 1
+  _recoveryDuration: 0.8
+  _triggerGroggyOnRecovery: 0
+  _linkedArmPart: {fileID: 4394930287480848199}
+  _isPhase2Only: 0
+  _attackRange: {fileID: 5298859741369411445}
+  _ai: {fileID: 1510995343637259522}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _armRTransform: {fileID: 3847391736941397255}
+  _armLTransform: {fileID: 8941543154467429545}
+  _armRRenderer: {fileID: 667973993591523152}
+  _armLRenderer: {fileID: 3641258697330880272}
+  _bodyRenderer: {fileID: 3534132678184260611}
+  _playerLayer:
+    serializedVersion: 2
+    m_Bits: 256
+  _guardForwardAmount: 0.4
+  _windupPullAmount: 0.5
+  _thrustDistance: 1
+  _thrustDuration: 0.08
 --- !u!1 &2634589276354884261
 GameObject:
   m_ObjectHideFlags: 0
@@ -683,8 +585,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenArmPart
   _partType: 0
   _ownCollider: {fileID: 1412219600664688225}
-  _spriteRenderer: {fileID: 3641258697330880272}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _guardBreakPattern: {fileID: 0}
 --- !u!114 &8126104515186921542
 MonoBehaviour:
@@ -699,12 +600,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealableComponent
   grade: 1
-  _maxGauge: 200
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _sealRange: 1.5
   _sealHoldTime: 1.5
+  _normalMaxGauge: 100
   _isDilPhaseOnly: 0
   _phaseTarget: 0
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 3641258697330880272}
   _holdProgressText: {fileID: 0}
   _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
@@ -725,7 +626,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1396612535062583916
 Transform:
   m_ObjectHideFlags: 0
@@ -814,12 +715,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealableComponent
   grade: 2
-  _maxGauge: 200
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _sealRange: 1.5
   _sealHoldTime: 1.5
+  _normalMaxGauge: 100
   _isDilPhaseOnly: 1
   _phaseTarget: 1
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 4626551619868309503}
   _holdProgressText: {fileID: 0}
   _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
@@ -834,6 +735,12 @@ GameObject:
   - component: {fileID: 6177478814730288151}
   - component: {fileID: 3534132678184260611}
   - component: {fileID: 6940862620059436771}
+  - component: {fileID: 6532235574140843708}
+  - component: {fileID: 6971018846279596309}
+  - component: {fileID: 289794227715553338}
+  - component: {fileID: 43621167555865839}
+  - component: {fileID: 7362458348731666786}
+  - component: {fileID: 3886305372271976440}
   m_Layer: 20
   m_Name: Boss_WardenBody
   m_TagString: Untagged
@@ -952,6 +859,90 @@ CapsuleCollider2D:
   m_Offset: {x: 0, y: 0}
   m_Size: {x: 1, y: 1}
   m_Direction: 0
+--- !u!114 &6532235574140843708
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2927865824481869591}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8eb197e4659fef4687c85e5cb4acf13, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealStateManager
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _coreObject: {fileID: 2815818081025082498}
+--- !u!114 &6971018846279596309
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2927865824481869591}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 15a03a89e02f6bd4a8977510d65fcebe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeManager
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+--- !u!114 &289794227715553338
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2927865824481869591}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9700743b8cc062c4e8c10ccf7f8b1a88, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealManager
+  _requiredSealCountForGroggy: 0
+--- !u!114 &43621167555865839
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2927865824481869591}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa06238b863adbc46b43f33b1bcd393d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealEffectManager
+  _coreTransform: {fileID: 1396612535062583916}
+  _shockwave: {fileID: 6966774668998716745}
+  _coreRangeCircle: {fileID: 0}
+  _coreRangeLineWidth: 0.06
+  _coreRangeSegments: 32
+  _cameraTransform: {fileID: 0}
+--- !u!114 &7362458348731666786
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2927865824481869591}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c99def388e030244095411479a74a6a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionEvent
+--- !u!114 &3886305372271976440
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2927865824481869591}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5804968194af4d04c806d23adfe00c3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionRunner
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _executionEvent: {fileID: 7362458348731666786}
 --- !u!1 &3153932892854605847
 GameObject:
   m_ObjectHideFlags: 0
@@ -968,7 +959,6 @@ GameObject:
   - component: {fileID: 367445595963278709}
   - component: {fileID: 5298859741369411445}
   - component: {fileID: 6966774668998716745}
-  - component: {fileID: 8185960455452908859}
   m_Layer: 0
   m_Name: Boss_Warden
   m_TagString: Untagged
@@ -1097,15 +1087,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e53fe91ccc3d98349a5854e69bc26324, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenCore
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
-  _armLSealable: {fileID: 8126104515186921542}
-  _armRSealable: {fileID: 5246646074738677253}
-  _coreSealable: {fileID: 5129514092272054624}
-  _sealExecutor: {fileID: 8185960455452908859}
   _coreObject: {fileID: 2815818081025082498}
-  _shockwave: {fileID: 6966774668998716745}
 --- !u!114 &1510995343637259522
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1118,14 +1103,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7b78b941911d90c4dac802f664aac94e, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenAI
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _patterns:
-  - {fileID: 2450433757874556660}
-  - {fileID: 2450433757874556660}
-  - {fileID: 8732218318763563352}
-  - {fileID: 46603506791278058}
-  - {fileID: 8802318017502285533}
-  - {fileID: 412645545033403399}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
+  - {fileID: 0}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
 --- !u!114 &367445595963278709
@@ -1140,8 +1125,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d1a379aeae2763e4892c395f8c900b63, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenFeedback
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _core: {fileID: 7116612192379757486}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _ai: {fileID: 1510995343637259522}
   _armLPart: {fileID: 4585807861786295039}
   _armRPart: {fileID: 4394930287480848199}
@@ -1153,8 +1137,6 @@ MonoBehaviour:
   _armLSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
   _armRSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
   _armRSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
-  _coreSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
-  _coreSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
 --- !u!114 &5298859741369411445
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1178,7 +1160,7 @@ MonoBehaviour:
   - {fileID: 8706724287300603285}
   _sealRangeCircle: {fileID: 2528680064604181190}
   _coreRangeCircle: {fileID: 7068618741574333414}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
 --- !u!114 &6966774668998716745
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1191,7 +1173,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 156f7f7400ba1e040971e6a00676dc3b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenShockwave
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 320
@@ -1199,20 +1181,136 @@ MonoBehaviour:
   _cameraTransform: {fileID: 0}
   _cameraShakeStrength: 0.25
   _cameraShakeDuration: 0.3
---- !u!114 &8185960455452908859
+--- !u!1 &3310431951455366626
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4594540211661857858}
+  - component: {fileID: 1773114150699548557}
+  m_Layer: 0
+  m_Name: RageCharge
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4594540211661857858
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3310431951455366626}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2758901375154016836}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1773114150699548557
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3153932892854605847}
+  m_GameObject: {fileID: 3310431951455366626}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 82d806a45a22a824ea915c35fb2ef7b3, type: 3}
+  m_Script: {fileID: 11500000, guid: 958a081575eec9545ad4ae72618e7ecf, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutor
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_RageCharge
+  _cooldown: 5
+  _warningDuration: 1
+  _recoveryDuration: 0.8
+  _triggerGroggyOnRecovery: 0
+  _linkedArmPart: {fileID: 0}
+  _isPhase2Only: 1
   _attackRange: {fileID: 5298859741369411445}
+  _rigid2D: {fileID: 6556072117920470920}
+  _ai: {fileID: 1510995343637259522}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _bodyRenderer: {fileID: 3534132678184260611}
+  _armLTransform: {fileID: 8941543154467429545}
+  _armRTransform: {fileID: 3847391736941397255}
+  _armLRenderer: {fileID: 3641258697330880272}
+  _armRRenderer: {fileID: 667973993591523152}
+  _playerLayer:
+    serializedVersion: 2
+    m_Bits: 256
+  _windupPullAmount: 0.4
+  _thrustAmount: 0.3
+--- !u!1 &3650634429174591228
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7094160609015440656}
+  - component: {fileID: 8237974629196471921}
+  m_Layer: 0
+  m_Name: Sweep
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7094160609015440656
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3650634429174591228}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2758901375154016836}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8237974629196471921
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3650634429174591228}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2facacfe60fd74b4da381c2f1518412f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_Sweep
+  _cooldown: 5
+  _warningDuration: 1
+  _recoveryDuration: 0.8
+  _triggerGroggyOnRecovery: 0
+  _linkedArmPart: {fileID: 4585807861786295039}
+  _isPhase2Only: 0
+  _attackRange: {fileID: 5298859741369411445}
+  _ai: {fileID: 1510995343637259522}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _armLTransform: {fileID: 8941543154467429545}
+  _armRTransform: {fileID: 3847391736941397255}
+  _armLRenderer: {fileID: 3641258697330880272}
+  _armRRenderer: {fileID: 667973993591523152}
+  _bodyRenderer: {fileID: 3534132678184260611}
+  _playerLayer:
+    serializedVersion: 2
+    m_Bits: 4194304
+  _armSpreadAmount: 0.5
+  _flyDistance: 1.5
+  _flyDuration: 0.2
+  _flyVulnDuration: 1.5
+  _returnDuration: 0.3
 --- !u!1 &3820522534865309555
 GameObject:
   m_ObjectHideFlags: 0
@@ -2142,6 +2240,70 @@ CapsuleCollider2D:
   m_Offset: {x: 0, y: 0}
   m_Size: {x: 1, y: 1}
   m_Direction: 0
+--- !u!1 &7182180716934884453
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1070660889804721541}
+  - component: {fileID: 937471434657274340}
+  m_Layer: 0
+  m_Name: Charge
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1070660889804721541
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7182180716934884453}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2758901375154016836}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &937471434657274340
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7182180716934884453}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d61a7c5cc303e7e41bf925040c2fb136, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_Charge
+  _cooldown: 5
+  _warningDuration: 1
+  _recoveryDuration: 0.8
+  _triggerGroggyOnRecovery: 0
+  _linkedArmPart: {fileID: 4394930287480848199}
+  _isPhase2Only: 0
+  _attackRange: {fileID: 5298859741369411445}
+  _rigid2D: {fileID: 6556072117920470920}
+  _ai: {fileID: 1510995343637259522}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _armRTransform: {fileID: 3847391736941397255}
+  _armRRenderer: {fileID: 667973993591523152}
+  _playerLayer:
+    serializedVersion: 2
+    m_Bits: 256
+  _wallLayer:
+    serializedVersion: 2
+    m_Bits: 1073741824
+  _windupPullAmount: 0.5
+  _thrustAmount: 0.4
 --- !u!1 &7263643612136954821
 GameObject:
   m_ObjectHideFlags: 0
@@ -2288,9 +2450,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenArmPart
   _partType: 1
   _ownCollider: {fileID: 5537126293119943448}
-  _spriteRenderer: {fileID: 667973993591523152}
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
-  _guardBreakPattern: {fileID: 8802318017502285533}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _guardBreakPattern: {fileID: 2665662239375131634}
 --- !u!114 &5246646074738677253
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2304,12 +2465,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealableComponent
   grade: 1
-  _maxGauge: 200
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _sealRange: 1.5
   _sealHoldTime: 1.5
+  _normalMaxGauge: 100
   _isDilPhaseOnly: 0
   _phaseTarget: 0
-  _data: {fileID: 11400000, guid: f6bc4ebb361af2b4593eaa9f341a8c0d, type: 2}
   _spriteRenderer: {fileID: 667973993591523152}
   _holdProgressText: {fileID: 0}
   _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
@@ -2466,7 +2627,7 @@ GameObject:
   - component: {fileID: 6627300851405303288}
   - component: {fileID: 2528680064604181190}
   m_Layer: 0
-  m_Name: SealRangeCirlcle
+  m_Name: SealRangeCircle
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2688,3 +2849,67 @@ SpriteRenderer:
   m_SpriteTileMode: 0
   m_WasSpriteAssigned: 1
   m_SpriteSortPoint: 0
+--- !u!1 &9129174887252318660
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1158021419399430277}
+  - component: {fileID: 977547751071632564}
+  m_Layer: 0
+  m_Name: Slam
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1158021419399430277
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9129174887252318660}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2758901375154016836}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &977547751071632564
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 9129174887252318660}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cae9c08e9272954f98c2619a648ca90, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPattern_Slam
+  _cooldown: 5
+  _warningDuration: 1
+  _recoveryDuration: 0.8
+  _triggerGroggyOnRecovery: 0
+  _linkedArmPart: {fileID: 4585807861786295039}
+  _isPhase2Only: 0
+  _attackRange: {fileID: 5298859741369411445}
+  _ai: {fileID: 1510995343637259522}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _armLTransform: {fileID: 8941543154467429545}
+  _armLRenderer: {fileID: 3641258697330880272}
+  _playerLayer:
+    serializedVersion: 2
+    m_Bits: 256
+  _windupPullAmount: 0.3
+  _windupLiftAmount: 0.3
+  _slamMoveDuration: 0.15
+  _slamVulnDuration: 2
+  _slamVulnMultiplier: 2
+  _returnDuration: 0.25
