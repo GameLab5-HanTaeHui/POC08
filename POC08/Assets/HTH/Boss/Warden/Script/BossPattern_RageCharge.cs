@@ -220,7 +220,7 @@ namespace SEAL
             {
                 _pulseTween?.Kill();
                 _pulseTween = _bodyRenderer
-                    .DOColor(new Color(0.6f, 0f, 0f), _data.pulsePeriod * 0.4f)
+                    .DOColor(new Color(0.6f, 0f, 0f), _data.ColorData.sealReadyPulseDuration * 0.4f)
                     .SetLoops(-1, LoopType.Yoyo)
                     .SetUpdate(true);
             }
@@ -443,7 +443,7 @@ namespace SEAL
             {
                 _pulseTween?.Kill();
                 _bodyRenderer
-                    .DOColor(_bodyOriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .DOColor(_bodyOriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
                     .SetUpdate(true);
             }
 
@@ -451,7 +451,7 @@ namespace SEAL
             {
                 _armLColorTween?.Kill();
                 _armLColorTween = _armLRenderer
-                    .DOColor(_armLOriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .DOColor(_armLOriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
                     .SetUpdate(true);
             }
 
@@ -459,7 +459,7 @@ namespace SEAL
             {
                 _armRColorTween?.Kill();
                 _armRColorTween = _armRRenderer
-                    .DOColor(_armROriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .DOColor(_armROriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
                     .SetUpdate(true);
             }
 

@@ -481,14 +481,14 @@ namespace SEAL
             {
                 _armRColorTween?.Kill();
                 _armRColorTween = _armRRenderer
-                    .DOColor(_armROriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .DOColor(_armROriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
                     .SetUpdate(true);
             }
             if (_armLRenderer != null)
             {
                 _armLColorTween?.Kill();
                 _armLColorTween = _armLRenderer
-                    .DOColor(_armLOriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .DOColor(_armLOriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
                     .SetUpdate(true);
             }
 

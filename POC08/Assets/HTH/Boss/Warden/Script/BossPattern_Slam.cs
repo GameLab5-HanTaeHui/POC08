@@ -280,7 +280,7 @@ namespace SEAL
             {
                 _armColorTween?.Kill();
                 _armColorTween = _armLRenderer
-                    .DOColor(_data.colorWarning, _data.pulsePeriod * 0.5f)
+                    .DOColor(_data.colorWarning, _data.ColorData.sealReadyPulseDuration * 0.5f)
                     .SetLoops(-1, LoopType.Yoyo)
                     .SetUpdate(true);
             }
@@ -389,7 +389,7 @@ namespace SEAL
             {
                 _armColorTween?.Kill();
                 _armColorTween = _armLRenderer
-                    .DOColor(_data.colorArm100, _data.pulsePeriod * 0.3f)
+                    .DOColor(_data.ColorData.colorFull, _data.ColorData.sealReadyPulseDuration * 0.3f)
                     .SetLoops(-1, LoopType.Yoyo)
                     .SetUpdate(true);
             }
@@ -449,7 +449,7 @@ namespace SEAL
             {
                 _armColorTween?.Kill();
                 _armColorTween = _armLRenderer
-                    .DOColor(_armOriginColor, _data?.colorTransitionDuration ?? 0.1f)
+                    .DOColor(_armOriginColor, _data?.ColorData.sealTransitionDuration ?? 0.1f)
                     .SetUpdate(true);
             }
 

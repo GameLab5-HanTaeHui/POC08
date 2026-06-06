@@ -160,6 +160,19 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
+        // 초기화 — BossWardenCore 에서 주입
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// BossWardenDataSO 주입.
+        /// BossWardenCore.InjectData() 에서 호출.
+        /// </summary>
+        public void Initialize(BossWardenDataSO data)
+        {
+            _data = data;
+        }
+
+        // ══════════════════════════════════════════════════════
         // Charge 예고선
         // ══════════════════════════════════════════════════════
 
@@ -434,7 +447,7 @@ namespace SEAL
                 centerPos,
                 radius,
                 segments: 32,
-                color: _data != null ? _data.colorSealRange : Color.blue);
+                color: _data != null ? _data.ColorData.colorSealRange : Color.blue);
 
             _sealRangeCircle.gameObject.SetActive(true);
         }
@@ -467,7 +480,7 @@ namespace SEAL
                 centerPos,
                 radius,
                 segments: 32,
-                color: _data != null ? _data.colorCoreRange : Color.yellow);
+                color: _data != null ? _data.ColorData.colorSealRange : Color.yellow);
 
             _coreRangeCircle.gameObject.SetActive(true);
         }
