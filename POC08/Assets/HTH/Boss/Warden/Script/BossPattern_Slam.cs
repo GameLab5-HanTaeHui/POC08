@@ -237,7 +237,7 @@ namespace SEAL
             _slamTarget0 = GetPlayerPos();
 
             // ② 예고 디스크를 플레이어 위치에 정확히 배치
-            _attackRange?.ShowSlamDisc(_slamTarget0, _data.slamWarningRadius, 0);
+            _attackRange?.ShowSlamDisc(_slamTarget0, _data.slamHitRadius, 0);
 
             // ③ 보스→플레이어 방향 계산 (월드 기준)
             Vector2 bossPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;

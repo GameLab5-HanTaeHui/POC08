@@ -735,12 +735,6 @@ GameObject:
   - component: {fileID: 6177478814730288151}
   - component: {fileID: 3534132678184260611}
   - component: {fileID: 6940862620059436771}
-  - component: {fileID: 6532235574140843708}
-  - component: {fileID: 6971018846279596309}
-  - component: {fileID: 289794227715553338}
-  - component: {fileID: 43621167555865839}
-  - component: {fileID: 7362458348731666786}
-  - component: {fileID: 3886305372271976440}
   m_Layer: 20
   m_Name: Boss_WardenBody
   m_TagString: Untagged
@@ -859,90 +853,6 @@ CapsuleCollider2D:
   m_Offset: {x: 0, y: 0}
   m_Size: {x: 1, y: 1}
   m_Direction: 0
---- !u!114 &6532235574140843708
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2927865824481869591}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f8eb197e4659fef4687c85e5cb4acf13, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealStateManager
-  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
-  _coreObject: {fileID: 2815818081025082498}
---- !u!114 &6971018846279596309
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2927865824481869591}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 15a03a89e02f6bd4a8977510d65fcebe, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeManager
-  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
---- !u!114 &289794227715553338
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2927865824481869591}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9700743b8cc062c4e8c10ccf7f8b1a88, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealManager
-  _requiredSealCountForGroggy: 0
---- !u!114 &43621167555865839
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2927865824481869591}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: aa06238b863adbc46b43f33b1bcd393d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealEffectManager
-  _coreTransform: {fileID: 1396612535062583916}
-  _shockwave: {fileID: 6966774668998716745}
-  _coreRangeCircle: {fileID: 0}
-  _coreRangeLineWidth: 0.06
-  _coreRangeSegments: 32
-  _cameraTransform: {fileID: 0}
---- !u!114 &7362458348731666786
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2927865824481869591}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c99def388e030244095411479a74a6a0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionEvent
---- !u!114 &3886305372271976440
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2927865824481869591}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5804968194af4d04c806d23adfe00c3c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionRunner
-  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
-  _executionEvent: {fileID: 7362458348731666786}
 --- !u!1 &3153932892854605847
 GameObject:
   m_ObjectHideFlags: 0
@@ -959,6 +869,12 @@ GameObject:
   - component: {fileID: 367445595963278709}
   - component: {fileID: 5298859741369411445}
   - component: {fileID: 6966774668998716745}
+  - component: {fileID: 3025961186498544234}
+  - component: {fileID: 6047848843748568073}
+  - component: {fileID: 2675468998006607880}
+  - component: {fileID: 5790422593519139780}
+  - component: {fileID: 3954451658119620480}
+  - component: {fileID: 518856403508951749}
   m_Layer: 0
   m_Name: Boss_Warden
   m_TagString: Untagged
@@ -1105,12 +1021,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenAI
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _patterns:
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
-  - {fileID: 0}
+  - {fileID: 977547751071632564}
+  - {fileID: 8237974629196471921}
+  - {fileID: 1773114150699548557}
+  - {fileID: 937471434657274340}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
 --- !u!114 &367445595963278709
@@ -1181,6 +1095,90 @@ MonoBehaviour:
   _cameraTransform: {fileID: 0}
   _cameraShakeStrength: 0.25
   _cameraShakeDuration: 0.3
+--- !u!114 &3025961186498544234
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f8eb197e4659fef4687c85e5cb4acf13, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealStateManager
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _coreObject: {fileID: 2815818081025082498}
+--- !u!114 &6047848843748568073
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 15a03a89e02f6bd4a8977510d65fcebe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealGaugeManager
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+--- !u!114 &2675468998006607880
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9700743b8cc062c4e8c10ccf7f8b1a88, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealManager
+  _requiredSealCountForGroggy: 0
+--- !u!114 &5790422593519139780
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: aa06238b863adbc46b43f33b1bcd393d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealEffectManager
+  _coreTransform: {fileID: 1396612535062583916}
+  _shockwave: {fileID: 6966774668998716745}
+  _coreRangeCircle: {fileID: 0}
+  _coreRangeLineWidth: 0.06
+  _coreRangeSegments: 32
+  _cameraTransform: {fileID: 0}
+--- !u!114 &3954451658119620480
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c99def388e030244095411479a74a6a0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionEvent
+--- !u!114 &518856403508951749
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3153932892854605847}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5804968194af4d04c806d23adfe00c3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionRunner
+  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _executionEvent: {fileID: 3954451658119620480}
 --- !u!1 &3310431951455366626
 GameObject:
   m_ObjectHideFlags: 0

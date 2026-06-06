@@ -239,7 +239,7 @@ namespace SEAL
         {
             if (_data == null) yield break;
 
-            float radius = _isPhase2 ? _data.sweepWarningRadius + 0.5f : _data.sweepWarningRadius;
+            float radius = _isPhase2 ? _data.sweepHitRadius + 0.5f : _data.sweepHitRadius;
             Vector2 bossPos = GetBossWorldPos();
 
             // ① 예고 디스크 표시
