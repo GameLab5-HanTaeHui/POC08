@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2c09f1b515ec84346ad63766844fa780, type: 3}
+  m_Name: SealColorDataSO
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealColorDataSO
+  colorBase: {r: 1, g: 1, b: 1, a: 1}
+  colorFull: {r: 0.78, g: 0.49, b: 1, a: 1}
+  colorSealed: {r: 0.48, g: 0.18, b: 0.75, a: 1}
+  colorHitFlash: {r: 0.9, g: 0.8, b: 1, a: 1}
+  colorSealReadyPulse: {r: 0.6, g: 0.8, b: 1, a: 1}
+  sealReadyPulseDuration: 0.4
+  colorCoreIdle: {r: 1, g: 0.93, b: 0, a: 1}
+  colorCoreDilPhase: {r: 1, g: 0.55, b: 0, a: 1}
+  colorCoreFinalSeal: {r: 1, g: 0, b: 0, a: 1}
+  colorSealRange: {r: 0, g: 0.53, b: 1, a: 1}
+  colorCoreRange: {r: 1, g: 0.93, b: 0, a: 1}
+  colorLerpDuration: 0.15
+  hitFlashDuration: 0.07
+  sealTransitionDuration: 0.3
+  sealedParticlePrefab: {fileID: 1125399593051882864, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}

@@ -469,7 +469,7 @@ namespace SEAL
         {
             _armRTween?.Kill();
             Color idleColor = _data?.colorArm0 ?? Color.gray;
-            _armRRenderer?.DOColor(idleColor, _data?.colorTransitionDuration ?? 0.1f).SetUpdate(true);
+            _armRRenderer?.DOColor(idleColor, _data?. ?? 0.1f).SetUpdate(true);
             _armRPart?.UpdateBaseColor(idleColor);
 
             // ✅ 봉인 해제 시 루프 파티클 정지
@@ -545,12 +545,12 @@ namespace SEAL
             if (_data == null) return Color.gray;
             return stage switch
             {
-                0 => _data.colorArm0,
-                1 => _data.colorArm25,
-                2 => _data.colorArm50,
-                3 => _data.colorArm75,
-                4 => _data.colorArm100,
-                _ => _data.colorArm0
+                0 => _data.colorActive,
+                1 => _data.colorActive,
+                2 => _data.colorActive,
+                3 => _data.colorActive,
+                4 => _data.colorActive,
+                _ => _data.colorActive
             };
         }
     }
