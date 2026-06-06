@@ -1,49 +1,32 @@
 ﻿// ============================================================
-// BossWardenAI.cs  v2.0
+// BossWardenAI.cs  v3.0
 // Boss_Warden 탑뷰 AI
 //
-// [v2.0 — BossWardenCore 직접 참조 제거 + 브리지 메서드 전환]
+// [v3.0 변경 — Groggy 브리지 메서드 제거]
+//   제거:
+//     OnGroggyEnter() public 브리지 메서드
+//     OnGroggyExit()  public 브리지 메서드
 //
-//   [변경 1] _core 필드 + SubscribeCoreEvents() 완전 제거
-//     기존: Awake → _core = GetComponent<BossWardenCore>()
-//           Start → SubscribeCoreEvents() → _core.OnGroggyEnter += HandleGroggyEnter 등
-//           → BossWardenAI 가 BossWardenCore 에 직접 의존
+//   변경:
+//     OnDilPhaseEnter() → AI 정지 + 패턴 중단 전담
+//                         (기존 OnGroggyEnter 역할 흡수)
+//     OnDilPhaseExit()  → AI 재개 + Idle 복귀 전담
+//                         (기존 OnGroggyExit 역할 흡수)
 //
-//     변경: _core 필드 없음
-//           SubscribeCoreEvents() / UnsubscribeCoreEvents() 없음
-//           BossWardenCore v3.0 이 SealStateManager 이벤트 수신 후
-//           _ai.OnGroggyEnter() 등을 직접 호출 (브리지 방식)
+// [브리지 메서드 — public (BossWardenCore v4.0 에서 직접 호출)]
+//   OnDilPhaseEnter()  : AI 정지
+//   OnDilPhaseExit()   : AI 재개 + Idle 복귀
+//   OnPhaseChanged(int): 2페이즈 속도/패턴 강화
+//   OnDead()           : AI 완전 정지
 //
-//   [변경 2] 상태 핸들러 메서드 이름 + 접근 제한자
-//     기존: private HandleGroggyEnter() / private HandleGroggyExit() 등
-//           일부 파일 기준으로 public 인 경우도 있었음
-//
-//     변경: 모두 public OnXxx() 형태로 통일
-//           OnGroggyEnter / OnGroggyExit
-//           OnDilPhaseEnter / OnDilPhaseExit
-//           OnPhaseChanged(int) / OnDead()
-//           → BossWardenCore v3.0 브리지에서 호출 가능
-//
-//   [변경 3] HandlePatternGroggy() → _core.EnterGroggy() 제거
-//     기존: HandlePatternGroggy() → _core.EnterGroggy() 직접 호출
-//           → BossWardenCore 에 의존
-//
-//     변경: HandlePatternGroggy() 에서 아무것도 하지 않음
-//           SealGaugeManager 가 OnAllPartsSealed 자동 처리
-//           → AI 는 패턴 Recovery 완료만 알리고
-//              그로기 진입 조건 판단은 SealStateManager 에서 수행
-//           → AI 의 역할: 패턴 실행 + 이동만
-//
-//   [v1.0 유지]
-//     WardenAIState enum (Idle / Chase / Warning / Active / Recovery)
-//     탑뷰 8방향 이동 (Rigidbody2D.linearVelocity)
-//     패턴 선택 + ExecutePattern() 코루틴 (Warning → Active → Recovery)
-//     _isStopped 플래그 (그로기/딜페이즈 중 이동/패턴 정지)
-//     Recovery 취약 구간 SetArmsRecoveryVuln()
-//     OnStateChanged / OnFacingChanged 이벤트
-//     FacingDir / PlayerTransform 프로퍼티
-//     SubscribePatternEvents() — 패턴 이벤트는 그대로 유지
-//     TurnTowardPlayerImmediate() / InterruptCurrentPattern()
+// [v2.0 유지]
+//   WardenAIState enum (Idle / Chase / Warning / Active / Recovery)
+//   탑뷰 8방향 이동 (Rigidbody2D.linearVelocity)
+//   패턴 선택 + ExecutePattern() 코루틴
+//   _isStopped 플래그
+//   SubscribePatternEvents()
+//   HandlePatternGroggy() — 빈 함수 유지
+//     (패턴 그로기 트리거는 SealGaugeManager.OnAllPartsSealed 경로로 처리)
 //
 // [namespace] SEAL
 // ============================================================
@@ -56,7 +39,7 @@ using UnityEngine;
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 탑뷰 AI. (v2.0)
+    /// Boss_Warden 탑뷰 AI. (v3.0)
     ///
     /// ────────────────────────────────────────────────────
     /// [이 스크립트가 하는 것]
@@ -68,13 +51,11 @@ namespace SEAL
     ///   - 2페이즈 패턴 강화 적용
     ///
     /// [이 스크립트가 하지 않는 것]
-    ///   - 그로기 진입 판단 → SealStateManager (v2.0 변경)
-    ///   - Core 이벤트 직접 구독 → BossWardenCore v3.0 브리지 (v2.0 변경)
+    ///   - 상태 판단 → SealStateManager
     ///   - 봉인 집행 처리 → SealExecutionRunner
     ///   - 색상 피드백 → BossWardenFeedback
     ///
     /// [BossWardenCore 브리지 메서드 — public]
-    ///   OnGroggyEnter() / OnGroggyExit()
     ///   OnDilPhaseEnter() / OnDilPhaseExit()
     ///   OnPhaseChanged(int) / OnDead()
     /// ────────────────────────────────────────────────────
@@ -89,7 +70,7 @@ namespace SEAL
 
         /// <summary>
         /// Warden AI 상태.
-        /// Groggy / DilPhase 는 SealStateManager 가 관리.
+        /// DilPhase 는 SealStateManager 가 관리.
         /// AI 는 _isStopped 플래그만으로 이 구간을 처리.
         /// </summary>
         public enum WardenAIState
@@ -113,7 +94,8 @@ namespace SEAL
         [Header("── DataSO 연결 (필수) ──────────────────────")]
 
         /// <summary>
-        /// Warden 수치. BossWardenCore.Start() 에서 Initialize() 주입.
+        /// Warden 수치.
+        /// BossWardenCore.InjectData() 에서 Initialize() 주입.
         /// </summary>
         [Tooltip("BossWardenDataSO. 필수 연결.")]
         [SerializeField] private BossWardenDataSO _data;
@@ -129,9 +111,7 @@ namespace SEAL
 
         [Header("── 팔 부위 연결 (필수) ──────────────────────")]
 
-        /// <summary>
-        /// 왼팔. Recovery 취약 구간 SetRecoveryVuln() 전달 대상.
-        /// </summary>
+        /// <summary>왼팔. Recovery 취약 구간 SetRecoveryVuln() 전달 대상.</summary>
         [Tooltip("왼팔 BossWardenArmPart.")]
         [SerializeField] private BossWardenArmPart _armL;
 
@@ -143,10 +123,10 @@ namespace SEAL
         // 컴포넌트 참조
         // ══════════════════════════════════════════════════════
 
-        /// <summary>Rigidbody2D. Chase 이동 시 linearVelocity 직접 제어.</summary>
+        /// <summary>Chase 이동 시 linearVelocity 직접 제어.</summary>
         private Rigidbody2D _rigid2D;
 
-        /// <summary>SpriteRenderer. OnFacingChanged 발행 시 flipX 처리 대상.</summary>
+        /// <summary>OnFacingChanged 발행 시 flipX 처리 대상.</summary>
         private SpriteRenderer _spriteRenderer;
 
         /// <summary>플레이어 Transform. Start 1회 캐싱.</summary>
@@ -159,7 +139,7 @@ namespace SEAL
         /// <summary>현재 AI 상태.</summary>
         private WardenAIState _currentState = WardenAIState.Idle;
 
-        /// <summary>현재 실행 중인 패턴. ExecutePattern 시작 시 설정.</summary>
+        /// <summary>현재 실행 중인 패턴.</summary>
         private BossPatternBase _currentPattern;
 
         /// <summary>현재 패턴 코루틴 핸들.</summary>
@@ -167,12 +147,12 @@ namespace SEAL
 
         /// <summary>
         /// 이동/패턴 정지 플래그.
-        /// true: Groggy / DilPhase / Dead 중.
+        /// true: DilPhase / Dead 중.
         /// FixedUpdate 에서 linearVelocity = 0 강제 적용.
         /// </summary>
         private bool _isStopped;
 
-        /// <summary>현재 이동 속도. 페이즈 전환 시 갱신.</summary>
+        /// <summary>현재 이동 속도. 2페이즈 전환 시 갱신.</summary>
         private float _currentMoveSpeed;
 
         /// <summary>방향 전환 쿨타임 잔여 시간.</summary>
@@ -190,7 +170,7 @@ namespace SEAL
 
         /// <summary>
         /// 상태 전환 시 발행.
-        /// BossWardenFeedback 이 구독하여 상태별 DOTween 색상 연출.
+        /// BossWardenFeedback 이 구독 → 상태별 DOTween 색상 연출.
         /// 파라미터: (새 상태, 현재 패턴 — null 가능)
         /// </summary>
         public event Action<WardenAIState, BossPatternBase> OnStateChanged;
@@ -225,27 +205,25 @@ namespace SEAL
         {
             _rigid2D = GetComponent<Rigidbody2D>();
             _spriteRenderer = GetComponent<SpriteRenderer>();
-            // v2.0: _core 참조 제거
+            // v3.0: _core 참조 없음 — BossWardenCore 브리지 방식 유지
             _currentMoveSpeed = _data != null ? _data.moveSpeed : 3.5f;
         }
 
         private void Start()
         {
-            // 플레이어 탐색
+            // 플레이어 탐색 — 1회 캐싱
             var players = FindObjectsByType<PlayerMoveController>(FindObjectsSortMode.None);
             if (players.Length > 0)
                 _playerTransform = players[0].transform;
             else
                 Debug.LogWarning("[BossWardenAI] PlayerMoveController 탐색 실패.");
 
-            // v2.0: SubscribeCoreEvents() 제거 — BossWardenCore 브리지 방식으로 전환
-            // 패턴 이벤트만 구독
+            // 패턴 이벤트 구독
             SubscribePatternEvents();
         }
 
         private void OnDestroy()
         {
-            // v2.0: UnsubscribeCoreEvents() 제거
             UnsubscribePatternEvents();
         }
 
@@ -282,13 +260,10 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // 패턴 이벤트 구독 (Core 이벤트 구독 제거됨)
+        // 패턴 이벤트 구독
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 패턴 이벤트 구독.
-        /// OnPatternEnd / OnPatternGroggy 수신.
-        /// </summary>
+        /// <summary>패턴 이벤트 구독. OnPatternEnd / OnPatternGroggy 수신.</summary>
         private void SubscribePatternEvents()
         {
             foreach (var p in _patterns)
@@ -313,59 +288,35 @@ namespace SEAL
 
         // ══════════════════════════════════════════════════════
         // BossWardenCore 브리지 메서드 — public
-        // BossWardenCore v3.0 이 SealStateManager 이벤트 수신 후 직접 호출
+        // BossWardenCore v4.0 이 SealStateManager 이벤트 수신 후 직접 호출
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// Groggy 진입.
-        /// 이동 정지 + 현재 패턴 강제 중단.
-        /// BossWardenCore.HandleGroggyEnter() 에서 호출.
-        /// </summary>
-        public void OnGroggyEnter()
-        {
-            _isStopped = true;
-            SetArmsRecoveryVuln(false);
-            InterruptCurrentPattern();
-            Debug.Log("[BossWardenAI] ▶ 그로기 진입 → 이동/패턴 정지");
-        }
-
-        /// <summary>
-        /// Groggy 실패 종료.
-        /// 이동/패턴 재개 + 플레이어 방향 즉시 전환 후 Idle 복귀.
-        /// BossWardenCore.HandleGroggyExit() 에서 호출.
-        /// </summary>
-        public void OnGroggyExit()
-        {
-            _isStopped = false;
-            TurnTowardPlayerImmediate();
-            ChangeState(WardenAIState.Idle);
-            Debug.Log("[BossWardenAI] ■ 그로기 종료 → Idle 복귀");
-        }
-
-        /// <summary>
         /// DilPhase 진입.
-        /// 이동/패턴 정지 (그로기와 동일).
+        /// 이동 정지 + 현재 패턴 강제 중단.
         /// BossWardenCore.HandleDilPhaseEnter() 에서 호출.
+        /// (v3.0: OnGroggyEnter 역할 흡수)
         /// </summary>
         public void OnDilPhaseEnter()
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
             InterruptCurrentPattern();
-            Debug.Log("[BossWardenAI] ▶ 딜 페이즈 진입 → 이동/패턴 정지");
+            Debug.Log("[BossWardenAI] ▶ DilPhase 진입 → 이동/패턴 정지");
         }
 
         /// <summary>
         /// DilPhase 종료.
-        /// 이동/패턴 재개 + Idle 복귀.
+        /// 이동/패턴 재개 + 플레이어 방향 즉시 전환 후 Idle 복귀.
         /// BossWardenCore.HandleDilPhaseExit() 에서 호출.
+        /// (v3.0: OnGroggyExit 역할 흡수)
         /// </summary>
         public void OnDilPhaseExit()
         {
             _isStopped = false;
             TurnTowardPlayerImmediate();
             ChangeState(WardenAIState.Idle);
-            Debug.Log("[BossWardenAI] ■ 딜 페이즈 종료 → Idle 복귀");
+            Debug.Log("[BossWardenAI] ■ DilPhase 종료 → Idle 복귀");
         }
 
         /// <summary>
@@ -419,27 +370,22 @@ namespace SEAL
         }
 
         /// <summary>
-        /// 패턴 Recovery 중 그로기 조건 트리거 수신.
+        /// 패턴 Recovery 중 그로기 트리거 수신.
         ///
-        /// [v2.0 변경]
-        ///   기존: _core.EnterGroggy() 직접 호출
-        ///   변경: 아무것도 하지 않음
-        ///         SealGaugeManager 가 OnAllPartsSealed 이벤트로 자동 처리
-        ///         → AI 는 패턴 실행만 담당, 그로기 진입 판단은 SealStateManager
+        /// [v3.0 설계]
+        ///   그로기 개념 제거 — DilPhase 진입은 SealGaugeManager.OnAllPartsSealed 경로만 사용.
+        ///   패턴 자체가 그로기를 유발하는 경로 없음.
+        ///   → 이 핸들러는 빈 함수로 유지 (OnPatternGroggy 이벤트는 패턴 내부용으로 보존).
         ///
-        /// [그로기 진입 흐름 v2.0]
-        ///   패턴 Recovery 완료
-        ///   → SealGaugeManager.AreAllPartsSealed() 체크
-        ///   → OnAllPartsSealed 이벤트 발행
-        ///   → SealStateManager.HandleAllPartsSealed()
-        ///   → EnterGroggy() → OnGroggyEnter 발행
-        ///   → BossWardenCore 브리지 → AI.OnGroggyEnter()
+        /// [패턴별 주의]
+        ///   BossPattern_GuardBreak._triggerGroggyOnRecovery = true 로 설정되어 있으나
+        ///   이 핸들러에서 아무것도 하지 않으므로 실제 영향 없음.
+        ///   GuardBreak 의 그로기 유도 의도는 향후 기획 결정에 따라 재설계 필요.
         /// </summary>
         private void HandlePatternGroggy()
         {
-            // v2.0: _core.EnterGroggy() 제거
-            // 그로기 진입은 SealStateManager 가 자동 처리
-            Debug.Log("[BossWardenAI] 패턴 그로기 트리거 — SealStateManager 에서 자동 처리");
+            // v3.0: DilPhase 진입은 SealGaugeManager.OnAllPartsSealed 경로로만 처리
+            // 패턴 그로기 트리거는 현재 사용하지 않음
         }
 
         // ══════════════════════════════════════════════════════
@@ -476,14 +422,12 @@ namespace SEAL
                 _rigid2D.linearVelocity = Vector2.zero;
                 return;
             }
-
             _rigid2D.linearVelocity = _facingDir * _currentMoveSpeed;
         }
 
         private void CheckChaseTransition()
         {
             if (_playerTransform == null || _data == null) return;
-
             float dist = Vector2.Distance(transform.position, _playerTransform.position);
             if (dist > _data.patternRange)
                 ChangeState(WardenAIState.Chase);
@@ -492,7 +436,6 @@ namespace SEAL
         private void CheckIdleTransition()
         {
             if (_playerTransform == null || _data == null) return;
-
             float dist = Vector2.Distance(transform.position, _playerTransform.position);
             if (dist <= _data.patternRange)
                 ChangeState(WardenAIState.Idle);
@@ -545,30 +488,30 @@ namespace SEAL
 
         /// <summary>
         /// 패턴 실행 코루틴. Warning → Active → Recovery.
-        /// 각 단계 전후 _isStopped + 상태 이중 체크.
+        /// 각 단계 전후 _isStopped 이중 체크.
         /// </summary>
         private IEnumerator ExecutePattern(BossPatternBase pattern)
         {
-            string name = pattern.GetType().Name;
+            string pName = pattern.GetType().Name;
 
-            // ── Warning ──
-            Debug.Log($"[BossWardenAI] ▶ [{name}] Warning");
+            // Warning
+            Debug.Log($"[BossWardenAI] ▶ [{pName}] Warning");
             ChangeState(WardenAIState.Warning);
             yield return StartCoroutine(pattern.ExecuteWarning());
 
             if (_isStopped || _currentState != WardenAIState.Warning)
             { CleanupPattern(); yield break; }
 
-            // ── Active ──
-            Debug.Log($"[BossWardenAI] ▶ [{name}] Active");
+            // Active
+            Debug.Log($"[BossWardenAI] ▶ [{pName}] Active");
             ChangeState(WardenAIState.Active);
             yield return StartCoroutine(pattern.ExecuteActive());
 
             if (_isStopped || _currentState != WardenAIState.Active)
             { CleanupPattern(); yield break; }
 
-            // ── Recovery ──
-            Debug.Log($"[BossWardenAI] ▶ [{name}] Recovery");
+            // Recovery
+            Debug.Log($"[BossWardenAI] ▶ [{pName}] Recovery");
             ChangeState(WardenAIState.Recovery);
             SetArmsRecoveryVuln(true);
 
@@ -579,8 +522,8 @@ namespace SEAL
             if (_isStopped)
             { CleanupPattern(); yield break; }
 
-            // ── 정상 완료 ──
-            Debug.Log($"[BossWardenAI] ✅ [{name}] 패턴 완료 → Idle");
+            // 정상 완료
+            Debug.Log($"[BossWardenAI] ✅ [{pName}] 패턴 완료 → Idle");
             CleanupPattern();
             ChangeState(WardenAIState.Idle);
         }
@@ -626,7 +569,7 @@ namespace SEAL
 
         /// <summary>
         /// 플레이어 방향 즉시 갱신 (쿨타임 무시).
-        /// Groggy 종료 / DilPhase 종료 시 호출.
+        /// DilPhase 종료 시 호출.
         /// </summary>
         private void TurnTowardPlayerImmediate()
         {

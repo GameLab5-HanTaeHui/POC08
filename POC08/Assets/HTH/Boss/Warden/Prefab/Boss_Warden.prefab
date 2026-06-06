@@ -1047,10 +1047,8 @@ MonoBehaviour:
   _armLRenderer: {fileID: 3641258697330880272}
   _armRRenderer: {fileID: 667973993591523152}
   _coreRenderer: {fileID: 4626551619868309503}
-  _armLSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
-  _armLSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
-  _armRSealBurst: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
-  _armRSealLoop: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _armLSealParticle: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
+  _armRSealParticle: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
 --- !u!114 &5298859741369411445
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1107,7 +1105,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f8eb197e4659fef4687c85e5cb4acf13, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealStateManager
-  _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _coreObject: {fileID: 2815818081025082498}
 --- !u!114 &6047848843748568073
 MonoBehaviour:

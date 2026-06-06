@@ -176,7 +176,6 @@ namespace SEAL
         {
             if (_bossCore == null) return;
 
-            _bossCore.OnGroggyEnter += HandleGroggyEnter;
             _bossCore.OnDilPhaseEnter += HandleDilPhaseEnter;
             _bossCore.OnDead += HandleDead;
         }
@@ -185,7 +184,6 @@ namespace SEAL
         {
             if (_bossCore == null) return;
 
-            _bossCore.OnGroggyEnter -= HandleGroggyEnter;
             _bossCore.OnDilPhaseEnter -= HandleDilPhaseEnter;
             _bossCore.OnDead -= HandleDead;
         }

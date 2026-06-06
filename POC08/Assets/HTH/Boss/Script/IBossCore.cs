@@ -1,14 +1,17 @@
 ﻿// ============================================================
-// IBossCore.cs  v1.0
+// IBossCore.cs  v2.0
 // 모든 보스가 구현하는 공통 인터페이스
 //
-// [역할]
-//   BossCameraDirector, BossWardenFeedback 등
-//   보스 종류에 무관하게 공통 이벤트를 구독할 수 있도록 한다.
+// [v2.0 변경 — Groggy 제거]
+//   제거:
+//     OnGroggyEnter 이벤트
+//     OnGroggyExit 이벤트
+//     IsGroggy 프로퍼티
 //
-// [구현 대상]
-//   BossWardenCore : IBossCore 구현
-//   추후 추가 보스  : IBossCore 구현
+//   유지:
+//     OnDilPhaseEnter / OnDilPhaseExit
+//     OnDead
+//     IsDilPhase / IsDead
 //
 // [namespace] SEAL
 // ============================================================
@@ -18,36 +21,27 @@ using System;
 namespace SEAL
 {
     /// <summary>
-    /// 모든 보스 코어가 구현하는 공통 인터페이스.
+    /// 모든 보스 코어가 구현하는 공통 인터페이스. (v2.0)
     ///
-    /// [공통 이벤트]
-    ///   OnGroggyEnter   : 그로기 진입
-    ///   OnGroggyExit    : 그로기 해제 (실패)
-    ///   OnDilPhaseEnter : 딜 페이즈 진입
-    ///   OnDilPhaseExit  : 딜 페이즈 종료
+    /// ────────────────────────────────────────────────────
+    /// [공통 이벤트 v2.0]
+    ///   OnDilPhaseEnter : DilPhase 진입 (Part 전체 봉인 완료)
+    ///   OnDilPhaseExit  : DilPhase 종료 (성공 or 실패)
     ///   OnDead          : 보스 처치
+    /// ────────────────────────────────────────────────────
     /// </summary>
     public interface IBossCore
     {
-        /// <summary>그로기 진입 시 발행.</summary>
-        event Action OnGroggyEnter;
-
-        /// <summary>그로기 해제 (실패) 시 발행.</summary>
-        event Action OnGroggyExit;
-
-        /// <summary>딜 페이즈 진입 시 발행.</summary>
+        /// <summary>DilPhase 진입 시 발행. Part 전체 봉인 완료 → 코어 활성.</summary>
         event Action OnDilPhaseEnter;
 
-        /// <summary>딜 페이즈 종료 시 발행.</summary>
+        /// <summary>DilPhase 종료 시 발행 (성공 or 실패).</summary>
         event Action OnDilPhaseExit;
 
         /// <summary>보스 처치 시 발행.</summary>
         event Action OnDead;
 
-        /// <summary>현재 그로기 여부.</summary>
-        bool IsGroggy { get; }
-
-        /// <summary>현재 딜 페이즈 여부.</summary>
+        /// <summary>현재 DilPhase 여부.</summary>
         bool IsDilPhase { get; }
 
         /// <summary>처치 여부.</summary>

@@ -191,10 +191,6 @@ namespace SEAL
             // SealStateManager 이벤트 구독
             if (_stateManager != null)
             {
-                _stateManager.OnGroggyEnter -= HandleGroggyEnter;
-                _stateManager.OnGroggyEnter += HandleGroggyEnter;
-                _stateManager.OnGroggyExit -= HandleGroggyExit;
-                _stateManager.OnGroggyExit += HandleGroggyExit;
                 _stateManager.OnDilPhaseEnter -= HandleDilPhaseEnter;
                 _stateManager.OnDilPhaseEnter += HandleDilPhaseEnter;
                 _stateManager.OnDilPhaseExit -= HandleDilPhaseExit;
@@ -217,8 +213,6 @@ namespace SEAL
 
             if (_stateManager != null)
             {
-                _stateManager.OnGroggyEnter -= HandleGroggyEnter;
-                _stateManager.OnGroggyExit -= HandleGroggyExit;
                 _stateManager.OnDilPhaseEnter -= HandleDilPhaseEnter;
                 _stateManager.OnDilPhaseExit -= HandleDilPhaseExit;
                 _stateManager.OnFinalSealReady -= HandleFinalSealReady;
