@@ -676,7 +676,7 @@ namespace SEAL
         /// colorBase → colorFull 선형 보간.
         /// BossDataSO 미연결 시 흰색 반환.
         /// </summary>
-        private Color GetCurrentGaugeColor()
+        public Color GetCurrentGaugeColor()
         {
             if (_bossData?.ColorData == null) return Color.white;
             return _bossData.ColorData.GetPartColor(UIPercent);

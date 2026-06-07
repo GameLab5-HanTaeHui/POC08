@@ -1,26 +1,33 @@
 ﻿// ============================================================
-// BossWardenFeedback.cs  v4.0
+// BossWardenFeedback.cs
 // Boss_Warden 시각 피드백 컴포넌트
 //
-// [v4.0 변경 — Groggy 연출 제거, DilPhase로 통합]
-//   제거:
-//     OnGroggyEnter() public 브리지 메서드 (노란 Pulse)
-//     OnGroggyExit()  public 브리지 메서드 (Idle 색상 복귀)
+// [수정 내용]
+//   팔(LeftArm/RightArm) SpriteRenderer 색상 제어 완전 제거
+//   → 팔 색상은 SealableComponent 단독 담당
+//   → 패턴이 임시로 바꾼 후 GetArmGaugeColor() 로 복귀
 //
-//   변경:
-//     OnDilPhaseEnter() → 딜페이즈 색상 연출 전담
-//                         (기존 OnGroggyEnter 노란 Pulse 흡수)
-//     OnDilPhaseExit()  → Idle 색상 복귀 전담
-//                         (기존 OnGroggyExit 역할 흡수)
+//   제거 항목:
+//     _armLRenderer / _armRRenderer 필드 제거
+//     _armLTween / _armRTween 핸들 제거
+//     OnDilPhaseEnter() — 팔 노란 Pulse 제거
+//     OnDilPhaseExit()  — 팔 Idle 복귀 DOColor 제거
+//     OnPhaseChanged()  — 팔 붉은 점프 DOColor 제거
+//     OnDead()          — 팔 검정 DOColor 제거
+//     HandleArmLSealed / HandleArmRSealed — DOColor 파랑 제거
+//                                           파티클 재생만 유지
 //
-// [BossWardenCore 브리지 메서드 — public]
-//   Initialize(BossWardenDataSO)
-//   OnDilPhaseEnter()
-//   OnDilPhaseExit()
-//   OnFinalSealReady()
-//   OnPhaseChanged(int)
-//   OnDead()
-//   HandleStateChanged(WardenAIState, BossPatternBase)
+//   유지 항목:
+//     본체(_bodyRenderer) 모든 색상 연출
+//     OnDilPhaseEnter() — 코어 흰 Pulse (코어는 DilPhase 연출 보조)
+//     OnDilPhaseExit()  — 코어 Pulse 종료
+//     OnFinalSealReady() — 코어 청백 강한 Pulse
+//     HandleArmLSealed / HandleArmRSealed — 파티클 재생
+//
+// [색상 소유권 확정]
+//   Boss_WardenBody   → 이 컴포넌트 단독
+//   LeftArm / RightArm → SealableComponent 단독
+//   Core              → SealableComponent 기본 + DilPhase Pulse 보조
 //
 // [namespace] SEAL
 // ============================================================
@@ -31,17 +38,21 @@ using DG.Tweening;
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 시각 피드백 컴포넌트. (v4.0)
+    /// Boss_Warden 시각 피드백 컴포넌트.
     ///
     /// ────────────────────────────────────────────────────
-    /// [역할]
-    ///   BossWardenCore 브리지 메서드 수신
-    ///   → 본체 SpriteRenderer 색상 / Pulse 연출
-    ///   → 처치 연출 (검정 + 축소)
-    ///   BossWardenAI.OnStateChanged 수신
-    ///   → Warning / Active / Recovery / Idle 색상 전환
-    ///   SealableComponent 이벤트 수신
-    ///   → 팔 봉인 완료 연출 + 파티클
+    /// [색상 담당]
+    ///   본체 SpriteRenderer → 이 컴포넌트 단독 (AI 상태 색상)
+    ///   팔 SpriteRenderer   → SealableComponent 단독 (봉인도 색상)
+    ///   코어 SpriteRenderer → SealableComponent 기본 + DilPhase Pulse 보조
+    ///
+    /// [BossWardenCore 브리지 — public 메서드]
+    ///   Initialize(BossWardenDataSO)
+    ///   OnDilPhaseEnter() / OnDilPhaseExit()
+    ///   OnFinalSealReady()
+    ///   OnPhaseChanged(int)
+    ///   OnDead()
+    ///   HandleStateChanged(WardenAIState, BossPatternBase)
     /// ────────────────────────────────────────────────────
     /// </summary>
     [DefaultExecutionOrder(10)]
@@ -56,7 +67,6 @@ namespace SEAL
         /// <summary>
         /// BossWardenDataSO.
         /// BossWardenCore.Initialize() 에서 주입 or Inspector 직접 연결.
-        /// 본체 AI 상태 색상 참조.
         /// </summary>
         [Tooltip("BossWardenDataSO. BossWardenCore 에서 주입 or Inspector 연결.")]
         [SerializeField] private BossWardenDataSO _data;
@@ -67,7 +77,7 @@ namespace SEAL
         [Tooltip("BossWardenAI. 미연결 시 자동 탐색.")]
         [SerializeField] private BossWardenAI _ai;
 
-        [Header("── 팔 부위 연결 ──────────────────────")]
+        [Header("── 팔 부위 연결 (파티클용) ──────────────────────")]
 
         /// <summary>왼팔 BossWardenArmPart. SealableComponent 이벤트 구독용.</summary>
         [Tooltip("왼팔 BossWardenArmPart.")]
@@ -79,20 +89,19 @@ namespace SEAL
 
         [Header("── SpriteRenderer ──────────────────────")]
 
-        /// <summary>본체 색상 제어 대상.</summary>
-        [Tooltip("본체 SpriteRenderer.")]
+        /// <summary>
+        /// 본체 색상 제어 대상.
+        /// 팔/코어는 SealableComponent 가 담당 — 이 컴포넌트에서 건드리지 않음.
+        /// </summary>
+        [Tooltip("본체 SpriteRenderer. 팔/코어는 SealableComponent 가 담당.")]
         [SerializeField] private SpriteRenderer _bodyRenderer;
 
-        /// <summary>왼팔 색상 제어 대상. 봉인 완료 연출용.</summary>
-        [Tooltip("왼팔 SpriteRenderer.")]
-        [SerializeField] private SpriteRenderer _armLRenderer;
-
-        /// <summary>오른팔 색상 제어 대상.</summary>
-        [Tooltip("오른팔 SpriteRenderer.")]
-        [SerializeField] private SpriteRenderer _armRRenderer;
-
-        /// <summary>코어 색상 제어 대상. 딜 페이즈 Pulse 연출용.</summary>
-        [Tooltip("코어 SpriteRenderer.")]
+        /// <summary>
+        /// 코어 SpriteRenderer.
+        /// DilPhase Pulse 보조 전용.
+        /// 봉인도 색상은 SealableComponent 담당.
+        /// </summary>
+        [Tooltip("코어 SpriteRenderer. DilPhase Pulse 보조용.")]
         [SerializeField] private SpriteRenderer _coreRenderer;
 
         [Header("── 봉인 완료 파티클 ──────────────────────")]
@@ -106,19 +115,14 @@ namespace SEAL
         [SerializeField] private ParticleSystem _armRSealParticle;
 
         // ══════════════════════════════════════════════════════
-        // DOTween 핸들
+        // DOTween 핸들 — 본체 + 코어만
+        // (팔 트윈 핸들 없음 — SealableComponent 가 관리)
         // ══════════════════════════════════════════════════════
 
-        /// <summary>본체 색상 트윈 핸들. Kill() 전용.</summary>
+        /// <summary>본체 색상 트윈 핸들.</summary>
         private Tween _bodyTween;
 
-        /// <summary>왼팔 색상 트윈 핸들.</summary>
-        private Tween _armLTween;
-
-        /// <summary>오른팔 색상 트윈 핸들.</summary>
-        private Tween _armRTween;
-
-        /// <summary>코어 색상 트윈 핸들.</summary>
+        /// <summary>코어 색상 트윈 핸들. DilPhase Pulse 전용.</summary>
         private Tween _coreTween;
 
         // ══════════════════════════════════════════════════════
@@ -138,7 +142,6 @@ namespace SEAL
         {
             SubscribeAll();
 
-            // 초기 색상 설정
             if (_data != null && _bodyRenderer != null)
                 _bodyRenderer.color = _data.colorIdle;
         }
@@ -146,8 +149,6 @@ namespace SEAL
         private void OnDestroy()
         {
             _bodyTween?.Kill();
-            _armLTween?.Kill();
-            _armRTween?.Kill();
             _coreTween?.Kill();
             UnsubscribeAll();
         }
@@ -158,14 +159,12 @@ namespace SEAL
 
         private void SubscribeAll()
         {
-            // AI 상태 변화 구독
             if (_ai != null)
             {
                 _ai.OnStateChanged -= HandleStateChanged;
                 _ai.OnStateChanged += HandleStateChanged;
             }
 
-            // 팔 봉인 이벤트 구독
             SubscribeArmSealable(_armLPart, isLeft: true);
             SubscribeArmSealable(_armRPart, isLeft: false);
         }
@@ -178,7 +177,8 @@ namespace SEAL
 
         /// <summary>
         /// 팔 SealableComponent 이벤트 구독.
-        /// 봉인 완료 / 해제 색상 연출 + 파티클.
+        /// 파티클 재생만 처리.
+        /// DOColor 처리 없음 — SealableComponent 가 색상 담당.
         /// </summary>
         private void SubscribeArmSealable(BossWardenArmPart armPart, bool isLeft)
         {
@@ -190,25 +190,21 @@ namespace SEAL
             {
                 sealable.OnSealCompleted -= HandleArmLSealed;
                 sealable.OnSealCompleted += HandleArmLSealed;
-                sealable.OnForceReleased -= HandleArmLReleased;
-                sealable.OnForceReleased += HandleArmLReleased;
             }
             else
             {
                 sealable.OnSealCompleted -= HandleArmRSealed;
                 sealable.OnSealCompleted += HandleArmRSealed;
-                sealable.OnForceReleased -= HandleArmRReleased;
-                sealable.OnForceReleased += HandleArmRReleased;
             }
         }
 
         // ══════════════════════════════════════════════════════
-        // AI 상태 색상 핸들러
+        // AI 상태 색상 핸들러 — 본체만
         // ══════════════════════════════════════════════════════
 
         /// <summary>
         /// AI 상태에 따라 본체 색상 전환.
-        /// Warning / Active / Recovery / Idle 색상 사용.
+        /// 팔/코어 건드리지 않음.
         /// </summary>
         public void HandleStateChanged(BossWardenAI.WardenAIState state, BossPatternBase pattern)
         {
@@ -262,8 +258,8 @@ namespace SEAL
 
         /// <summary>
         /// DilPhase 진입 연출.
-        /// 본체 노란-주황 Pulse + 코어 흰색 Pulse.
-        /// (v4.0: 기존 OnGroggyEnter 노란 Pulse 흡수)
+        /// 본체 노란 Pulse + 코어 흰 Pulse.
+        /// 팔 색상 건드리지 않음.
         /// </summary>
         public void OnDilPhaseEnter()
         {
@@ -278,7 +274,7 @@ namespace SEAL
                 .SetLoops(-1, LoopType.Yoyo)
                 .SetUpdate(true);
 
-            // 코어 흰색 Pulse
+            // 코어 흰 Pulse
             _coreTween?.Kill();
             _coreTween = _coreRenderer?
                 .DOColor(Color.white, pulsePeriod * 0.3f)
@@ -288,8 +284,8 @@ namespace SEAL
 
         /// <summary>
         /// DilPhase 종료 연출.
-        /// 본체 + 코어 Idle 색상 복귀.
-        /// (v4.0: 기존 OnGroggyExit + OnDilPhaseExit 통합)
+        /// 본체 Idle 복귀 + 코어 Pulse 종료.
+        /// 팔 색상 건드리지 않음.
         /// </summary>
         public void OnDilPhaseExit()
         {
@@ -301,13 +297,11 @@ namespace SEAL
                 .SetUpdate(true);
 
             _coreTween?.Kill();
-            if (_coreRenderer != null)
-                _coreRenderer.color = Color.yellow;
         }
 
         /// <summary>
         /// FinalSeal 진입 연출.
-        /// 코어 청백 강한 Pulse.
+        /// 본체 청백 Pulse + 코어 강한 청백 Pulse.
         /// </summary>
         public void OnFinalSealReady()
         {
@@ -330,7 +324,7 @@ namespace SEAL
 
         /// <summary>
         /// 페이즈 전환 연출.
-        /// 본체 빠른 붉은 Pulse 후 Idle 복귀.
+        /// 본체 붉은 점프만. 팔 건드리지 않음.
         /// </summary>
         public void OnPhaseChanged(int newPhase)
         {
@@ -353,7 +347,8 @@ namespace SEAL
 
         /// <summary>
         /// 처치 연출.
-        /// 본체 검정 + 축소.
+        /// 본체 검정 + 본체 축소.
+        /// 팔/코어 색상 건드리지 않음.
         /// </summary>
         public void OnDead()
         {
@@ -361,47 +356,33 @@ namespace SEAL
             _coreTween?.Kill();
 
             _bodyRenderer?.DOColor(Color.black, 0.5f).SetUpdate(true);
+
             transform.DOScale(Vector3.zero, 0.8f)
                 .SetEase(Ease.InBack)
                 .SetUpdate(true);
         }
 
         // ══════════════════════════════════════════════════════
-        // 팔 봉인 완료 / 해제 연출
+        // 팔 봉인 완료 연출 — 파티클만
         // ══════════════════════════════════════════════════════
 
+        /// <summary>
+        /// 왼팔 봉인 완료.
+        /// 파티클 재생만. DOColor 없음.
+        /// SealableComponent.ExecuteSeal() 이 colorSealed 처리.
+        /// </summary>
         private void HandleArmLSealed()
         {
-            _armLTween?.Kill();
-            _armLTween = _armLRenderer?
-                .DOColor(Color.blue, 0.15f)
-                .SetUpdate(true);
             _armLSealParticle?.Play();
         }
 
-        private void HandleArmLReleased()
-        {
-            _armLTween?.Kill();
-            _armLTween = _armLRenderer?
-                .DOColor(_data?.colorIdle ?? Color.gray, 0.15f)
-                .SetUpdate(true);
-        }
-
+        /// <summary>
+        /// 오른팔 봉인 완료.
+        /// 파티클 재생만.
+        /// </summary>
         private void HandleArmRSealed()
         {
-            _armRTween?.Kill();
-            _armRTween = _armRRenderer?
-                .DOColor(Color.blue, 0.15f)
-                .SetUpdate(true);
             _armRSealParticle?.Play();
-        }
-
-        private void HandleArmRReleased()
-        {
-            _armRTween?.Kill();
-            _armRTween = _armRRenderer?
-                .DOColor(_data?.colorIdle ?? Color.gray, 0.15f)
-                .SetUpdate(true);
         }
     }
 }
