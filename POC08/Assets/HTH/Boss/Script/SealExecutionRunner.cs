@@ -1,43 +1,29 @@
 ﻿// ============================================================
-// SealExecutionRunner.cs  v1.0
-// S키 홀드 집행 실행 관리자
+// SealExecutionRunner.cs  v2.0
+// 봉인 집행 실행 관리자
 //
-// [역할]
-//   S키 홀드 입력 감지 + 집행 실행 전담.
-//   SealExecutionEvent 에서 최적 대상을 받아
-//   SealableComponent.ExecuteSeal() 호출까지 처리.
+// [v2.0 변경 — 즉시 집행 방식으로 전환]
 //
-// [구버전 SealExecutor 와의 역할 분리]
-//   SealExecutionEvent  → 목록 관리 + 우선순위 결정
-//   SealExecutionRunner → S키 입력 + 홀드 타이머 + 집행 실행 + 슬로우
+//   [제거]
+//     DetectSealInput() 코루틴 루프 전체
+//     _holdTimer 필드 + 홀드 타이머 누적 로직
+//     ExecuteSeal() 내부 while (elapsed < holdTime) 2차 홀드 루프
+//     BlockAll() / BlockExceptSeal() 입력 차단 (집행 중 이동/공격 허용)
 //
-// [집행 흐름]
-//   DetectSealInput() 상시 루프
-//     → S키 홀드 여부 체크 (PlayerInputHandler.IsSealHeld)
-//     → SealExecutionEvent.GetBestTarget(playerPos) 조회
-//     → 대상 있음 → 홀드 타이머 누적
-//     → 홀드 완료 → ExecuteSeal(target) 코루틴
+//   [변경]
+//     PlayerInputHandler.OnSeal 이벤트 구독
+//     → F키 pressed 순간 GetBestTarget() 조회
+//     → 대상 있으면 즉시 ExecuteSeal() 호출
+//     → 대상 없으면 무시 (범위 밖)
 //
-// [등급별 슬로우 정책]
-//   Normal : 슬로우 없음
-//   Part   : 집행 완료 후 짧은 슬로우 (partSealSlowTimeScale, partSealSlowDuration)
-//   Core   : 홀드 시작 시 슬로우 (finalSealSlowTimeScale)
-//            최종 봉인(코어 봉인도 100%) 시 더 강한 슬로우 적용
+//   [등급별 처리 — v2.0]
+//     Normal : pressed → 즉시 완료
+//     Part   : pressed → 즉시 완료 → 짧은 슬로우 연출
+//     Core   : pressed → 즉시 완료 → 강한 슬로우 → FinalSeal
 //
-// [재집행 방지]
-//   _mustReleaseKey: 집행 완료 후 S키를 한 번 뗀 것 확인 후 재집행 허용
-//   _cooldownTimer:  집행 완료 후 0.5초 쿨다운
-//
-// [플레이어 입력 차단]
-//   집행 중 PlayerInputHandler.BlockAll()
-//   집행 완료/취소 후 PlayerInputHandler.UnblockAll()
-//
-// [SealExecutionEffect 연동]
-//   GetComponent<SealExecutionEffect> 로 집행 연출 컴포넌트 탐색.
-//   OnExecutionStart() / OnExecutionProgress() / OnExecutionComplete() / OnExecutionCancel() 호출.
-//
-// [부착 위치]
-//   Boss_Root 오브젝트에 부착. (보스 1개당 1개)
+//   [재집행 방지]
+//     _cooldownTimer: 집행 완료 후 0.3초 쿨다운 유지
+//     (연속 입력으로 중복 집행 방지)
 //
 // [namespace] SEAL
 // ============================================================
@@ -48,16 +34,17 @@ using UnityEngine;
 namespace SEAL
 {
     /// <summary>
-    /// S키 홀드 집행 실행 관리자. (v1.0)
+    /// 봉인 집행 실행 관리자. (v2.0)
     ///
     /// ────────────────────────────────────────────────────
-    /// [집행 흐름]
-    ///   DetectSealInput() 루프
-    ///     S키 홀드 + GetBestTarget() → 홀드 타이머 누적
-    ///     홀드 완료 → ExecuteSeal(target)
-    ///       → Grade 별 슬로우 적용
-    ///       → SealableComponent.ExecuteSeal()
-    ///       → 슬로우 복구 + 입력 차단 해제
+    /// [집행 흐름 v2.0]
+    ///   F키 pressed (OnSeal 이벤트)
+    ///   → GetBestTarget(playerPos)
+    ///   → 대상 있음 → ExecuteSeal(target) 코루틴
+    ///     → 등급별 슬로우 연출
+    ///     → SealableComponent.ExecuteSeal()
+    ///     → 슬로우 복구
+    ///   → 대상 없음 → 무시
     ///
     /// [외부 API]
     ///   Initialize(BossDataSO)   DataSO 주입
@@ -74,7 +61,7 @@ namespace SEAL
 
         /// <summary>
         /// 범용 보스 DataSO.
-        /// 슬로우 배율 / 홀드 시간 참조.
+        /// 슬로우 배율 참조.
         /// BossWardenCore.Initialize() 에서 주입 or Inspector 직접 연결.
         /// </summary>
         [Tooltip("BossDataSO. 슬로우 배율 참조. 필수.")]
@@ -93,50 +80,43 @@ namespace SEAL
         // 컴포넌트 참조
         // ══════════════════════════════════════════════════════
 
-        /// <summary>PlayerInputHandler 싱글턴.</summary>
-        private PlayerInputHandler _input;
-
-        /// <summary>플레이어 Transform. 거리 체크 + 입력 차단에 사용.</summary>
+        /// <summary>플레이어 Transform. 거리 계산용.</summary>
         private Transform _playerTransform;
 
-        /// <summary>플레이어 Rigidbody2D. 집행 중 velocity 정지에 사용.</summary>
-        private Rigidbody2D _playerRigid2D;
+        /// <summary>플레이어 입력 핸들러.</summary>
+        private PlayerInputHandler _input;
 
         // ══════════════════════════════════════════════════════
         // 내부 상태
         // ══════════════════════════════════════════════════════
 
-        /// <summary>현재 집행 실행 중 여부 (중복 방지).</summary>
+        /// <summary>집행 실행 중 플래그. 중복 집행 방지.</summary>
         private bool _isExecuting;
 
         /// <summary>
-        /// S키 재누름 확인 플래그.
-        /// 집행 완료 후 S키를 한 번 뗀 것 확인 후 재집행 허용.
+        /// 집행 완료 후 쿨다운 타이머.
+        /// 연속 입력으로 인한 중복 집행 방지.
         /// </summary>
-        private bool _mustReleaseKey;
-
-        /// <summary>집행 쿨다운 타이머 (UnscaledTime 기준).</summary>
         private float _cooldownTimer;
 
-        /// <summary>현재 홀드 누적 시간 (UnscaledTime 기준).</summary>
-        private float _holdTimer;
-
-        /// <summary>집행 강제 중단 플래그. ForceStop() 에서 설정.</summary>
+        /// <summary>강제 중단 플래그. ForceStop() 호출 시 true.</summary>
         private bool _forceStop;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
         // ══════════════════════════════════════════════════════
 
-        private void Start()
+        private void Awake()
         {
-            // SealExecutionEvent 자동 탐색
             if (_executionEvent == null)
                 _executionEvent = GetComponent<SealExecutionEvent>();
+        }
 
+        private void Start()
+        {
             if (_executionEvent == null)
             {
-                Debug.LogError($"[SealExecutionRunner] {gameObject.name} — SealExecutionEvent 미연결.");
+                Debug.LogError("[SealExecutionRunner] SealExecutionEvent 미연결 — 비활성.");
                 enabled = false;
                 return;
             }
@@ -144,103 +124,92 @@ namespace SEAL
             // 플레이어 탐색
             var players = FindObjectsByType<PlayerMoveController>(FindObjectsSortMode.None);
             if (players.Length > 0)
-            {
                 _playerTransform = players[0].transform;
-                _playerRigid2D = players[0].GetComponent<Rigidbody2D>();
-            }
             else
-                Debug.LogWarning($"[SealExecutionRunner] PlayerMoveController 탐색 실패.");
+                Debug.LogWarning("[SealExecutionRunner] PlayerMoveController 탐색 실패.");
 
             _input = PlayerInputHandler.Instance;
 
-            StartCoroutine(DetectSealInput());
+            // F키 pressed 이벤트 구독
+            if (_input != null)
+            {
+                _input.OnSeal -= HandleSealPressed;
+                _input.OnSeal += HandleSealPressed;
+                Debug.Log("[SealExecutionRunner] OnSeal 이벤트 구독 완료");
+            }
+            else
+            {
+                Debug.LogError("[SealExecutionRunner] PlayerInputHandler 탐색 실패.");
+            }
         }
 
         private void OnDestroy()
         {
             RestoreTimeScale();
+
+            if (_input != null)
+                _input.OnSeal -= HandleSealPressed;
         }
 
         private void Update()
         {
-            // 쿨다운 타이머 (UnscaledTime — 슬로우 중에도 감소)
+            // 쿨다운 타이머 감소
             if (_cooldownTimer > 0f)
                 _cooldownTimer -= Time.unscaledDeltaTime;
-
-            // S키 뗌 확인 → 재집행 허용
-            if (_mustReleaseKey && _input != null && !_input.IsSealHeld)
-                _mustReleaseKey = false;
         }
 
         // ══════════════════════════════════════════════════════
-        // 입력 감지 루프
+        // 입력 처리 — F키 pressed
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// S키 봉인 집행 입력 감지 상시 루프.
+        /// PlayerInputHandler.OnSeal 수신.
+        /// F키 pressed 순간 1회 호출.
         ///
-        /// [루프 조건 — 스킵]
-        ///   _isExecuting   현재 집행 중
-        ///   _cooldownTimer 쿨다운 중
-        ///   _mustReleaseKey 재누름 대기 중
-        ///   _forceStop     강제 중단 플래그
+        /// [스킵 조건]
+        ///   _isExecuting  : 집행 중
+        ///   _cooldownTimer: 쿨다운 중
+        ///   _forceStop    : 강제 중단
         ///
-        /// [홀드 타이머]
-        ///   S키 홀드 + 대상 있음 → 타이머 누적 (UnscaledDeltaTime)
-        ///   S키 해제 or 대상 없음 → 타이머 리셋
-        ///   타이머 >= target.SealHoldTime → ExecuteSeal 코루틴 시작
+        /// [집행 조건]
+        ///   GetBestTarget() 가 null 이 아님 → 범위 내 집행 가능 대상 존재
         /// </summary>
-        private IEnumerator DetectSealInput()
+        private void HandleSealPressed()
         {
-            while (true)
+            // 스킵 조건
+            if (_isExecuting)
             {
-                // 스킵 조건
-                if (_isExecuting || _cooldownTimer > 0f ||
-                    _mustReleaseKey || _forceStop)
-                {
-                    _holdTimer = 0f;
-                    yield return null;
-                    continue;
-                }
-
-                // S키 홀드 체크
-                if (_input == null || !_input.IsSealHeld)
-                {
-                    _holdTimer = 0f;
-                    yield return null;
-                    continue;
-                }
-
-                // 최적 집행 대상 조회
-                Vector2 playerPos = _playerTransform != null
-                    ? (Vector2)_playerTransform.position
-                    : Vector2.zero;
-
-                SealableComponent target = _executionEvent.GetBestTarget(playerPos);
-
-                if (target == null)
-                {
-                    _holdTimer = 0f;
-                    yield return null;
-                    continue;
-                }
-
-                // 홀드 타이머 누적 (UnscaledDeltaTime — 슬로우 중에도 일정 속도)
-                _holdTimer += Time.unscaledDeltaTime;
-
-                // 진행도 연출 갱신 (SealExecutionEffect)
-                float progress = _holdTimer / target.SealHoldTime;
-                GetEffectComponent(target)?.OnExecutionProgress(Mathf.Clamp01(progress));
-
-                // 홀드 완료 → 집행 실행
-                if (_holdTimer >= target.SealHoldTime)
-                {
-                    _holdTimer = 0f;
-                    yield return StartCoroutine(ExecuteSeal(target));
-                }
-
-                yield return null;
+                Debug.Log("[SealExecutionRunner] 집행 중 — 입력 무시");
+                return;
             }
+
+            if (_cooldownTimer > 0f)
+            {
+                Debug.Log($"[SealExecutionRunner] 쿨다운 중({_cooldownTimer:F2}s) — 입력 무시");
+                return;
+            }
+
+            if (_forceStop)
+            {
+                Debug.Log("[SealExecutionRunner] ForceStop 상태 — 입력 무시");
+                return;
+            }
+
+            // 최적 집행 대상 조회
+            Vector2 playerPos = _playerTransform != null
+                ? (Vector2)_playerTransform.position
+                : Vector2.zero;
+
+            SealableComponent target = _executionEvent.GetBestTarget(playerPos);
+
+            if (target == null)
+            {
+                Debug.Log("[SealExecutionRunner] 범위 내 집행 가능 대상 없음 — 무시");
+                return;
+            }
+
+            // 즉시 집행
+            StartCoroutine(ExecuteSeal(target));
         }
 
         // ══════════════════════════════════════════════════════
@@ -248,169 +217,74 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 봉인 집행 코루틴.
+        /// 봉인 집행 코루틴. (v2.0)
         ///
-        /// [등급별 슬로우 정책]
-        ///   Normal : 슬로우 없음
-        ///   Part   : 집행 완료 후 짧은 슬로우 (타격감)
+        /// [등급별 처리]
+        ///   Normal : 즉시 완료. 슬로우 없음.
+        ///   Part   : 즉시 완료 → 짧은 슬로우 연출 (타격감).
         ///            partSealSlowTimeScale / partSealSlowDuration
-        ///   Core   : 홀드 시작 시 슬로우 적용
-        ///            finalSealSlowTimeScale (최종 봉인 강한 슬로우)
+        ///   Core   : 즉시 완료 → 강한 슬로우.
+        ///            finalSealSlowTimeScale → FinalSeal 진입
         ///
-        /// [집행 중 처리]
-        ///   플레이어 입력 차단 (BlockAll)
-        ///   홀드 중 S키 해제 or 범위 이탈 → 취소
-        ///   완료 → SealableComponent.ExecuteSeal()
+        /// [v2.0 제거]
+        ///   while (elapsed < holdTime) 2차 홀드 루프 없음.
+        ///   F키 pressed 순간 바로 완료 처리.
         /// </summary>
         private IEnumerator ExecuteSeal(SealableComponent target)
         {
             _isExecuting = true;
-            BlockPlayerInput();
 
             var effect = GetEffectComponent(target);
 
             // 집행 시작 연출
             effect?.OnExecutionStart();
 
-            // Core 등급: 홀드 시작 시 슬로우
+            // Core 등급: 강한 슬로우 시작
             if (target.Grade == SealGrade.Core && _bossData?.SealData != null)
             {
                 Time.timeScale = _bossData.SealData.finalSealSlowTimeScale;
-                Debug.Log($"[SealExecutionRunner] Core 슬로우 시작 → " +
-                          $"{_bossData.SealData.finalSealSlowTimeScale}");
+                Debug.Log($"[SealExecutionRunner] Core 슬로우 → {_bossData.SealData.finalSealSlowTimeScale}");
             }
 
             Debug.Log($"[SealExecutionRunner] ▶ {target.name} 집행 시작 | 등급:{target.Grade}");
 
-            // 홀드 실행 루프
-            float elapsed = 0f;
-            float holdTime = target.SealHoldTime;
-            bool completed = false;
+            // ── 즉시 완료 처리 ──────────────────────
+            // 슬로우 복구 (Core 슬로우는 SealStateManager가 Dead 진입 시 복구)
+            if (target.Grade != SealGrade.Core)
+                RestoreTimeScale();
 
-            while (elapsed < holdTime)
-            {
-                // 강제 중단
-                if (_forceStop) goto cleanup;
-
-                // S키 해제
-                if (_input == null || !_input.IsSealHeld)
-                {
-                    Debug.Log("[SealExecutionRunner] S키 해제 → 집행 취소");
-                    goto cleanup;
-                }
-
-                // 범위 이탈
-                if (_playerTransform != null)
-                {
-                    float dist = Vector2.Distance(
-                        _playerTransform.position,
-                        target.transform.position);
-
-                    if (dist > target.SealRange)
-                    {
-                        Debug.Log("[SealExecutionRunner] 범위 이탈 → 집행 취소");
-                        goto cleanup;
-                    }
-                }
-
-                elapsed += Time.unscaledDeltaTime;
-
-                // 진행도 연출 갱신
-                effect?.OnExecutionProgress(elapsed / holdTime);
-
-                yield return null;
-            }
-
-            // ── 집행 완료 ──────────────────────
-            completed = true;
-
-            // 슬로우 복구
-            RestoreTimeScale();
-
-            // SealableComponent 집행 완료 처리
+            // SealableComponent 집행 완료
             target.ExecuteSeal();
 
             // 완료 연출
             effect?.OnExecutionComplete();
 
-            // Part 등급: 집행 완료 후 짧은 슬로우 (타격감)
+            Debug.Log($"[SealExecutionRunner] ✅ {target.name} 집행 완료 | 등급:{target.Grade}");
+
+            // Part 등급: 짧은 슬로우 연출 (타격감)
             if (target.Grade == SealGrade.Part && _bossData?.SealData != null)
             {
                 float slowScale = _bossData.SealData.partSealSlowTimeScale;
                 float slowDuration = _bossData.SealData.partSealSlowDuration;
 
                 Time.timeScale = slowScale;
-
                 yield return new WaitForSecondsRealtime(slowDuration);
-
                 RestoreTimeScale();
             }
 
-            Debug.Log($"[SealExecutionRunner] ✅ {target.name} 집행 완료 | 등급:{target.Grade}");
-            goto finish;
-
-        cleanup:
-            // ── 집행 취소 ──────────────────────
-            RestoreTimeScale();
-            effect?.OnExecutionCancel();
-
-            Debug.Log($"[SealExecutionRunner] ■ {target.name} 집행 취소");
-
-        finish:
-            UnblockPlayerInput();
             _isExecuting = false;
-            _mustReleaseKey = true;
-            _cooldownTimer = 0.5f;
+            _cooldownTimer = 0.3f;
+
+            yield return null;
         }
 
         // ══════════════════════════════════════════════════════
-        // 플레이어 입력 차단 / 해제
+        // 유틸
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// 집행 중 플레이어 이동 / 대시 / 공격 차단.
-        /// velocity 즉시 정지.
-        /// </summary>
-        private void BlockPlayerInput()
-        {
-            _input?.BlockAll();
-
-            if (_playerRigid2D != null)
-                _playerRigid2D.linearVelocity = Vector2.zero;
-        }
-
-        /// <summary>
-        /// 집행 완료 / 취소 후 입력 차단 해제.
-        /// </summary>
-        private void UnblockPlayerInput()
-        {
-            _input?.UnblockAll();
-        }
-
-        // ══════════════════════════════════════════════════════
-        // 슬로우 처리
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Time.timeScale 을 1.0 으로 복구.
-        /// 집행 완료 / 취소 / OnDestroy 에서 호출.
-        /// </summary>
-        private void RestoreTimeScale()
-        {
-            if (!Mathf.Approximately(Time.timeScale, 1.0f))
-            {
-                Time.timeScale = 1.0f;
-                Debug.Log("[SealExecutionRunner] TimeScale 복구 → 1.0");
-            }
-        }
-
-        // ══════════════════════════════════════════════════════
-        // 내부 유틸
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 집행 대상의 SealExecutionEffect 컴포넌트 탐색.
-        /// 없으면 null 반환 (연출 생략).
+        /// 대상 오브젝트에서 SealExecutionEffect 탐색.
+        /// 없으면 null 반환 (선택 컴포넌트).
         /// </summary>
         private SealExecutionEffect GetEffectComponent(SealableComponent target)
         {
@@ -418,12 +292,18 @@ namespace SEAL
             return target.GetComponent<SealExecutionEffect>();
         }
 
+        /// <summary>TimeScale 1f 복구.</summary>
+        private void RestoreTimeScale()
+        {
+            Time.timeScale = 1f;
+        }
+
         // ══════════════════════════════════════════════════════
         // 외부 API
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// BossDataSO 외부 주입.
+        /// BossDataSO 주입.
         /// BossWardenCore.Initialize() 에서 호출.
         /// </summary>
         public void Initialize(BossDataSO data)
@@ -438,18 +318,22 @@ namespace SEAL
         public void ForceStop()
         {
             _forceStop = true;
+            _isExecuting = false;
             RestoreTimeScale();
-            UnblockPlayerInput();
-
-            Debug.Log("[SealExecutionRunner] 집행 강제 중단");
+            Debug.Log("[SealExecutionRunner] ForceStop 호출");
         }
 
-        /// <summary>
-        /// 강제 중단 해제. 전투 재시작 시 호출.
-        /// </summary>
-        public void Resume()
+        // ══════════════════════════════════════════════════════
+        // 디버그
+        // ══════════════════════════════════════════════════════
+
+#if UNITY_EDITOR
+        [ContextMenu("DEBUG — 왼팔 즉시 집행 시도")]
+        private void Debug_ForceSeal()
         {
-            _forceStop = false;
+            if (!Application.isPlaying) return;
+            HandleSealPressed();
         }
+#endif
     }
 }

@@ -1,9 +1,14 @@
 # SEAL_Hierarchy.md
 # KEY 프로젝트 — Unity Hierarchy 계층 구조 문서
 
-> 기준: SEAL_README #43 + POC08 봉인 시스템 리팩토링 반영  
-> 갱신 기준: 새 오브젝트/컴포넌트 추가 시 반드시 업데이트  
-> 표기 규칙: `[컴포넌트명]` = 부착 컴포넌트 / `← SO` = ScriptableObject 연결 필요 / `← 자동` = GetComponent 자동 탐색
+> 기준: Boss_Warden.prefab 실제 파싱 + 이번 세션 수정사항 반영
+> 최종 갱신: 2026-06-07
+> 표기 규칙:
+>   `[컴포넌트명]` = 부착 컴포넌트
+>   `← SO` = ScriptableObject 연결 필요
+>   `← 자동` = GetComponent/FindObjectsByType 자동 탐색
+>   `⚠️` = 미부착 / 수동 추가 필요
+>   `v숫자` = 현재 스크립트 버전
 
 ---
 
@@ -49,27 +54,28 @@ Managers
 
 ```
 Systems
-├─ InputSystem          [PlayerInputHandler]   ← 싱글턴
+├─ InputSystem          [PlayerInputHandler v1.4]  ← 싱글턴
 ├─ PoolManager          [PoolManager]
 ├─ EventBus             [EventBus]
 └─ TimeController       [TimeController]
 ```
 
-### InputSystem 상세
+### InputSystem 키 바인딩 (v1.4)
 
 ```
-InputSystem
-└─ [PlayerInputHandler]
-      키 바인딩:
-        _keyMoveUp / Down / Left / Right : 방향키
-        _keyDash    : Space
-        _keyAttack  : A
-        _keySeal    : S        ← IsSealHeld 폴링 (봉인 집행용)
-        _keyInteract: E
-        _keyCancel  : LeftShift
-        _keyMenu    : Escape
+[PlayerInputHandler v1.4]
+  이동         : WASD
+  대시         : Space
+  공격(기본)   : 마우스 좌클릭
+  공격(강)     : 마우스 좌클릭 홀드 후 릴리즈
+  봉인 집행    : F키 OR 마우스 우클릭
+                 → OnSeal 이벤트 발행 (pressed 1회)
+                 → IsSealHeld 프로퍼티 (홀드 여부)
+  상호작용     : E
+  취소         : LeftShift
+  메뉴         : Escape
 ```
-> 현재 구현 상태: ✅ PlayerInputHandler v1.2 완료
+> 현재 구현 상태: ✅ v1.4 완료
 
 ---
 
@@ -88,14 +94,15 @@ CameraRoot
 
 ```
 PlayerRoot
-└─ Player                               Layer: Player
-   │  [Rigidbody2D]   GravityScale=0 / FreezeRotation Z
+└─ Player                                   Layer: Player
+   │  [Rigidbody2D]        GravityScale=0 / FreezeRotation Z
    │  [CapsuleCollider2D]
    │  [SpriteRenderer]
    │  [PlayerController]
    │  [PlayerMoveController]
    │  [PlayerAttackController]
-   │  [PlayerAttackHitboxManager]        ← OnHit(col, sealAmount) 발행
+   │  [PlayerAttackHitboxManager]
+   │      OnHit(col, sealAmount) 발행
    │
    ├─ Visual
    ├─ HurtBox
@@ -132,148 +139,189 @@ EnemyRoot
 
 ---
 
-## BossRoot ✅ (신규 봉인 시스템 반영)
+## BossRoot ✅ — Boss_Warden.prefab 실제 구조
 
 ### 레이어 정의
 
-| Layer | 오브젝트 | 용도 |
+| Layer 번호 | 이름 | 용도 |
 |---|---|---|
-| `Enemy` | Boss_Warden, LeftArm, RightArm, Core | 플레이어 공격 감지 |
-| `Player` | Player 본체 | 보스 패턴 히트박스 감지 |
-| `BossHitbox` | 패턴 HitboxCollider | 플레이어 피격 판정 |
-| `Default` | 예고 범위 비주얼 | 충돌 불필요 |
+| 0 | Default | 패턴 오브젝트, AttackVisualRange 등 |
+| 20 | EnemyAttackHitBox | Boss_WardenBody, Core, HurtBox |
+| 21 | (Enemy) | LeftArm, RightArm 본체 |
+| 22 | BossHitbox | LeftHurtBox, RightHurtBox, CoreHurtBox |
 
-**Physics2D Collision Matrix:**
+### Physics2D Collision Matrix
 
-| | Enemy | Player | BossHitbox |
-|:---:|:---:|:---:|:---:|
-| Enemy | ❌ | ❌ | ❌ |
-| Player | ❌ | ❌ | ✅ |
-| BossHitbox | ❌ | ✅ | ❌ |
+| | Player | BossHitbox (22) |
+|:---:|:---:|:---:|
+| PlayerAttack | ✅ | ❌ |
+| EnemyAttackHitBox (20) | ✅ | ❌ |
 
 ---
 
-### BossRoot 전체 계층 구조
+### BossRoot 전체 계층 구조 (실제 프리팹 기준)
 
 ```
-BossRoot                                        Layer: Default
-└─ Boss_Warden                                  Layer: Enemy
+BossRoot                                            Layer: Default
+└─ Boss_Warden                                      Layer: Default
    │
-   │  ══ 물리 / 렌더 ════════════════════════════════════════
-   │  [Rigidbody2D]
-   │      GravityScale = 0
-   │      FreezeRotation Z = true
-   │      CollisionDetection = Continuous
-   │  [CapsuleCollider2D]   isTrigger=false  Size=(0.8, 1.2)
-   │  [SpriteRenderer]      Sprite=Knob  Color=#888888
-   │      SortingLayer = Enemy
-   │
-   │  ══ 봉인 시스템 — Root Layer (범용) ════════════════════
-   │  [SealStateManager]                        ← 상태 총괄
-   │      _bossData       → BossWardenDataSO ← SO
+   │  ══ 봉인 시스템 — 범용 (Boss_Warden Root) ═══════════════
+   │  [BossWardenCore v4.0]                ← 초기화 허브 / DataSO 단일 주입
+   │      _data           → BossWardenDataSO ← SO (필수)
+   │      _armL           → LeftArm/BossWardenArmPart
+   │      _armR           → RightArm/BossWardenArmPart
    │      _coreObject     → Core ← Inspector 연결
    │
-   │  [SealGaugeManager]                        ← 봉인도 전체 조율
-   │      _bossData       → BossWardenDataSO ← SO
+   │  [SealStateManager v2.0]              ← 상태 총괄 (Groggy 제거됨)
+   │      상태: Idle → DilPhase → FinalSeal → Dead
+   │      _coreObject     → Core ← ConnectCore() 주입
+   │
+   │  [SealGaugeManager]                   ← 봉인도 수치 조율
    │      (하위 SealableComponent 자동 수집)
+   │      수집 결과: Part 2개 / Core 1개
    │
-   │  [SealManager]                             ← 봉인 규칙 정의
-   │      _requiredSealCountForGroggy = 0 (자동=전체 Part 수)
+   │  [SealManager]                        ← 봉인 규칙 (그로기 필요 수: 2)
    │
-   │  [SealEffectManager]                       ← 이펙트/UI 총괄
-   │      _coreTransform  → Core Transform ← Inspector 연결
-   │      _shockwave      → BossWardenShockwave ← 자동
+   │  [SealEffectManager]                  ← 이펙트/UI 총괄
+   │      _coreTransform  → Core Transform ← 자동
    │
-   │  [SealExecutionEvent]                      ← 집행 목록 관리
+   │  [SealExecutionEvent]                 ← 집행 가능 목록 관리
    │      (하위 SealReadyNotifier 자동 수집)
    │
-   │  [SealExecutionRunner]                     ← S키 홀드 집행 실행
-   │      _bossData       → BossWardenDataSO ← SO
-   │      _executionEvent → SealExecutionEvent ← 자동
+   │  [SealExecutionRunner v2.0]           ← F키 pressed 즉시 집행
+   │      PlayerInputHandler.OnSeal 구독
+   │      GetBestTarget() → 즉시 ExecuteSeal()
+   │      홀드 타이머 없음 / BlockAll 없음
    │
    │  ══ Warden 전용 ════════════════════════════════════════
-   │  [BossWardenAI]
+   │  [BossWardenAI v3.0]                  ← 이동 / 패턴 실행
+   │      _data           → BossWardenDataSO ← SO
+   │      _armL / _armR   → BossWardenArmPart
+   │      _patterns       → Patterns 하위 패턴 컴포넌트들
+   │      경로: BossWardenCore 브리지 방식
+   │            OnDilPhaseEnter / OnDilPhaseExit / OnPhaseChanged / OnDead
+   │
+   │  [BossWardenFeedback v4.0]            ← 색상 / 시각 피드백
+   │      _data           → BossWardenDataSO ← SO
+   │      _ai             → BossWardenAI ← 자동
+   │      _bodyRenderer   → Boss_WardenBody/SpriteRenderer
+   │      _armLPart / _armRPart → BossWardenArmPart
+   │
+   │  [BossWardenAttackRange]              ← 공격 범위 표시
    │      _data           → BossWardenDataSO ← SO
    │
-   │  [BossWardenFeedback]
+   │  [BossWardenShockwave]                ← 충격파
    │      _data           → BossWardenDataSO ← SO
    │
-   │  [BossWardenAttackRange]
-   │      _data           → BossWardenDataSO ← SO
+   │  ══ 본체 비주얼 ══════════════════════════════════════
+   ├─ Boss_WardenBody                              Layer: EnemyAttackHitBox (20)
+   │     [SpriteRenderer]
    │
-   │  [BossWardenShockwave]
-   │      _data           → BossWardenDataSO ← SO
-   │
-   │  [BossWardenCore]                          ← 총괄 초기화 / DataSO 주입
-   │      _data           → BossWardenDataSO ← SO  (필수, 단일 연결 지점)
-   │      _coreObject     → Core ← Inspector 연결
-   │      _shockwave      → BossWardenShockwave ← 자동
-   │
-   │
-   │  ══ 패턴 오브젝트 ════════════════════════════════════════
-   ├─ Patterns                                  SetActive=true 항상 유지
-   │  ├─ BossPattern_Charge    [BossPattern_Charge]
-   │  ├─ BossPattern_Slam      [BossPattern_Slam]
-   │  ├─ BossPattern_Sweep     [BossPattern_Sweep]
-   │  ├─ BossPattern_GuardBreak[BossPattern_GuardBreak]
-   │  └─ BossPattern_RageCharge[BossPattern_RageCharge]   ← _isPhase2Only=true
-   │
-   │  ══ 팔 부위 ═══════════════════════════════════════════
-   ├─ LeftArm                                   Layer: Enemy
-   │  │  [SpriteRenderer]      Sprite=Square  Color=#AAAAAA
-   │  │  [CapsuleCollider2D]   isTrigger=false
+   │  ══ 팔 부위 ══════════════════════════════════════════
+   ├─ LeftArm                                      Layer: 21 (Enemy)
+   │  │  [BossWardenArmPart v3.0]
+   │  │      _partType        = LeftArm
+   │  │      _ownCollider     → LeftHurtBox/BoxCollider2D
+   │  │      _data            → BossWardenDataSO ← Initialize() 주입
+   │  │      _guardBreakPattern → null (LeftArm은 GuardBreak 미연결)
    │  │
-   │  │  ── 봉인 시스템 — Part Layer (범용) ──────────────
    │  │  [SealableComponent]
-   │  │      grade          = Part
-   │  │      _bossData      → BossWardenDataSO ← SO
-   │  │      _sealRange     = 1.5
-   │  │      _sealHoldTime  = 1.5
-   │  │      _isDilPhaseOnly = false
+   │  │      grade            = Part
+   │  │      MaxGauge         = 200
+   │  │      _isDilPhaseOnly  = false
    │  │
-   │  │  [SealReadyNotifier]                    ← 집행 가능 신호 + 범위 원
+   │  │  ⚠️ [SealReadyNotifier]            ← 수동 추가 필요
    │  │      (SealableComponent 자동 탐색)
+   │  │      → 없으면 SealExecutionEvent 집행 목록에 등록 안 됨
    │  │
-   │  │  [SealExecutionEffect]                  ← Arc 게이지 + 완료/취소 연출
-   │  │      (SealableComponent 자동 탐색)
-   │  │
-   │  │  ── Warden 전용 ─────────────────────────────────
-   │  │  [BossWardenArmPart]
-   │  │      _data          → BossWardenDataSO ← SO
-   │  │
-   │  └─ SealRangeCircle    [LineRenderer]      ← SealReadyNotifier 자동 생성 가능
-   │     ExecutionArcGauge  [LineRenderer]      ← SealExecutionEffect 자동 생성 가능
+   │  └─ LeftHurtBox                               Layer: BossHitbox (22)
+   │        [BoxCollider2D]    isTrigger=false
    │
-   ├─ RightArm                                  Layer: Enemy
-   │  │  [SpriteRenderer]      Sprite=Square  Color=#AAAAAA
-   │  │  [CapsuleCollider2D]   isTrigger=false
+   ├─ RightArm                                     Layer: 21 (Enemy)
+   │  │  [BossWardenArmPart v3.0]
+   │  │      _partType        = RightArm
+   │  │      _ownCollider     → RightHurtBox/BoxCollider2D
+   │  │      _data            → BossWardenDataSO ← Initialize() 주입
+   │  │      _guardBreakPattern → Patterns/GuardBreak/BossPattern_GuardBreak
    │  │
-   │  │  [SealableComponent]   grade=Part
-   │  │  [SealReadyNotifier]
-   │  │  [SealExecutionEffect]
-   │  │  [BossWardenArmPart]
+   │  │  [SealableComponent]
+   │  │      grade            = Part
+   │  │      MaxGauge         = 200
+   │  │      _isDilPhaseOnly  = false
    │  │
-   │  └─ SealRangeCircle    [LineRenderer]
-   │     ExecutionArcGauge  [LineRenderer]
+   │  │  ⚠️ [SealReadyNotifier]            ← 수동 추가 필요
+   │  │
+   │  └─ RightHurtBox                              Layer: BossHitbox (22)
+   │        [BoxCollider2D]    isTrigger=false
    │
-   │  ══ 코어 ════════════════════════════════════════════
-   └─ Core                                      Layer: Enemy
-         SetActive = false (그로기 진입 시 true)
-      │  [SpriteRenderer]      Sprite=Knob  Color=#FFE600
-      │  [CircleCollider2D]    isTrigger=false
+   │  ══ 코어 ══════════════════════════════════════════════
+   ├─ Core                                         Layer: EnemyAttackHitBox (20)
+   │  │  SetActive = false (DilPhase 진입 시 true)
+   │  │
+   │  │  [SealableComponent]
+   │  │      grade            = Core
+   │  │      MaxGauge         = 500
+   │  │      _isDilPhaseOnly  = true   ← DilPhase 중만 봉인도 누적
+   │  │
+   │  │  ⚠️ [SealReadyNotifier]            ← 수동 추가 필요
+   │  │
+   │  └─ CoreHurtBox                              Layer: BossHitbox (22)
+   │        [BoxCollider2D]    isTrigger=true
+   │
+   │  ══ 충돌 박스 ══════════════════════════════════════════
+   ├─ HurtBox                                      Layer: EnemyAttackHitBox (20)
+   │     [BoxCollider2D]    isTrigger=false  Size=(1, 0.5)  Offset=(0, -0.25)
+   │     localScale = (5, 7, 1)
+   │
+   │  ══ 공격 범위 시각화 ══════════════════════════════════
+   ├─ AttackVisualRange                            Layer: Default
+   │  ├─ ChargeLine          [SpriteRenderer]      돌진 예고선
+   │  ├─ DiscSlam0           [SpriteRenderer]      Slam 예고 디스크 0
+   │  ├─ DiscSlam1           [SpriteRenderer]      Slam 예고 디스크 1
+   │  ├─ DiscSweep           [SpriteRenderer]      Sweep 예고 디스크
+   │  ├─ DiscGuardBreak      [SpriteRenderer]      GuardBreak 예고 디스크
+   │  ├─ ReageChargeLine0    [SpriteRenderer]      RageCharge 예고선 0
+   │  ├─ ReageChargeLine1    [SpriteRenderer]      RageCharge 예고선 1
+   │  ├─ ReageChargeLine2    [SpriteRenderer]      RageCharge 예고선 2
+   │  ├─ SealRangeCircle     [LineRenderer]        Part 집행 가능 범위 원
+   │  └─ CoreRangeCircle     [LineRenderer]        Core 집행 가능 범위 원
+   │
+   │  ══ 충격파 시각화 ══════════════════════════════════════
+   ├─ ShockWaveDisc                                Layer: Default
+   │     [SpriteRenderer]
+   │
+   │  ══ 패턴 오브젝트 ══════════════════════════════════════
+   │  SetActive = true 항상 유지 (코루틴 중단 방지)
+   └─ Patterns                                     Layer: Default
+      ├─ Slam                [BossPattern_Slam v3.3]
+      │     _linkedArmPart   → LeftArm/BossWardenArmPart
+      │     _armLTransform   → LeftArm Transform
+      │     _armLRenderer    → LeftArm SpriteRenderer
+      │     _triggerGroggyOnRecovery = false
       │
-      │  [SealableComponent]
-      │      grade          = Core
-      │      _bossData      → BossWardenDataSO ← SO
-      │      _sealRange     = 1.5
-      │      _sealHoldTime  = 2.0   (최종 봉인 홀드 시간)
-      │      _isDilPhaseOnly = true  (딜페이즈 중만 봉인도 누적)
-      │      _phaseTarget   = 250   (1페이즈: phase1CoreSealTarget)
+      ├─ Sweep               [BossPattern_Sweep v3.2]
+      │     _linkedArmPart   → LeftArm/BossWardenArmPart
+      │     _armLTransform   → LeftArm Transform
+      │     _armRTransform   → RightArm Transform
+      │     _triggerGroggyOnRecovery = false
       │
-      │  [SealReadyNotifier]
-      │  [SealExecutionEffect]
+      ├─ GuardBreak          [BossPattern_GuardBreak v3.2]
+      │     _linkedArmPart   → RightArm/BossWardenArmPart
+      │     _armRTransform   → RightArm Transform
+      │     _armLTransform   → LeftArm Transform
+      │     _triggerGroggyOnRecovery = true (Awake에서 강제 설정)
+      │     ⚠️ HandlePatternGroggy() 현재 빈 함수 — 그로기 유발 경로 없음
       │
-      └─ CoreRangeCircle   [LineRenderer]      ← SealEffectManager 자동 생성 가능
+      ├─ RageCharge          [BossPattern_RageCharge v2.0]
+      │     _isPhase2Only    = true   ← 2페이즈 전용
+      │     _linkedArmPart   = null   ← 독립 패턴
+      │     _triggerGroggyOnRecovery = false
+      │
+      └─ Charge              [BossPattern_Charge v2.3]
+            _linkedArmPart   → RightArm/BossWardenArmPart
+            _armRTransform   → RightArm Transform
+            _wallLayer       → Wall 레이어 (Inspector 설정 필수)
+            _triggerGroggyOnRecovery = false
 ```
 
 ---
@@ -281,41 +329,28 @@ BossRoot                                        Layer: Default
 ### DataSO 에셋 연결 체계
 
 ```
-BossWardenDataSO  ← Inspector 연결은 이 하나만 (BossWardenCore._data)
-  ├─ SealDataSO         봉인도 수치 / 집행 / 슬로우 / 너프
-  └─ SealColorDataSO    봉인 색상 / DOTween / 파티클
+BossWardenDataSO                    ← Inspector 연결은 BossWardenCore._data 하나만
+  ├─ SealDataSO                     봉인도 수치 / 슬로우 / 저항
+  └─ SealColorDataSO                봉인 색상 / DOTween / 파티클
 ```
 
-BossWardenCore.Initialize() 가 시작 시 모든 하위 컴포넌트에 주입.
+BossWardenCore.Start() → InjectData() → 모든 하위 컴포넌트에 자동 주입
 
 ---
 
-### 제거된 구버전 컴포넌트 (신버전으로 대체)
+### 이번 세션 수정사항 반영 체크리스트
 
-| 구버전 (제거 대상) | 신버전 (대체) | 비고 |
+| 항목 | 내용 | 상태 |
 |---|---|---|
-| `SealGaugeComponent` | `SealableComponent` | 통합 컴포넌트로 대체 |
-| `BossWardenCoreSealGauge` | `SealableComponent` (grade=Core) | 코어도 동일 컴포넌트 |
-| `BossWardenSealExecutor` | `SealExecutionEvent` + `SealExecutionRunner` | 역할 분리 |
-| `SealExecutor` (구버전) | `SealExecutionEvent` + `SealExecutionRunner` | 범용화 |
-
----
-
-## AttackRangeVisuals (BossWardenAttackRange 자동 관리)
-
-```
-Boss_Warden
-└─ AttackRangeVisuals                           Layer: Default
-   ├─ ChargeLine        [LineRenderer]           Charge 예고선
-   ├─ SlamDisc_0        [SpriteRenderer]         Slam 예고 원 1
-   ├─ SlamDisc_1        [SpriteRenderer]         Slam 예고 원 2 (2페이즈)
-   ├─ SweepDisc         [SpriteRenderer]         Sweep 예고 원
-   ├─ GuardBreakDisc    [SpriteRenderer]         GuardBreak 예고 사각
-   ├─ RageChargeLine_0  [LineRenderer]           RageCharge 예고선 1
-   ├─ RageChargeLine_1  [LineRenderer]           RageCharge 예고선 2
-   ├─ RageChargeLine_2  [LineRenderer]           RageCharge 예고선 3
-   └─ (SealRange, CoreRange은 SealReadyNotifier / SealEffectManager 가 자동 생성)
-```
+| SealStateManager v2.0 | Groggy 제거 → DilPhase 직결 | ✅ 코드 완료 |
+| IBossCore v2.0 | OnGroggyEnter/Exit 제거 | ✅ 코드 완료 |
+| BossWardenCore v4.0 | Groggy 브리지 제거 | ✅ 코드 완료 |
+| BossWardenAI v3.0 | OnGroggyEnter/Exit 제거 / CheckChaseTransition 가드 추가 | ✅ 코드 완료 |
+| BossWardenFeedback v4.0 | OnGroggyEnter/Exit 제거 / OnDilPhaseEnter 통합 | ✅ 코드 완료 |
+| SealExecutionRunner v2.0 | 홀드 타이머 제거 / F키 pressed 즉시 집행 | ✅ 코드 완료 |
+| SealReadyNotifier | LeftArm / RightArm / Core 수동 추가 필요 | ⚠️ Prefab 미적용 |
+| Warning 중 Chase 전환 차단 | _currentPattern != null 가드 추가 | ✅ 코드 완료 |
+| DilPhase 중 패턴 선택 차단 | _isStopped 가드 추가 | ✅ 코드 완료 |
 
 ---
 
@@ -348,19 +383,11 @@ EffectRoot
 
 ```
 UIRoot
-├─ Canvas_Gameplay      [Canvas] [CanvasScaler] [GraphicRaycaster]
+├─ Canvas_Gameplay
 │  ├─ PlayerHUD
-│  │  ├─ HP_Bar
-│  │  └─ DashCharge_Icons
-│  ├─ SealGaugeUI           봉인도 게이지 (공격 중인 부위만 표시)
-│  │                        ← SealEffectManager.OnPartGaugeChanged 구독
-│  ├─ CoreGaugeUI           코어 봉인도 게이지 (딜 페이즈 중만 표시)
-│  │                        ← SealEffectManager.OnCoreGaugeChanged 구독
+│  ├─ SealGaugeUI
+│  ├─ CoreGaugeUI
 │  └─ BossStatusUI
-│     ├─ BossPhaseIndicator ← SealEffectManager.OnPhaseUIChanged 구독
-│     ├─ PartStatusIcons
-│     └─ GroggyIndicator
-│
 ├─ Canvas_Menu
 ├─ Canvas_Reward
 └─ Canvas_Minimap
@@ -373,44 +400,23 @@ UIRoot
 
 ```
 DebugRoot
-├─ DebugText            [TextMeshPro]
-├─ StateViewer          현재 SealBossState 표시
-├─ HitBoxViewer
-└─ SealGaugeViewer      봉인도 수치 표시
+└─ Boss_Warden (임시 부착)
+      [SealDebugTracker v1.0]     ← 버티컬 슬라이스 이후 제거 예정
+            봉인도 수치 실시간 표시
+            집행 가능 대상 추적
+            F키 홀드 상태 감지
+            ContextMenu 디버그 명령
 ```
-> 현재 구현 상태: 미구현 (추후 개발)
-
----
-
-## 현재 구현 상태 요약
-
-| Root | 구현 상태 | 비고 |
-|---|:---:|---|
-| Managers | ❌ | 추후 개발 |
-| Systems / InputSystem | ✅ | PlayerInputHandler v1.2 |
-| CameraRoot | ❌ | 추후 개발 |
-| PlayerRoot | ✅ | v0.1~v0.4 완료 |
-| StageRoot | ❌ | 추후 개발 |
-| EnemyRoot | ❌ | 추후 개발 |
-| BossRoot | 🟨 | 봉인 시스템 리팩토링 완료, 유니티 조립 필요 |
-| ProjectileRoot | ❌ | 추후 개발 |
-| EffectRoot | ❌ | 추후 개발 |
-| UIRoot | ❌ | 추후 개발 |
-| DebugRoot | ❌ | 추후 개발 |
 
 ---
 
 ## 하이어라키 설계 원칙
 
 - 런타임 생성 오브젝트는 반드시 전용 Root 하위에 생성한다.
-- Manager 와 System 은 구분한다.
-- Player / Enemy / Boss 는 서로 다른 Root 에 둔다.
-- UI 는 UIRoot 하위에서만 관리한다.
+- Manager와 System은 구분한다.
+- Player, Enemy, Boss는 서로 다른 Root에 둔다.
+- UI는 UIRoot 하위에서만 관리한다.
 - 디버그 오브젝트는 DebugRoot 하위에 둔다.
-- 씬에서 오브젝트를 찾기 쉽게 이름을 명확하게 작성한다.
-- 봉인 시스템 범용 컴포넌트(SealableComponent 등)는 Warden 전용 컴포넌트보다 먼저 부착한다.
-
----
-
-*이 파일은 새 오브젝트/컴포넌트 추가 시 반드시 업데이트합니다.*  
-*SEAL_DEVSession 의 "봉인 업데이트 요청" 과 함께 갱신합니다.*
+- Patterns 오브젝트는 SetActive=true 항상 유지 (코루틴 중단 방지).
+- SealReadyNotifier 는 SealableComponent 와 같은 오브젝트에 반드시 부착.
+- BossWardenCore._data 하나만 Inspector 연결 — 모든 컴포넌트는 InjectData() 로 수신.
