@@ -3,19 +3,11 @@
 // Boss_Warden 회전 스윕 패턴
 //
 // [수정 내용]
-//   팔(양팔) SpriteRenderer 색상 코드 전부 제거
-//   → _armLRenderer / _armRRenderer / _bodyRenderer 색상 제거
-//   → _armLColorTween / _armRColorTween / _bodyColorTween 제거
-//   → _armLOriginColor / _armROriginColor / _bodyOriginColor 제거
-//   → Warning DOColor 본체 Pulse 제거
-//   → Recovery 양팔 색상 복귀 제거
-//   → Interrupt 양팔 색상 즉시 복귀 제거
-//   → ReattachArms() 색상 스냅 제거
-//
+//   팔(양팔) + 본체 SpriteRenderer 색상 코드 전부 제거
 //   Warning AttackRange 점멸 추가
-//   → ShowSweepDisc() 후 StartSweepPulse() 호출
-//   Active 진입 시 점멸 중단
-//   → StopAllPulse() 호출
+//   실제 SerializeField 필드 사용:
+//   _armSpreadAmount, _flyDistance, _flyDuration,
+//   _flyVulnDuration, _returnDuration
 //
 // [namespace] SEAL
 // ============================================================
@@ -42,7 +34,7 @@ namespace SEAL
         [SerializeField] private BossWardenDataSO _data;
 
         [Header("── 팔 Transform ──────────────────────")]
-        /// <summary>왼팔 Transform. 회전 + 분리 연출. 색상 제어 없음.</summary>
+        /// <summary>왼팔 Transform. 색상 제어 없음.</summary>
         [Tooltip("왼팔 Transform. 색상 제어 없음.")]
         [SerializeField] private Transform _armLTransform;
         /// <summary>오른팔 Transform. 색상 제어 없음.</summary>
@@ -53,21 +45,43 @@ namespace SEAL
         [Tooltip("플레이어 히트박스 레이어.")]
         [SerializeField] private LayerMask _playerLayer;
 
+        [Header("── 연출 수치 ──────────────────────")]
+
+        /// <summary>Warning 시 팔이 좌우로 벌어지는 거리.</summary>
+        [Tooltip("팔 벌리기 거리. 권장: 0.6")]
+        [Min(0f)]
+        [SerializeField] private float _armSpreadAmount = 0.6f;
+
+        /// <summary>회전 완료 후 팔이 날아가는 거리. 2페이즈에서는 × 1.5.</summary>
+        [Tooltip("원심력 날아가는 거리. 권장: 1.5")]
+        [Min(0.5f)]
+        [SerializeField] private float _flyDistance = 1.5f;
+
+        /// <summary>팔이 날아가는 데 걸리는 시간 (초).</summary>
+        [Tooltip("팔 날아가는 시간 (초). 권장: 0.2")]
+        [Min(0.05f)]
+        [SerializeField] private float _flyDuration = 0.2f;
+
+        /// <summary>팔이 날아간 후 공략 타임 지속 시간 (초).</summary>
+        [Tooltip("팔 공략 타임 지속 시간 (초). 권장: 1.5")]
+        [Min(0.5f)]
+        [SerializeField] private float _flyVulnDuration = 1.5f;
+
+        /// <summary>팔 귀환 시간 (초).</summary>
+        [Tooltip("팔 귀환 시간 (초). 권장: 0.3")]
+        [Min(0.05f)]
+        [SerializeField] private float _returnDuration = 0.3f;
+
         // ══════════════════════════════════════════════════════
         // 내부 상태
         // ══════════════════════════════════════════════════════
 
-        private Transform _bossTransform;
         private Vector3 _armLOriginLocalPos;
         private Vector3 _armROriginLocalPos;
+        private Transform _bossTransform;
         private bool _isPhase2;
         private bool _isArmsDetached;
-
         private Tween _rotateTween;
-
-        private float _returnDuration;
-        private float _sweepVulnDuration;
-        private float _sweepFlyDist;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -83,16 +97,6 @@ namespace SEAL
 
             if (_armLTransform != null) _armLOriginLocalPos = _armLTransform.localPosition;
             if (_armRTransform != null) _armROriginLocalPos = _armRTransform.localPosition;
-        }
-
-        private void ApplyDataValues()
-        {
-            if (_data == null) return;
-            _returnDuration = _data.sweepReturnDuration;
-            _sweepVulnDuration = _data.sweepVulnDuration;
-            _sweepFlyDist = _isPhase2
-                ? _data.sweepFlyDistance * 1.5f
-                : _data.sweepFlyDistance;
         }
 
         public new void UnlockPhase2()
@@ -115,24 +119,22 @@ namespace SEAL
         {
             if (_data == null) yield break;
 
-            ApplyDataValues();
-
             Vector2 bossPos = GetBossWorldPos();
 
             // 디스크 표시 + 점멸 시작
             _attackRange?.ShowSweepDisc(bossPos, _data.sweepHitRadius);
             _attackRange?.StartSweepPulse();
 
-            // 팔 벌리기 (위치만)
+            // 팔 벌리기 (위치만 — 색상 없음)
             if (_armLTransform != null)
                 _armLTransform
-                    .DOLocalMove(_armLOriginLocalPos + new Vector3(-_data.sweepSpreadAmount, 0f, 0f),
+                    .DOLocalMove(_armLOriginLocalPos + new Vector3(-_armSpreadAmount, 0f, 0f),
                                  _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
 
             if (_armRTransform != null)
                 _armRTransform
-                    .DOLocalMove(_armROriginLocalPos + new Vector3(_data.sweepSpreadAmount, 0f, 0f),
+                    .DOLocalMove(_armROriginLocalPos + new Vector3(_armSpreadAmount, 0f, 0f),
                                  _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
 
@@ -151,25 +153,24 @@ namespace SEAL
             _attackRange?.StopAllPulse();
             _attackRange?.HideSweepDisc();
 
+            float rotateSpeed = _isPhase2 ? _data.phase2SweepRotateSpeed : _data.sweepRotateSpeed;
+            float rotateDuration = 360f / Mathf.Max(rotateSpeed, 1f);
             int rotCount = _isPhase2 ? 2 : 1;
 
             for (int r = 0; r < rotCount; r++)
             {
                 if (_isInterrupted) yield break;
 
-                // 360도 회전
                 _rotateTween?.Kill();
                 _rotateTween = _bossTransform
-                    .DORotate(new Vector3(0f, 0f, 360f), _data.sweepRotateDuration,
-                              RotateMode.FastBeyond360)
+                    .DORotate(new Vector3(0f, 0f, 360f), rotateDuration, RotateMode.FastBeyond360)
                     .SetEase(Ease.Linear);
 
                 float elapsed = 0f;
-                while (elapsed < _data.sweepRotateDuration)
+                while (elapsed < rotateDuration)
                 {
                     if (_isInterrupted) yield break;
 
-                    // 히트박스 판정
                     Vector2 bossPos = GetBossWorldPos();
                     _attackRange?.UpdateSweepDiscPosition(bossPos);
 
@@ -187,18 +188,15 @@ namespace SEAL
             // 팔 분리 + 날아가기
             SeparateAndFlyArms();
 
-            yield return new WaitForSecondsRealtime(_sweepVulnDuration);
+            yield return new WaitForSecondsRealtime(_flyVulnDuration);
             if (_isInterrupted) { ReattachArms(); yield break; }
 
             // 팔 귀환
             Vector3 bossCurrentPos = _bossTransform.position;
-            Vector3 returnL = bossCurrentPos + _armLOriginLocalPos;
-            Vector3 returnR = bossCurrentPos + _armROriginLocalPos;
-
             if (_armLTransform != null)
-                _armLTransform.DOMove(returnL, _returnDuration).SetEase(Ease.InBack);
+                _armLTransform.DOMove(bossCurrentPos + _armLOriginLocalPos, _returnDuration).SetEase(Ease.InBack);
             if (_armRTransform != null)
-                _armRTransform.DOMove(returnR, _returnDuration).SetEase(Ease.InBack);
+                _armRTransform.DOMove(bossCurrentPos + _armROriginLocalPos, _returnDuration).SetEase(Ease.InBack);
 
             yield return new WaitForSecondsRealtime(_returnDuration);
 
@@ -209,54 +207,36 @@ namespace SEAL
         {
             if (_bossTransform == null) return;
 
+            float dist = _isPhase2 ? _flyDistance * 1.5f : _flyDistance;
+
             if (_armLTransform != null)
             {
                 _armLTransform.SetParent(null, worldPositionStays: true);
-                Vector2 flyDirL = ((Vector2)_armLTransform.position
-                    - (Vector2)_bossTransform.position).normalized;
-                _armLTransform
-                    .DOMove((Vector2)_armLTransform.position + flyDirL * _sweepFlyDist,
-                            _sweepVulnDuration * 0.5f)
-                    .SetEase(Ease.OutExpo);
+                Vector2 flyDirL = ((Vector2)_armLTransform.position - (Vector2)_bossTransform.position).normalized;
+                _armLTransform.DOMove((Vector2)_armLTransform.position + flyDirL * dist, _flyDuration).SetEase(Ease.OutExpo);
             }
 
             if (_armRTransform != null)
             {
                 _armRTransform.SetParent(null, worldPositionStays: true);
-                Vector2 flyDirR = ((Vector2)_armRTransform.position
-                    - (Vector2)_bossTransform.position).normalized;
-                _armRTransform
-                    .DOMove((Vector2)_armRTransform.position + flyDirR * _sweepFlyDist,
-                            _sweepVulnDuration * 0.5f)
-                    .SetEase(Ease.OutExpo);
+                Vector2 flyDirR = ((Vector2)_armRTransform.position - (Vector2)_bossTransform.position).normalized;
+                _armRTransform.DOMove((Vector2)_armRTransform.position + flyDirR * dist, _flyDuration).SetEase(Ease.OutExpo);
             }
 
             _isArmsDetached = true;
         }
 
         // ══════════════════════════════════════════════════════
-        // Recovery — Z각도 복구 + 팔 원위치 보정 (색상 없음)
+        // Recovery — Z각도 복구 + 팔 보정 (색상 없음)
         // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnRecovery()
         {
             if (_isInterrupted) yield break;
 
-            // 팔 원위치 보정 (위치만)
-            if (_armLTransform != null)
-                _armLTransform
-                    .DOLocalMove(_armLOriginLocalPos, _recoveryDuration * 0.3f)
-                    .SetEase(Ease.OutBack);
-            if (_armRTransform != null)
-                _armRTransform
-                    .DOLocalMove(_armROriginLocalPos, _recoveryDuration * 0.3f)
-                    .SetEase(Ease.OutBack);
-
-            // 본체 Z각도 복구
-            if (_bossTransform != null)
-                _bossTransform
-                    .DORotate(Vector3.zero, _recoveryDuration * 0.5f)
-                    .SetEase(Ease.OutCubic);
+            _armLTransform?.DOLocalMove(_armLOriginLocalPos, _recoveryDuration * 0.3f).SetEase(Ease.OutBack);
+            _armRTransform?.DOLocalMove(_armROriginLocalPos, _recoveryDuration * 0.3f).SetEase(Ease.OutBack);
+            _bossTransform?.DORotate(Vector3.zero, _recoveryDuration * 0.5f).SetEase(Ease.OutCubic);
 
             yield return StartCoroutine(WaitForPattern(_recoveryDuration));
         }
@@ -290,7 +270,6 @@ namespace SEAL
                 _armLTransform.DOKill();
                 _armLTransform.SetParent(_bossTransform, worldPositionStays: true);
                 _armLTransform.localPosition = _armLOriginLocalPos;
-
                 _armLTransform.GetComponent<BossWardenArmPart>()?.SetSlamVuln(false, 1f);
             }
 
@@ -299,7 +278,6 @@ namespace SEAL
                 _armRTransform.DOKill();
                 _armRTransform.SetParent(_bossTransform, worldPositionStays: true);
                 _armRTransform.localPosition = _armROriginLocalPos;
-
                 _armRTransform.GetComponent<BossWardenArmPart>()?.SetSlamVuln(false, 1f);
             }
 

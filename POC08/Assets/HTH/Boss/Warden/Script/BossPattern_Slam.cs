@@ -5,15 +5,10 @@
 // [수정 내용]
 //   팔(왼팔) SpriteRenderer 색상 코드 전부 제거
 //   → _armLRenderer / _armColorTween / _armOriginColor 제거
-//   → Warning DOColor Pulse 제거
-//   → 공략 타임 DOColor Yoyo 제거
-//   → Recovery 팔 색상 복귀 제거
-//   → Interrupt 팔 색상 복귀 제거
-//
 //   Warning AttackRange 점멸 추가
-//   → ShowSlamDisc() 후 StartSlamPulse() 호출
-//   Active 진입 시 점멸 중단
-//   → StopAllPulse() 호출
+//   _data.slamMoveDuration 등 없는 필드 → 패턴 자체 SerializeField 사용
+//   (_windupPullAmount, _windupLiftAmount, _slamMoveDuration,
+//    _slamVulnDuration, _slamVulnMultiplier, _returnDuration)
 //
 // [namespace] SEAL
 // ============================================================
@@ -40,27 +35,60 @@ namespace SEAL
         [SerializeField] private BossWardenDataSO _data;
 
         [Header("── 왼팔 Transform ──────────────────────")]
-        /// <summary>왼팔 Transform. 분리/귀환 연출 주체. 색상 제어 없음.</summary>
-        [Tooltip("왼팔 Transform. 분리/귀환 연출용. 색상 제어 없음.")]
+        /// <summary>왼팔 Transform. 분리/귀환 연출. 색상 제어 없음.</summary>
+        [Tooltip("왼팔 Transform. 색상 제어 없음.")]
         [SerializeField] private Transform _armLTransform;
 
         [Header("── 레이어 ──────────────────────")]
         [Tooltip("플레이어 히트박스 레이어.")]
         [SerializeField] private LayerMask _playerLayer;
 
+        [Header("── 연출 수치 ──────────────────────")]
+
+        /// <summary>Warning 백스윙 당기는 거리.</summary>
+        [Tooltip("백스윙 당기는 거리. 권장: 0.5")]
+        [Min(0f)]
+        [SerializeField] private float _windupPullAmount = 0.5f;
+
+        /// <summary>백스윙 들어올리는 높이.</summary>
+        [Tooltip("백스윙 들어올리는 높이. 권장: 0.3")]
+        [Min(0f)]
+        [SerializeField] private float _windupLiftAmount = 0.3f;
+
+        /// <summary>팔이 목표 위치까지 이동하는 시간 (초).</summary>
+        [Tooltip("내려치기 이동 시간 (초). 권장: 0.15")]
+        [Min(0.05f)]
+        [SerializeField] private float _slamMoveDuration = 0.15f;
+
+        /// <summary>팔이 꽂혀있는 공략 타임 지속 시간 (초).</summary>
+        [Tooltip("팔 공략 타임 지속 시간 (초). 권장: 2.0")]
+        [Min(0.5f)]
+        [SerializeField] private float _slamVulnDuration = 2.0f;
+
+        /// <summary>공략 타임 중 봉인도 누적 배율.</summary>
+        [Tooltip("공략 타임 봉인도 배율. 권장: 2.0")]
+        [Min(1f)]
+        [SerializeField] private float _slamVulnMultiplier = 2.0f;
+
+        /// <summary>팔 귀환 이동 시간 (초).</summary>
+        [Tooltip("팔 귀환 이동 시간 (초). 권장: 0.25")]
+        [Min(0.05f)]
+        [SerializeField] private float _returnDuration = 0.25f;
+
         // ══════════════════════════════════════════════════════
         // 내부 상태
         // ══════════════════════════════════════════════════════
 
-        private Transform _bossTransform;
         private Vector3 _armOriginLocalPos;
+        private Transform _bossTransform;
         private bool _isPhase2;
         private bool _isArmDetached;
 
-        private float _slamMoveDuration;
-        private float _returnDuration;
-        private float _slamVulnDuration;
-        private float _slamVulnMultiplier;
+        // 2페이즈 수치 (UnlockPhase2 에서 갱신)
+        private float _currentSlamMoveDuration;
+        private float _currentReturnDuration;
+        private float _currentVulnDuration;
+        private float _currentVulnMultiplier;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -76,6 +104,16 @@ namespace SEAL
 
             if (_armLTransform != null)
                 _armOriginLocalPos = _armLTransform.localPosition;
+
+            ApplyDataValues();
+        }
+
+        private void ApplyDataValues()
+        {
+            _currentSlamMoveDuration = _slamMoveDuration;
+            _currentReturnDuration = _returnDuration;
+            _currentVulnDuration = _slamVulnDuration;
+            _currentVulnMultiplier = _slamVulnMultiplier;
         }
 
         public new void UnlockPhase2()
@@ -83,19 +121,16 @@ namespace SEAL
             base.UnlockPhase2();
             _isPhase2 = true;
 
-            _slamMoveDuration = _data != null ? _data.slamMoveDuration * 0.8f : 0.4f;
-            _returnDuration = _data != null ? _data.slamReturnDuration * 0.8f : 0.5f;
-            _slamVulnDuration = _data != null ? _data.slamVulnDuration * 0.6f : 0.6f;
-            _slamVulnMultiplier = _data != null ? _data.slamVulnMultiplier * 1.5f : 3f;
+            // 2페이즈: 더 빠르고 위협적
+            _currentSlamMoveDuration = _slamMoveDuration * 0.8f;
+            _currentReturnDuration = _returnDuration * 0.8f;
+            _currentVulnDuration = _slamVulnDuration * 0.6f;
+            _currentVulnMultiplier = _slamVulnMultiplier * 1.5f;
         }
 
-        private void ApplyDataValues()
+        private void OnDestroy()
         {
-            if (_data == null) return;
-            _slamMoveDuration = _data.slamMoveDuration;
-            _returnDuration = _data.slamReturnDuration;
-            _slamVulnDuration = _data.slamVulnDuration;
-            _slamVulnMultiplier = _data.slamVulnMultiplier;
+            ReattachArm();
         }
 
         // ══════════════════════════════════════════════════════
@@ -106,22 +141,19 @@ namespace SEAL
         {
             if (_data == null) yield break;
 
-            ApplyDataValues();
-
             Vector2 playerPos = _ai?.PlayerTransform != null
                 ? (Vector2)_ai.PlayerTransform.position
                 : Vector2.zero;
 
-            int discIndex = 0;
-
             // 디스크 표시 + 점멸 시작
-            _attackRange?.ShowSlamDisc(playerPos, _data.slamHitRadius, discIndex);
-            _attackRange?.StartSlamPulse(discIndex);
+            _attackRange?.ShowSlamDisc(playerPos, _data.slamHitRadius, 0);
+            _attackRange?.StartSlamPulse(0);
 
-            // 팔 백스윙 (위치 연출만 — 색상 없음)
+            // 팔 백스윙 (위치만 — 색상 없음)
             if (_armLTransform != null)
             {
-                Vector3 backOffset = new Vector3(0f, _data.slamPullAmount, 0f);
+                Vector3 backOffset = new Vector3(0f, _windupLiftAmount, 0f)
+                                   + new Vector3(-_windupPullAmount, 0f, 0f);
                 _armLTransform
                     .DOLocalMove(_armOriginLocalPos + backOffset, _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
@@ -159,7 +191,7 @@ namespace SEAL
                 ? (Vector2)_ai.PlayerTransform.position
                 : (Vector2)_bossTransform.position;
 
-            // 디스크 위치 갱신
+            // 2페이즈 2번째 타격: 새 위치 디스크 표시
             if (discIndex == 1)
             {
                 _attackRange?.ShowSlamDisc(targetWorldPos, _data.slamHitRadius, 1);
@@ -178,14 +210,14 @@ namespace SEAL
 
             _armLTransform
                 .DOMove(new Vector3(targetWorldPos.x, targetWorldPos.y, _armLTransform.position.z),
-                        _slamMoveDuration)
+                        _currentSlamMoveDuration)
                 .SetEase(Ease.OutExpo);
 
             _armLTransform
-                .DORotate(new Vector3(0f, 0f, targetAngle), _slamMoveDuration * 0.5f)
+                .DORotate(new Vector3(0f, 0f, targetAngle), _currentSlamMoveDuration * 0.5f)
                 .SetEase(Ease.OutQuart);
 
-            yield return new WaitForSecondsRealtime(_slamMoveDuration);
+            yield return new WaitForSecondsRealtime(_currentSlamMoveDuration);
             if (_isInterrupted) { ReattachArm(); yield break; }
 
             // 히트박스 + 디스크 플래시
@@ -196,29 +228,26 @@ namespace SEAL
                 Debug.Log($"[BossPattern_Slam] 내려치기 피격! | 목표:{targetWorldPos}");
 
             // 공략 타임 — 팔 진동 (색상 없음)
-            float vulnDuration = _isPhase2 ? _slamVulnDuration * 0.6f : _slamVulnDuration;
-
             _armLTransform
-                .DOPunchPosition(new Vector3(0.05f, 0.05f, 0f), vulnDuration, 20, 0.5f)
+                .DOPunchPosition(new Vector3(0.05f, 0.05f, 0f), _currentVulnDuration, 20, 0.5f)
                 .SetUpdate(true);
 
             var armPart = _armLTransform.GetComponent<BossWardenArmPart>();
-            armPart?.SetSlamVuln(true, _slamVulnMultiplier);
+            armPart?.SetSlamVuln(true, _currentVulnMultiplier);
 
-            yield return new WaitForSecondsRealtime(vulnDuration);
+            yield return new WaitForSecondsRealtime(_currentVulnDuration);
 
             armPart?.SetSlamVuln(false, 1f);
             if (_isInterrupted) { ReattachArm(); yield break; }
 
             // 팔 귀환
-            Vector3 bossCurrentPos = _bossTransform != null
-                ? _bossTransform.position : Vector3.zero;
+            Vector3 bossCurrentPos = _bossTransform.position;
             Vector3 returnWorldPos = bossCurrentPos + _armOriginLocalPos;
 
-            _armLTransform.DOMove(returnWorldPos, _returnDuration).SetEase(Ease.InBack);
-            _armLTransform.DORotate(Vector3.zero, _returnDuration * 0.7f).SetEase(Ease.OutQuart);
+            _armLTransform.DOMove(returnWorldPos, _currentReturnDuration).SetEase(Ease.InBack);
+            _armLTransform.DORotate(Vector3.zero, _currentReturnDuration * 0.7f).SetEase(Ease.OutQuart);
 
-            yield return new WaitForSecondsRealtime(_returnDuration);
+            yield return new WaitForSecondsRealtime(_currentReturnDuration);
 
             ReattachArm();
         }
@@ -231,13 +260,11 @@ namespace SEAL
         {
             if (_isInterrupted) yield break;
 
-            // 팔 원위치 보정 (위치만)
             if (_armLTransform != null && !_isArmDetached)
                 _armLTransform
                     .DOLocalMove(_armOriginLocalPos, _recoveryDuration * 0.3f)
                     .SetEase(Ease.OutBack);
 
-            // 충격 흔들림
             transform.DOShakePosition(0.3f, 0.2f, 10, 90f).SetUpdate(true);
 
             yield return StartCoroutine(WaitForPattern(_recoveryDuration));
@@ -271,16 +298,10 @@ namespace SEAL
             _armLTransform.localPosition = _armOriginLocalPos;
             _armLTransform.localRotation = Quaternion.identity;
 
-            var armPart = _armLTransform.GetComponent<BossWardenArmPart>();
-            armPart?.SetSlamVuln(false, 1f);
+            _armLTransform.GetComponent<BossWardenArmPart>()?.SetSlamVuln(false, 1f);
 
             _isArmDetached = false;
             Debug.Log("[BossPattern_Slam] 팔 재부착 완료");
-        }
-
-        private void OnDestroy()
-        {
-            ReattachArm();
         }
     }
 }

@@ -4,18 +4,9 @@
 //
 // [수정 내용]
 //   팔(오른팔) SpriteRenderer 색상 코드 전부 제거
-//   → _armRRenderer 필드 제거
-//   → _armOriginColor 필드 제거
-//   → _armColorTween 핸들 제거
-//   → OnWarning() DOColor Pulse 제거
-//   → OnRecovery() 팔 색상 복귀 DOColor 제거
-//   → Interrupt() 팔 색상 즉시 복귀 DOColor 제거
-//   → OnDestroy() _armColorTween.Kill() 제거
-//
 //   Warning AttackRange 점멸 추가
-//   → ShowChargeLine() 후 StartChargePulse() 호출
-//   Active 진입 시 점멸 중단
-//   → StopAllPulse() 호출
+//   _data.chargePullAmount → _windupPullAmount (패턴 자체 SerializeField)
+//   _data.chargeThrustAmount → _thrustAmount (패턴 자체 SerializeField)
 //
 // [namespace] SEAL
 // ============================================================
@@ -34,7 +25,6 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         [Header("── 컴포넌트 연결 ──────────────────────")]
-
         [Tooltip("BossWardenAttackRange. 미연결 시 자동 탐색.")]
         [SerializeField] private BossWardenAttackRange _attackRange;
 
@@ -48,25 +38,38 @@ namespace SEAL
         [SerializeField] private BossWardenDataSO _data;
 
         [Header("── 오른팔 Transform ──────────────────────")]
-        /// <summary>오른팔 Transform. 백스윙 / 뻗기 / 복귀 연출 주체. 색상 제어 없음.</summary>
-        [Tooltip("오른팔 Transform. 백스윙 + 뻗기 연출용. 색상 제어 없음.")]
+        /// <summary>오른팔 Transform. 백스윙/뻗기 연출. 색상 제어 없음.</summary>
+        [Tooltip("오른팔 Transform. 색상 제어 없음.")]
         [SerializeField] private Transform _armRTransform;
 
         [Header("── 레이어 ──────────────────────")]
-        [Tooltip("플레이어 히트박스 레이어. PlayerAttackHitBox 레이어 선택.")]
+        [Tooltip("플레이어 히트박스 레이어.")]
         [SerializeField] private LayerMask _playerLayer;
-        [Tooltip("벽 레이어. Wall 레이어만 선택.")]
+        [Tooltip("벽 레이어.")]
         [SerializeField] private LayerMask _wallLayer;
+
+        [Header("── 연출 수치 ──────────────────────")]
+
+        /// <summary>Warning 백스윙 당기는 거리. 돌진 반대 방향으로 팔을 당김.</summary>
+        [Tooltip("백스윙 당기는 거리. 권장: 0.5")]
+        [Min(0f)]
+        [SerializeField] private float _windupPullAmount = 0.5f;
+
+        /// <summary>Active 시작 시 팔이 앞으로 뻗는 거리.</summary>
+        [Tooltip("돌진 시 팔 뻗기 거리. 권장: 0.4")]
+        [Min(0f)]
+        [SerializeField] private float _thrustAmount = 0.4f;
 
         // ══════════════════════════════════════════════════════
         // 내부 상태
         // ══════════════════════════════════════════════════════
 
-        private Transform _bossTransform;
-        private Vector3 _armOriginLocalPos;
+        private Vector2 _chargeDirection;
+        private Vector2 _chargeStartPos;
         private bool _isPhase2;
         private bool _hasHitPlayer;
-        private Vector2 _chargeDirection;
+        private Vector3 _armOriginLocalPos;
+        private Transform _bossTransform;
 
         private static readonly Collider2D[] _hitResults = new Collider2D[4];
 
@@ -124,7 +127,7 @@ namespace SEAL
                     : worldBackDir;
 
                 _armRTransform
-                    .DOLocalMove(_armOriginLocalPos + localBackDir * _data.chargePullAmount,
+                    .DOLocalMove(_armOriginLocalPos + localBackDir * _windupPullAmount,
                                  _warningDuration * 0.4f)
                     .SetEase(Ease.OutBack);
             }
@@ -144,7 +147,7 @@ namespace SEAL
         {
             if (_data == null) yield break;
 
-            // 점멸 중단 (Active 진입 시 고정)
+            // 점멸 중단
             _attackRange?.StopAllPulse();
             _attackRange?.HideChargeLine();
 
@@ -157,8 +160,7 @@ namespace SEAL
                     : worldDir;
 
                 _armRTransform
-                    .DOLocalMove(_armOriginLocalPos + localDir * _data.chargeThrustAmount,
-                                 0.1f)
+                    .DOLocalMove(_armOriginLocalPos + localDir * _thrustAmount, 0.1f)
                     .SetEase(Ease.OutExpo);
             }
 
@@ -166,31 +168,26 @@ namespace SEAL
             if (_rigid2D != null)
                 _rigid2D.linearVelocity = _chargeDirection * _data.chargeSpeed;
 
-            Vector2 startPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;
+            _chargeStartPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;
             float elapsed = 0f;
             float maxDuration = _data.chargeDistance / Mathf.Max(_data.chargeSpeed, 0.1f) * 2f;
             int logFrame = 0;
-            bool stoppedByWall = false;
 
             while (elapsed < maxDuration)
             {
                 if (_isInterrupted) yield break;
 
                 Vector2 currentPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;
-                float dist = Vector2.Distance(startPos, currentPos);
+                float dist = Vector2.Distance(_chargeStartPos, currentPos);
                 float speed = _rigid2D != null ? _rigid2D.linearVelocity.magnitude : 0f;
 
-                // 30프레임마다 로그
                 if (logFrame++ % 30 == 0)
                     Debug.Log($"[BossPattern_Charge] 진행 | 거리:{dist:F2}/{_data.chargeDistance} 속도:{speed:F2}");
 
-                // ① 거리 도달
                 if (dist >= _data.chargeDistance) break;
 
-                // ② 속도 0 감지 (벽 충돌)
                 if (elapsed > 0.1f && speed < 0.5f)
                 {
-                    stoppedByWall = true;
                     Debug.LogWarning("[BossPattern_Charge] 종료 — 벽 충돌 감지");
                     break;
                 }
@@ -200,7 +197,6 @@ namespace SEAL
                 yield return null;
             }
 
-            // 타임아웃 체크
             if (elapsed >= maxDuration)
                 Debug.LogWarning("[BossPattern_Charge] 종료 — 타임아웃");
 
@@ -209,7 +205,7 @@ namespace SEAL
         }
 
         // ══════════════════════════════════════════════════════
-        // Recovery — 팔 복귀 + 크기 복귀 (색상 코드 없음)
+        // Recovery — 팔 복귀 + 크기 복귀 (색상 없음)
         // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnRecovery()
@@ -220,19 +216,8 @@ namespace SEAL
             if (_rigid2D != null)
                 _rigid2D.linearVelocity = Vector2.zero;
 
-            // 팔 원위치 복귀 (위치만)
-            if (_armRTransform != null)
-                _armRTransform
-                    .DOLocalMove(_armOriginLocalPos, _recoveryDuration * 0.35f)
-                    .SetEase(Ease.OutBack);
-
-            // 본체 크기 복귀
-            if (_bossTransform != null)
-                _bossTransform
-                    .DOScale(1.0f, _recoveryDuration * 0.3f)
-                    .SetEase(Ease.OutBack);
-
-            // 충격 흔들림
+            _armRTransform?.DOLocalMove(_armOriginLocalPos, _recoveryDuration * 0.35f).SetEase(Ease.OutBack);
+            _bossTransform?.DOScale(1.0f, _recoveryDuration * 0.3f).SetEase(Ease.OutBack);
             _bossTransform?.DOShakePosition(0.3f, 0.25f, 10, 90f).SetUpdate(true);
 
             yield return StartCoroutine(WaitForPattern(_recoveryDuration));
@@ -250,10 +235,7 @@ namespace SEAL
             if (_rigid2D != null)
                 _rigid2D.linearVelocity = Vector2.zero;
 
-            // 팔 즉시 원위치 (위치만)
             _armRTransform?.DOLocalMove(_armOriginLocalPos, 0.1f).SetEase(Ease.OutQuart);
-
-            // 본체 크기 복귀
             _bossTransform?.DOScale(1.0f, 0.1f).SetEase(Ease.OutQuart);
 
             base.Interrupt();
