@@ -291,17 +291,18 @@ namespace SEAL
         // BossWardenCore v4.0 이 SealStateManager 이벤트 수신 후 직접 호출
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// DilPhase 진입.
-        /// 이동 정지 + 현재 패턴 강제 중단.
-        /// BossWardenCore.HandleDilPhaseEnter() 에서 호출.
-        /// (v3.0: OnGroggyEnter 역할 흡수)
-        /// </summary>
+        // 수정 — InterruptCurrentPattern() 이 이미 _currentState=Idle 처리하므로
+        // 추가 작업 없음. 단, velocity 명시 정지 추가.
         public void OnDilPhaseEnter()
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
-            InterruptCurrentPattern();
+            InterruptCurrentPattern(); // 내부에서 StopAllCoroutines + 상태 복귀 처리
+
+            // velocity 즉시 정지 (Rigidbody2D 관성 제거)
+            if (_rigid2D != null)
+                _rigid2D.linearVelocity = Vector2.zero;
+
             Debug.Log("[BossWardenAI] ▶ DilPhase 진입 → 이동/패턴 정지");
         }
 
@@ -566,25 +567,39 @@ namespace SEAL
             Debug.Log($"[BossWardenAI] 상태 → {_currentState}");
         }
 
+        // 수정
         /// <summary>
-        /// 현재 패턴 강제 중단.
-        /// Interrupt() → StopCoroutine() → CleanupPattern() 순서.
+        /// 현재 실행 중인 패턴을 안전하게 강제 중단한다.
+        ///
+        /// [핵심 수정 — StopAllCoroutines()]
+        ///   기존 StopCoroutine(_patternCoroutine) 은 ExecutePattern() 만 중단.
+        ///   그 안에서 StartCoroutine(pattern.ExecuteWarning()) 으로 실행된
+        ///   OnWarning() / OnActive() 중첩 코루틴은 계속 실행됨 → 패턴 캔슬 불가.
+        ///   StopAllCoroutines() 로 이 MonoBehaviour 의 모든 코루틴을 종료해야
+        ///   OnWarning() → OnActive() 내부 로직까지 완전 중단.
+        ///
+        /// [팔 상태 복구]
+        ///   중단 후 SetArmsRecoveryVuln(false) 로 취약 배율 해제.
+        ///   _currentState = Idle 로 강제 복귀 (ChangeState 이벤트 발행 없이).
         /// </summary>
-        public void InterruptCurrentPattern()
+        private void InterruptCurrentPattern()
         {
             if (_currentPattern != null)
             {
-                _currentPattern.Interrupt();
+                _currentPattern.Interrupt(); // 패턴 내부 DOTween 정리 + _isInterrupted = true
                 _currentPattern = null;
             }
 
-            if (_patternCoroutine != null)
-            {
-                StopCoroutine(_patternCoroutine);
-                _patternCoroutine = null;
-            }
+            // StopAllCoroutines: ExecutePattern + 그 안의 OnWarning/OnActive 자식 코루틴 전부 중단
+            StopAllCoroutines();
+            _patternCoroutine = null;
 
-            CleanupPattern();
+            // 상태 직접 복귀 (팔 일그러짐 방지)
+            SetArmsRecoveryVuln(false);
+
+            // ChangeState() 대신 직접 설정: 이미 _isStopped=true 상태이므로
+            // 이벤트 발행 없이 내부 변수만 정리
+            _currentState = WardenAIState.Idle;
         }
 
         private void CleanupPattern()

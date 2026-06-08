@@ -571,9 +571,6 @@ MonoBehaviour:
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armRTransform: {fileID: 3847391736941397255}
   _armLTransform: {fileID: 8941543154467429545}
-  _armRRenderer: {fileID: 667973993591523152}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _bodyRenderer: {fileID: 3534132678184260611}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
@@ -1040,7 +1037,7 @@ GameObject:
   - component: {fileID: 6340535644284860753}
   - component: {fileID: 3630886183542868414}
   - component: {fileID: 6556072117920470920}
-  - component: {fileID: 7116612192379757486}
+  - component: {fileID: 4656289199098220492}
   - component: {fileID: 1510995343637259522}
   - component: {fileID: 367445595963278709}
   - component: {fileID: 5298859741369411445}
@@ -1168,7 +1165,7 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 1
   m_Constraints: 4
---- !u!114 &7116612192379757486
+--- !u!114 &4656289199098220492
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1221,8 +1218,6 @@ MonoBehaviour:
   _armLPart: {fileID: 4585807861786295039}
   _armRPart: {fileID: 4394930287480848199}
   _bodyRenderer: {fileID: 3534132678184260611}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _armRRenderer: {fileID: 667973993591523152}
   _coreRenderer: {fileID: 4626551619868309503}
   _armLSealParticle: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
   _armRSealParticle: {fileID: 103440133271911064, guid: b0f26152915e31e4fa0490eb324639b4, type: 3}
@@ -1250,6 +1245,9 @@ MonoBehaviour:
   _sealRangeCircle: {fileID: 2528680064604181190}
   _coreRangeCircle: {fileID: 7068618741574333414}
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _pulsePeriod: 0.35
+  _pulseMinAlpha: 0.05
+  _pulseMaxAlpha: 0.55
 --- !u!114 &6966774668998716745
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1432,11 +1430,8 @@ MonoBehaviour:
   _rigid2D: {fileID: 6556072117920470920}
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
-  _bodyRenderer: {fileID: 3534132678184260611}
   _armLTransform: {fileID: 8941543154467429545}
   _armRTransform: {fileID: 3847391736941397255}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _armRRenderer: {fileID: 667973993591523152}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
@@ -1497,9 +1492,6 @@ MonoBehaviour:
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armLTransform: {fileID: 8941543154467429545}
   _armRTransform: {fileID: 3847391736941397255}
-  _armLRenderer: {fileID: 3641258697330880272}
-  _armRRenderer: {fileID: 667973993591523152}
-  _bodyRenderer: {fileID: 3534132678184260611}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 4194304
@@ -2494,7 +2486,6 @@ MonoBehaviour:
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armRTransform: {fileID: 3847391736941397255}
-  _armRRenderer: {fileID: 667973993591523152}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
@@ -3261,7 +3252,6 @@ MonoBehaviour:
   _ai: {fileID: 1510995343637259522}
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armLTransform: {fileID: 8941543154467429545}
-  _armLRenderer: {fileID: 3641258697330880272}
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
