@@ -347,19 +347,24 @@ namespace SEAL
 
         /// <summary>
         /// 처치 연출.
-        /// 본체 검정 + 본체 축소.
-        /// 팔/코어 색상 건드리지 않음.
+        /// 본체 검정 전환 + 본체 축소 소멸.
+        /// DOScale 완료 후 gameObject.SetActive(false) 로 오브젝트 제거.
+        /// SetUpdate(true) — FinalSeal 슬로우 중에도 정상 동작.
         /// </summary>
         public void OnDead()
         {
             _bodyTween?.Kill();
             _coreTween?.Kill();
 
-            _bodyRenderer?.DOColor(Color.black, 0.5f).SetUpdate(true);
+            // 본체 검정 전환
+            _bodyRenderer?.DOColor(Color.black, 0.5f)
+                .SetUpdate(true);
 
+            // 본체 축소 소멸 → 완료 후 오브젝트 비활성
             transform.DOScale(Vector3.zero, 0.8f)
                 .SetEase(Ease.InBack)
-                .SetUpdate(true);
+                .SetUpdate(true)
+                .OnComplete(() => gameObject.SetActive(false));
         }
 
         // ══════════════════════════════════════════════════════
