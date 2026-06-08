@@ -1,6 +1,6 @@
 ﻿// ============================================================
-// BossWardenAI.cs  v3.0
-// Boss_Warden 탑뷰 AI
+// BossWardenAI.cs  v3.1
+// Boss_Warden 탑뷰 AI — Step 6 AttackManager 분리
 //
 // [v3.0 변경 — Groggy 브리지 메서드 제거]
 //   제거:
@@ -19,14 +19,12 @@
 //   OnPhaseChanged(int): 2페이즈 속도/패턴 강화
 //   OnDead()           : AI 완전 정지
 //
-// [v2.0 유지]
-//   WardenAIState enum (Idle / Chase / Warning / Active / Recovery)
-//   탑뷰 8방향 이동 (Rigidbody2D.linearVelocity)
-//   패턴 선택 + ExecutePattern() 코루틴
-//   _isStopped 플래그
-//   SubscribePatternEvents()
-//   HandlePatternGroggy() — 빈 함수 유지
-//     (패턴 그로기 트리거는 SealGaugeManager.OnAllPartsSealed 경로로 처리)
+// [v3.1 변경 — BossAttackManager 분리]
+//   변경:
+//     패턴 선택/실행 책임을 BossAttackManager 로 이동
+//     BossWardenAI 는 이동/상태 전환/공격 요청만 담당
+//   유지:
+//     BossAttackManager 미연결 시 기존 AI 내부 패턴 실행 흐름 fallback 유지
 //
 // [namespace] SEAL
 // ============================================================
@@ -45,7 +43,7 @@ namespace SEAL
     /// [이 스크립트가 하는 것]
     ///   - 상태 관리 (Idle / Chase / Warning / Active / Recovery)
     ///   - 탑뷰 8방향 플레이어 추적 이동
-    ///   - 패턴 선택 및 실행 코루틴 관리
+    ///   - BossAttackManager 에 공격 요청
     ///   - 이동/패턴 정지 (_isStopped)
     ///   - Recovery 취약 구간 팔 전달
     ///   - 2페이즈 패턴 강화 적용
@@ -100,7 +98,16 @@ namespace SEAL
         [Tooltip("BossWardenDataSO. 필수 연결.")]
         [SerializeField] private BossWardenDataSO _data;
 
-        [Header("── 패턴 목록 (필수) ──────────────────────")]
+        [Header("── Attack Manager (권장) ──────────────────────")]
+
+        /// <summary>
+        /// Step 6에서 추가된 공격 패턴 선택/실행 관리자.
+        /// 미연결 시 기존 AI 내부 패턴 실행 방식으로 fallback 한다.
+        /// </summary>
+        [Tooltip("BossAttackManager. 권장 연결. 미연결 시 같은 오브젝트에서 자동 탐색.")]
+        [SerializeField] private BossAttackManager _attackManager;
+
+        [Header("── 패턴 목록 (필수 / AttackManager 주입용) ──────────────────────")]
 
         /// <summary>
         /// 패턴 목록. Inspector 에서 BossPattern_XX 연결.
@@ -205,6 +212,7 @@ namespace SEAL
         {
             _rigid2D = GetComponent<Rigidbody2D>();
             _spriteRenderer = GetComponent<SpriteRenderer>();
+            if (_attackManager == null) _attackManager = GetComponent<BossAttackManager>();
             // v3.0: _core 참조 없음 — BossWardenCore 브리지 방식 유지
             _currentMoveSpeed = _data != null ? _data.moveSpeed : 3.5f;
         }
@@ -218,13 +226,17 @@ namespace SEAL
             else
                 Debug.LogWarning("[BossWardenAI] PlayerMoveController 탐색 실패.");
 
-            // 패턴 이벤트 구독
-            SubscribePatternEvents();
+            // Step 6:
+            // BossAttackManager 가 있으면 패턴 종료/중단 흐름은 AttackManager 가 관리한다.
+            // 없으면 기존 AI 내부 패턴 실행 fallback 을 위해 이벤트 구독을 유지한다.
+            if (_attackManager == null)
+                SubscribePatternEvents();
         }
 
         private void OnDestroy()
         {
-            UnsubscribePatternEvents();
+            if (_attackManager == null)
+                UnsubscribePatternEvents();
         }
 
         private void Update()
@@ -256,6 +268,23 @@ namespace SEAL
         {
             _data = data;
             _currentMoveSpeed = data.moveSpeed;
+
+            // Step 6:
+            // BossAttackManager 가 있으면 패턴 초기화/선택/실행을 AttackManager 로 위임한다.
+            // 없으면 Step 2 방식처럼 AI가 패턴 목록에 직접 DataSO를 주입한다.
+            if (_attackManager != null)
+            {
+                _attackManager.Initialize(data, this, _patterns, _armL, _armR);
+            }
+            else
+            {
+                foreach (var pattern in _patterns)
+                {
+                    if (pattern == null) continue;
+                    pattern.Initialize(data);
+                }
+            }
+
             Debug.Log("[BossWardenAI] 초기화 완료");
         }
 
@@ -297,7 +326,8 @@ namespace SEAL
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
-            InterruptCurrentPattern(); // 내부에서 StopAllCoroutines + 상태 복귀 처리
+            if (_attackManager != null) _attackManager.InterruptCurrentPattern();
+            else InterruptCurrentPattern(); // fallback: 내부에서 StopAllCoroutines + 상태 복귀 처리
 
             // velocity 즉시 정지 (Rigidbody2D 관성 제거)
             if (_rigid2D != null)
@@ -332,10 +362,17 @@ namespace SEAL
             if (_data != null)
                 _currentMoveSpeed = _data.phase2MoveSpeed;
 
-            foreach (var p in _patterns)
+            if (_attackManager != null)
             {
-                if (p == null) continue;
-                p.UnlockPhase2();
+                _attackManager.UnlockPhase2();
+            }
+            else
+            {
+                foreach (var p in _patterns)
+                {
+                    if (p == null) continue;
+                    p.UnlockPhase2();
+                }
             }
 
             Debug.Log("[BossWardenAI] ▶ 2페이즈 전환 — 이동 속도/패턴 강화 적용");
@@ -350,7 +387,8 @@ namespace SEAL
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
-            InterruptCurrentPattern();
+            if (_attackManager != null) _attackManager.InterruptCurrentPattern();
+            else InterruptCurrentPattern();
             enabled = false;
             Debug.Log("[BossWardenAI] ✅ 처치 → AI 정지");
         }
@@ -430,6 +468,7 @@ namespace SEAL
         {
             // 패턴 실행 중 (Warning / Active / Recovery) 이면 Chase 전환 금지.
             // Warning 예고가 시작되면 보스는 반드시 Active 까지 패턴을 완수해야 한다.
+            if (_attackManager != null && _attackManager.IsExecuting) return;
             if (_currentPattern != null) return;
 
             // DilPhase 중 (_isStopped = true) 이면 Chase 전환 금지.
@@ -476,6 +515,14 @@ namespace SEAL
 
         private void TrySelectPattern()
         {
+            // Step 6: 공격 선택/실행은 BossAttackManager 로 우선 위임.
+            if (_attackManager != null)
+            {
+                _attackManager.RequestAttack();
+                return;
+            }
+
+            // fallback: AttackManager 미연결 시 기존 AI 내부 선택/실행 방식 유지.
             // 이미 패턴 실행 중이면 무시.
             if (_currentPattern != null) return;
 
@@ -559,12 +606,56 @@ namespace SEAL
         // 내부 유틸
         // ══════════════════════════════════════════════════════
 
-        private void ChangeState(WardenAIState newState)
+        private void ChangeState(WardenAIState newState, BossPatternBase patternOverride = null)
         {
             if (_currentState == newState) return;
             _currentState = newState;
-            OnStateChanged?.Invoke(_currentState, _currentPattern);
+            OnStateChanged?.Invoke(_currentState, patternOverride ?? _currentPattern);
             Debug.Log($"[BossWardenAI] 상태 → {_currentState}");
+        }
+
+        // ══════════════════════════════════════════════════════
+        // Step 6 — BossAttackManager 연동 API
+        // ══════════════════════════════════════════════════════
+
+        /// <summary>
+        /// BossAttackManager 가 패턴 단계 전환을 AI 상태로 반영할 때 호출한다.
+        /// Feedback 은 기존 OnStateChanged 이벤트를 그대로 받는다.
+        /// </summary>
+        public void SetAttackState(WardenAIState newState, BossPatternBase pattern)
+        {
+            _currentPattern = pattern;
+            ChangeState(newState, pattern);
+        }
+
+        /// <summary>BossAttackManager 가 패턴 정상 종료를 알릴 때 호출한다.</summary>
+        public void CompleteAttackState(BossPatternBase pattern)
+        {
+            if (_currentPattern == pattern)
+                _currentPattern = null;
+
+            _patternCoroutine = null;
+            SetArmsRecoveryVuln(false);
+
+            if (!_isStopped)
+                ChangeState(WardenAIState.Idle, null);
+        }
+
+        /// <summary>BossAttackManager 가 패턴 강제 중단을 알릴 때 호출한다.</summary>
+        public void InterruptAttackState(BossPatternBase pattern)
+        {
+            if (_currentPattern == pattern)
+                _currentPattern = null;
+
+            _patternCoroutine = null;
+            SetArmsRecoveryVuln(false);
+            _currentState = WardenAIState.Idle;
+        }
+
+        /// <summary>BossAttackManager 가 Recovery 취약 구간을 제어할 때 사용한다.</summary>
+        public void SetRecoveryVulnerableFromAttackManager(bool isVulnerable)
+        {
+            SetArmsRecoveryVuln(isVulnerable);
         }
 
         // 수정

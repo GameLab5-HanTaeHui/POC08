@@ -148,7 +148,7 @@ namespace SEAL
                 _chargeLineRenderer.endWidth = width;
             }
 
-            Color c = _data != null ? _data.colorWarningRange : new Color(1f, 0f, 0f, 0.4f);
+            Color c = _data != null ? _data.ColorData.colorSealRange : new Color(1f, 0f, 0f, 0.4f);
             c.a = _pulseMaxAlpha;
             _chargeLineRenderer.startColor = c;
             _chargeLineRenderer.endColor = c;

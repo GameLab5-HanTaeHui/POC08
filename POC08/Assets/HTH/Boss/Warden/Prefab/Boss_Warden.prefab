@@ -574,10 +574,6 @@ MonoBehaviour:
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
-  _guardForwardAmount: 0.4
-  _windupPullAmount: 0.5
-  _thrustDistance: 1
-  _thrustDuration: 0.08
 --- !u!1 &2634589276354884261
 GameObject:
   m_ObjectHideFlags: 0
@@ -765,6 +761,148 @@ MonoBehaviour:
   _lineWidth: 0.05
   _segments: 32
   _pulseAmount: 0.1
+--- !u!1 &2708550629033894053
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7834257586030258016}
+  - component: {fileID: 1389712236248271566}
+  - component: {fileID: 2556580401370449286}
+  - component: {fileID: 7379858553352722044}
+  - component: {fileID: 1128365478536693539}
+  - component: {fileID: 7905947549962091749}
+  - component: {fileID: 3153781578939554503}
+  m_Layer: 0
+  m_Name: Manager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7834257586030258016
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 6340535644284860753}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1389712236248271566
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80fb6ba36e66d3042a68c7af95602e0b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossDataManager
+  _wardenData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+--- !u!114 &2556580401370449286
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d22d195fec74dd74a8fd482a9765b4c2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossPartManager
+  _leftArm: {fileID: 4585807861786295039}
+  _rightArm: {fileID: 4394930287480848199}
+  _corePart: {fileID: 5964125598184804942}
+  _coreObject: {fileID: 2815818081025082498}
+--- !u!114 &7379858553352722044
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: be2850e54e4fc344d92e3733d35fdd0c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossEventHub
+--- !u!114 &1128365478536693539
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 69d20775254ab264a9a7420047841ef5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossAttackManager
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _ai: {fileID: 1510995343637259522}
+  _eventHub: {fileID: 7379858553352722044}
+  _patterns:
+  - {fileID: 977547751071632564}
+  - {fileID: 8237974629196471921}
+  - {fileID: 2665662239375131634}
+  - {fileID: 1773114150699548557}
+  - {fileID: 937471434657274340}
+  _armL: {fileID: 4585807861786295039}
+  _armR: {fileID: 4394930287480848199}
+--- !u!114 &7905947549962091749
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 32465df5054a7f243a7716bd8788e7a4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossHitManager
+  _partManager: {fileID: 2556580401370449286}
+  _eventHub: {fileID: 7379858553352722044}
+  _hitboxManager: {fileID: 0}
+  _autoSubscribePlayerHitbox: 1
+  _debugLog: 0
+--- !u!114 &3153781578939554503
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3c1286f6beb7af343b1b382ec34a867b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossSealManager
+  _dataManager: {fileID: 1389712236248271566}
+  _partManager: {fileID: 2556580401370449286}
+  _eventHub: {fileID: 7379858553352722044}
+  _stateManager: {fileID: 3025961186498544234}
+  _gaugeManager: {fileID: 6047848843748568073}
+  _ruleManager: {fileID: 2675468998006607880}
+  _executionEvent: {fileID: 3954451658119620480}
+  _executionRunner: {fileID: 518856403508951749}
+  _effectManager: {fileID: 5790422593519139780}
+  _coreObject: {fileID: 2815818081025082498}
+  _bridgeSealableEventsToEventHub: 1
+  _debugLog: 0
 --- !u!1 &2815818081025082498
 GameObject:
   m_ObjectHideFlags: 0
@@ -1093,6 +1231,7 @@ Transform:
   - {fileID: 4650309496125258504}
   - {fileID: 8208206345222169363}
   - {fileID: 2758901375154016836}
+  - {fileID: 7834257586030258016}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!212 &3630886183542868414
@@ -1193,10 +1332,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e53fe91ccc3d98349a5854e69bc26324, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenCore
+  _dataManager: {fileID: 0}
+  _partManager: {fileID: 0}
+  _sealManager: {fileID: 0}
+  _vfxManager: {fileID: 0}
+  _eventHub: {fileID: 0}
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
   _coreObject: {fileID: 2815818081025082498}
+  _corePart: {fileID: 0}
 --- !u!114 &1510995343637259522
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1210,6 +1355,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenAI
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _attackManager: {fileID: 0}
   _patterns:
   - {fileID: 977547751071632564}
   - {fileID: 8237974629196471921}
@@ -1426,8 +1572,6 @@ MonoBehaviour:
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
-  _windupPullAmount: 0.4
-  _thrustAmount: 0.3
 --- !u!1 &3650634429174591228
 GameObject:
   m_ObjectHideFlags: 0
@@ -1486,11 +1630,6 @@ MonoBehaviour:
   _playerLayer:
     serializedVersion: 2
     m_Bits: 4194304
-  _armSpreadAmount: 0.5
-  _flyDistance: 1.5
-  _flyDuration: 0.2
-  _flyVulnDuration: 1.5
-  _returnDuration: 0.3
 --- !u!1 &3820522534865309555
 GameObject:
   m_ObjectHideFlags: 0
@@ -2483,8 +2622,6 @@ MonoBehaviour:
   _wallLayer:
     serializedVersion: 2
     m_Bits: 1073741824
-  _windupPullAmount: 0.5
-  _thrustAmount: 0.4
 --- !u!1 &7263643612136954821
 GameObject:
   m_ObjectHideFlags: 0
@@ -3246,9 +3383,3 @@ MonoBehaviour:
   _playerLayer:
     serializedVersion: 2
     m_Bits: 256
-  _windupPullAmount: 0.3
-  _windupLiftAmount: 0.3
-  _slamMoveDuration: 0.15
-  _slamVulnDuration: 2
-  _slamVulnMultiplier: 2
-  _returnDuration: 0.25

@@ -1,0 +1,105 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3e523bfa5d7654a4abee0bf97021b10a, type: 3}
+  m_Name: BossWardenPatternDataSO
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenPatternDataSO
+  common:
+    defaultCooldown: 5
+    defaultWarningDuration: 1
+    defaultRecoveryDuration: 0.8
+    phase2GlobalSpeedMultiplier: 1
+    warningPulsePeriod: 0.35
+    warningPulseMinAlpha: 0.05
+    warningPulseMaxAlpha: 0.55
+  charge:
+    lifecycle:
+      useCommonTiming: 1
+      cooldown: 5
+      warningDuration: 1
+      recoveryDuration: 0.8
+      phase2Only: 0
+    speed: 12
+    phase2Speed: 16
+    distance: 15
+    hitboxSize: {x: 1, y: 8}
+    warningSize: {x: 1.6, y: 9.6}
+    windupPullAmount: 0.5
+    thrustAmount: 0.4
+  slam:
+    lifecycle:
+      useCommonTiming: 1
+      cooldown: 5
+      warningDuration: 1
+      recoveryDuration: 0.8
+      phase2Only: 0
+    hitRadius: 2.5
+    warningRadius: 3
+    windupPullAmount: 0.5
+    windupLiftAmount: 0.3
+    moveDuration: 0.15
+    vulnerableDuration: 2
+    vulnerableMultiplier: 2
+    returnDuration: 0.25
+    phase2SecondSlam: 1
+    phase2SecondDelay: 0.2
+    phase2VulnerableDurationMultiplier: 0.6
+  sweep:
+    lifecycle:
+      useCommonTiming: 1
+      cooldown: 5
+      warningDuration: 1
+      recoveryDuration: 0.8
+      phase2Only: 0
+    hitRadius: 5
+    warningRadius: 10
+    rotateSpeed: 180
+    phase2RotateSpeed: 270
+    armSpreadAmount: 0.6
+    flyDistance: 1.5
+    phase2FlyDistanceMultiplier: 1.5
+    flyDuration: 0.2
+    vulnerableDuration: 1.5
+    returnDuration: 0.3
+    phase2HitRadiusBonus: 0.5
+  guardBreak:
+    lifecycle:
+      useCommonTiming: 1
+      cooldown: 5
+      warningDuration: 1
+      recoveryDuration: 0.8
+      phase2Only: 0
+    hitboxSize: {x: 1, y: 0.8}
+    phase2HitboxSize: {x: 1.2, y: 0.8}
+    warningSize: {x: 1.5, y: 1}
+    phase2WarningSize: {x: 1.8, y: 1}
+    guardDuration: 0.8
+    phase2GuardDuration: 0.5
+    guardForwardAmount: 0.4
+    windupPullAmount: 0.5
+    thrustDistance: 0.8
+    thrustDuration: 0.08
+  rageCharge:
+    lifecycle:
+      useCommonTiming: 1
+      cooldown: 5
+      warningDuration: 1
+      recoveryDuration: 0.8
+      phase2Only: 1
+    speed: 18
+    distance: 15
+    hitboxSize: {x: 1, y: 8}
+    warningLineLengthMultiplier: 1.2
+    count: 3
+    interval: 0.2
+    sideAngle: 20
+    windupPullAmount: 0.4
+    thrustAmount: 0.3
