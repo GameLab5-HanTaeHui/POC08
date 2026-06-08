@@ -81,11 +81,11 @@ namespace SEAL
 
         /// <summary>왼팔 BossWardenArmPart. SealableComponent 이벤트 구독용.</summary>
         [Tooltip("왼팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenArmPart _armLPart;
+        [SerializeField] private BossWardenPart _armLPart;
 
         /// <summary>오른팔 BossWardenArmPart.</summary>
         [Tooltip("오른팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenArmPart _armRPart;
+        [SerializeField] private BossWardenPart _armRPart;
 
         [Header("── SpriteRenderer ──────────────────────")]
 
@@ -180,7 +180,7 @@ namespace SEAL
         /// 파티클 재생만 처리.
         /// DOColor 처리 없음 — SealableComponent 가 색상 담당.
         /// </summary>
-        private void SubscribeArmSealable(BossWardenArmPart armPart, bool isLeft)
+        private void SubscribeArmSealable(BossWardenPart armPart, bool isLeft)
         {
             if (armPart == null) return;
             var sealable = armPart.GetComponent<SealableComponent>();

@@ -71,11 +71,11 @@ namespace SEAL
 
         /// <summary>왼팔 BossWardenArmPart. Initialize 주입용.</summary>
         [Tooltip("왼팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenArmPart _armL;
+        [SerializeField] private BossWardenPart _armL;
 
         /// <summary>오른팔 BossWardenArmPart.</summary>
         [Tooltip("오른팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenArmPart _armR;
+        [SerializeField] private BossWardenPart _armR;
 
         [Header("── 코어 연결 (필수) ──────────────────────")]
 

@@ -340,8 +340,8 @@ namespace SEAL
                 new Vector3(0.05f, 0.05f, 0f), _flyVulnDuration, 15, 0.5f)
                 .SetUpdate(true);
 
-            var armLPart = _armLTransform?.GetComponent<BossWardenArmPart>();
-            var armRPart = _armRTransform?.GetComponent<BossWardenArmPart>();
+            var armLPart = _armLTransform?.GetComponent<BossWardenPart>();
+            var armRPart = _armRTransform?.GetComponent<BossWardenPart>();
             armLPart?.SetSlamVuln(true, 1.5f);
             armRPart?.SetSlamVuln(true, 1.5f);
 
@@ -427,7 +427,7 @@ namespace SEAL
                 _armLTransform.localRotation = Quaternion.identity;
                 _armLTransform.localScale = _armLOriginLocalScale;
 
-                _armLTransform.GetComponent<BossWardenArmPart>()?.SetSlamVuln(false, 1f);
+                _armLTransform.GetComponent<BossWardenPart>()?.SetSlamVuln(false, 1f);
             }
 
             if (_armRTransform != null)
@@ -438,7 +438,7 @@ namespace SEAL
                 _armRTransform.localRotation = Quaternion.identity;
                 _armRTransform.localScale = _armROriginLocalScale;
 
-                _armRTransform.GetComponent<BossWardenArmPart>()?.SetSlamVuln(false, 1f);
+                _armRTransform.GetComponent<BossWardenPart>()?.SetSlamVuln(false, 1f);
             }
 
             _isArmsDetached = false;

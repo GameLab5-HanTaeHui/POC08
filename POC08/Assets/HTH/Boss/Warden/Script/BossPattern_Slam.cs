@@ -308,7 +308,7 @@ namespace SEAL
                     elasticity: 0.5f)
                 .SetUpdate(true);
 
-            var armPart = _armLTransform.GetComponent<BossWardenArmPart>();
+            var armPart = _armLTransform.GetComponent<BossWardenPart>();
             armPart?.SetSlamVuln(true, _slamVulnMultiplier);
 
             yield return new WaitForSecondsRealtime(vulnDuration);
@@ -400,7 +400,7 @@ namespace SEAL
             _armLTransform.localRotation = Quaternion.identity;
             _armLTransform.localScale = _armOriginLocalScale;
 
-            var armPart = _armLTransform.GetComponent<BossWardenArmPart>();
+            var armPart = _armLTransform.GetComponent<BossWardenPart>();
             armPart?.SetSlamVuln(false, 1f);
 
             _isArmDetached = false;

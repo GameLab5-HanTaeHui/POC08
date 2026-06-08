@@ -113,11 +113,11 @@ namespace SEAL
 
         /// <summary>왼팔. Recovery 취약 구간 SetRecoveryVuln() 전달 대상.</summary>
         [Tooltip("왼팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenArmPart _armL;
+        [SerializeField] private BossWardenPart _armL;
 
         /// <summary>오른팔.</summary>
         [Tooltip("오른팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenArmPart _armR;
+        [SerializeField] private BossWardenPart _armR;
 
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조

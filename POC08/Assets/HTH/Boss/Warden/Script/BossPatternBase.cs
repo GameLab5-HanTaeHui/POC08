@@ -76,7 +76,7 @@ namespace SEAL
         /// null 이면 독립 패턴.
         /// </summary>
         [Tooltip("연결된 팔 부위. 봉인 완료 시 이 패턴 비활성. null=독립 패턴.")]
-        [SerializeField] protected BossWardenArmPart _linkedArmPart;
+        [SerializeField] protected BossWardenPart _linkedArmPart;
 
         [Header("── 페이즈 설정 ──────────────────────")]
 

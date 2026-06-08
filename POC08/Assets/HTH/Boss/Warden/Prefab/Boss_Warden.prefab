@@ -777,6 +777,7 @@ GameObject:
   - component: {fileID: 4626551619868309503}
   - component: {fileID: 5129514092272054624}
   - component: {fileID: 5011650650420930452}
+  - component: {fileID: 5964125598184804942}
   m_Layer: 20
   m_Name: Core
   m_TagString: Untagged
@@ -897,6 +898,22 @@ MonoBehaviour:
   _lineWidth: 0.05
   _segments: 32
   _pulseAmount: 0.1
+--- !u!114 &5964125598184804942
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2815818081025082498}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 03481643e23bf2a45900f9822316b30e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenPart
+  _partType: 2
+  _ownCollider: {fileID: 5102354111918324789}
+  _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
+  _guardBreakPattern: {fileID: 0}
 --- !u!1 &2927865824481869591
 GameObject:
   m_ObjectHideFlags: 0
