@@ -443,7 +443,6 @@ namespace SEAL
             if (isFinalSeal)
             {
                 // 2페이즈 성공 → FinalSeal
-                ActivateCore(false);
                 EnterFinalSeal();
                 return;
             }
@@ -481,19 +480,31 @@ namespace SEAL
         ///   강한 슬로우 적용 (finalSealSlowTimeScale)
         ///   OnFinalSealReady 발행 → SealExecutionRunner 최종 봉인 S키 대기 활성
         /// </summary>
+        // 수정
         private void EnterFinalSeal()
         {
             if (_state == SealBossState.Dead) return;
 
             SetState(SealBossState.FinalSeal);
 
+            // 코어 재활성화
+            // ExitDilPhase(true) 에서 ActivateCore 를 제거했으므로
+            // 코어는 DilPhase 때 켜진 상태 그대로 유지됨
+            // 코어 SealableComponent 봉인도는 리셋 필요
+            // → ForceRelease 후 다시 ActivateGauge(true)
+            var coreSealaable = _coreObject?.GetComponent<SealableComponent>();
+            if (coreSealaable != null)
+            {
+                coreSealaable.ForceRelease(resetSealCount: false);
+                coreSealaable.ActivateGauge(true);
+            }
+
             // 강한 슬로우
             if (_bossData?.SealData != null)
                 Time.timeScale = _bossData.SealData.finalSealSlowTimeScale;
 
             OnFinalSealReady?.Invoke();
-
-            Debug.Log($"[SealStateManager] ▶ FinalSeal 진입 | 슬로우:{_bossData?.SealData?.finalSealSlowTimeScale}");
+            Debug.Log("[SealStateManager] ▶ FinalSeal 진입 — 코어 재집행 대기 + 슬로우");
         }
 
         // ══════════════════════════════════════════════════════

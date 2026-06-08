@@ -878,7 +878,7 @@ MonoBehaviour:
   _sealHoldTime: 1.5
   _normalMaxGauge: 100
   _isDilPhaseOnly: 1
-  _phaseTarget: 1
+  _phaseTarget: 50
   _spriteRenderer: {fileID: 4626551619868309503}
   _holdProgressText: {fileID: 0}
   _progressTextLocalOffset: {x: 0, y: 1.5, z: 0}
@@ -1065,7 +1065,6 @@ GameObject:
   - component: {fileID: 5790422593519139780}
   - component: {fileID: 3954451658119620480}
   - component: {fileID: 518856403508951749}
-  - component: {fileID: 2304578957352866330}
   m_Layer: 0
   m_Name: Boss_Warden
   m_TagString: Untagged
@@ -1368,31 +1367,6 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealExecutionRunner
   _bossData: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _executionEvent: {fileID: 3954451658119620480}
---- !u!114 &2304578957352866330
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3153932892854605847}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b8c143f0b2e484a42ac0f63023894afb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::SEAL.SealDebugTracker
-  _leftArmGaugePercent: 0
-  _rightArmGaugePercent: 0
-  _leftArmReady: 0
-  _rightArmReady: 0
-  _leftArmSealed: 0
-  _rightArmSealed: 0
-  _notifierCount: 0
-  _readyListCount: 0
-  _bestTargetName: None
-  _isSealHeld: 0
-  _holdTimer: 0
-  _isExecuting: 0
-  _sealState: None
 --- !u!1 &3310431951455366626
 GameObject:
   m_ObjectHideFlags: 0

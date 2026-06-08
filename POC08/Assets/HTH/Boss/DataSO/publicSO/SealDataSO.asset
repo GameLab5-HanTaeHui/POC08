@@ -23,7 +23,7 @@ MonoBehaviour:
   phase2CoreSealTarget: 500
   coreBasicAttackGain: 25
   coreChargeAttackGain: 75
-  sealExecutionRange: 1.5
+  sealExecutionRange: 6
   sealExecutionHoldTime: 1.5
   finalSealHoldTime: 2
   partSealSlowTimeScale: 0.5
