@@ -776,6 +776,7 @@ GameObject:
   - component: {fileID: 1128365478536693539}
   - component: {fileID: 7905947549962091749}
   - component: {fileID: 3153781578939554503}
+  - component: {fileID: 8048089102962251451}
   m_Layer: 0
   m_Name: Manager
   m_TagString: Untagged
@@ -902,6 +903,28 @@ MonoBehaviour:
   _effectManager: {fileID: 5790422593519139780}
   _coreObject: {fileID: 2815818081025082498}
   _bridgeSealableEventsToEventHub: 1
+  _debugLog: 0
+--- !u!114 &8048089102962251451
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2708550629033894053}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ba2b2d981add7aa428c503169d737a80, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossVFXManager
+  _dataManager: {fileID: 1389712236248271566}
+  _partManager: {fileID: 2556580401370449286}
+  _eventHub: {fileID: 7379858553352722044}
+  _feedback: {fileID: 367445595963278709}
+  _attackRange: {fileID: 5298859741369411445}
+  _shockwave: {fileID: 6966774668998716745}
+  _sealEffectManager: {fileID: 5790422593519139780}
+  _coreTransform: {fileID: 1396612535062583916}
+  _listenToEventHubRequests: 1
   _debugLog: 0
 --- !u!1 &2815818081025082498
 GameObject:
@@ -1332,16 +1355,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e53fe91ccc3d98349a5854e69bc26324, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenCore
-  _dataManager: {fileID: 0}
-  _partManager: {fileID: 0}
-  _sealManager: {fileID: 0}
-  _vfxManager: {fileID: 0}
-  _eventHub: {fileID: 0}
+  _dataManager: {fileID: 1389712236248271566}
+  _partManager: {fileID: 2556580401370449286}
+  _sealManager: {fileID: 3153781578939554503}
+  _vfxManager: {fileID: 8048089102962251451}
+  _eventHub: {fileID: 7379858553352722044}
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
   _armL: {fileID: 4585807861786295039}
   _armR: {fileID: 4394930287480848199}
   _coreObject: {fileID: 2815818081025082498}
-  _corePart: {fileID: 0}
+  _corePart: {fileID: 5964125598184804942}
 --- !u!114 &1510995343637259522
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1355,7 +1378,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SEAL.BossWardenAI
   _data: {fileID: 11400000, guid: 27132b20931f62242953da95dea7adc2, type: 2}
-  _attackManager: {fileID: 0}
+  _attackManager: {fileID: 1128365478536693539}
   _patterns:
   - {fileID: 977547751071632564}
   - {fileID: 8237974629196471921}

@@ -1,69 +1,36 @@
 ﻿// ============================================================
-// HitFeedbackController.cs  v2.0
-// 피격 파티클 Dynamic Pool 재생 전담 싱글턴
+// HitFeedbackController.cs  v2.1
+// 피격 파티클 Queue 기반 Object Pool 재생 전담 싱글턴
 //
-// [v2.0 변경 — Dynamic Object Pool 방식으로 전면 재설계]
+// [v2.1 변경 — 진짜 Pool 방식]
+//   기존 v2.0:
+//     List 순회 + ParticleSystem.isPlaying=false 인스턴스 재사용
+//     → 자식 ParticleSystem / 잔여 파티클 / loop 설정에 취약
+//     → 재생 완료 시점과 반환 시점이 명확하지 않음
 //
-//   [기존 v1.x 문제]
-//     단일 인스턴스 방식:
-//       씬에 배치된 ParticleSystem 1개를 재사용
-//       → 동시에 여러 곳에서 피격 발생 시 1개만 재생
-//       → isPlaying 인 인스턴스를 Stop() 후 재사용 → 연출 끊김
+//   변경 v2.1:
+//     Queue<ParticleSystem> availablePool 사용
+//     Play 시 Queue에서 대여
+//     재생 완료 후 ReturnRoutine에서 명시적으로 Pool 반환
+//     반환 시 StopEmittingAndClear + SetActive(false)
+//     재생 전 StopEmittingAndClear + 위치 이동 + SetActive(true) + Play(true)
 //
-//   [v2.0 해결 — Dynamic Pool]
-//     Pool 에서 isPlaying=false 인 인스턴스를 찾아 반환.
-//     Pool 에 사용 가능한 인스턴스가 없으면 새로 Instantiate 후 Pool 추가.
-//     isPlaying=true 인 인스턴스는 절대 재사용하지 않음.
-//     Destroy 없음 → GC 부담 없음.
-//     동시 피격 수만큼 Pool 이 자동으로 늘어남 (최초 1회만 Instantiate).
+// [주의]
+//   Prefab 및 자식 ParticleSystem의 looping은 false 권장.
+//   Simulation Space는 World 권장.
 //
-//   [Pool 규칙]
-//     Get():
-//       List 순회 → isPlaying=false 인 인스턴스 반환
-//       없으면 → Instantiate → List 추가 → 반환
-//     isPlaying=true 인 인스턴스 Stop()/재사용 절대 금지
-//     반환(Return) 개념 없음 — isPlaying=false 가 되면 자동으로 재사용 가능
-//
-//   [Inspector 연결]
-//     _enemyHitVfxPrefab  → EnemyHitParticle.prefab (Project 에셋 직접 연결)
-//     _playerHitVfxPrefab → HitParticle.prefab      (Project 에셋 직접 연결)
-//     _poolRoot           → Pool 인스턴스 부모 오브젝트 (EffectRoot 하위 권장)
-//
-//   [씬 배치]
-//     EffectRoot
-//       └─ HitFeedbackController  [이 컴포넌트]
-//            └─ PoolRoot          [Pool 인스턴스 정리용 부모 — 선택]
-//
-// [누락 연결 항목 — POC08 프로젝트 파일에서 직접 추가 필요]
-//   BossPattern_Slam       → HitFeedbackController.Instance.PlayPlayerHit(pos)
-//   BossPattern_Sweep      → HitFeedbackController.Instance.PlayPlayerHit(pos)
-//   BossPattern_GuardBreak → HitFeedbackController.Instance.PlayPlayerHit(pos)
-//   BossPattern_RageCharge → HitFeedbackController.Instance.PlayPlayerHit(pos)
-//
-// [파티클 Prefab 설정 필수]
-//   playOnAwake      = false
-//   looping          = false
-//   Simulation Space = World
-//
-// [네임스페이스]
+// [namespace]
 //   namespace : SEAL
 // ============================================================
 
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace SEAL
 {
     /// <summary>
-    /// 피격 파티클 Dynamic Pool 재생 싱글턴. (v2.0)
-    ///
-    /// ────────────────────────────────────────────────────
-    /// [Pool 동작 원칙]
-    ///   isPlaying=false 인 인스턴스만 재사용.
-    ///   isPlaying=true 인 인스턴스는 절대 건드리지 않음.
-    ///   Pool 이 부족하면 Instantiate 로 자동 확장.
-    ///   Destroy 없음.
-    /// ────────────────────────────────────────────────────
+    /// 피격 파티클 Queue 기반 Object Pool 재생 싱글턴. (v2.1)
     /// </summary>
     public class HitFeedbackController : MonoBehaviour
     {
@@ -71,7 +38,6 @@ namespace SEAL
         // 싱글턴
         // ══════════════════════════════════════════════════════
 
-        /// <summary>전역 단일 인스턴스.</summary>
         public static HitFeedbackController Instance { get; private set; }
 
         // ══════════════════════════════════════════════════════
@@ -80,55 +46,42 @@ namespace SEAL
 
         [Header("── Prefab 연결 ──────────────────────")]
 
-        /// <summary>
-        /// 적 피격 파티클 Prefab.
-        /// EnemyHitParticle.prefab 을 Project 에서 직접 연결.
-        /// playOnAwake=false / looping=false / SimulationSpace=World 필수.
-        /// </summary>
         [Tooltip("EnemyHitParticle.prefab 연결. Project 에셋 직접 참조.")]
         [SerializeField] private ParticleSystem _enemyHitVfxPrefab;
 
-        /// <summary>
-        /// 플레이어 피격 파티클 Prefab.
-        /// HitParticle.prefab 을 Project 에서 직접 연결.
-        /// playOnAwake=false / looping=false / SimulationSpace=World 필수.
-        /// </summary>
         [Tooltip("HitParticle.prefab 연결. Project 에셋 직접 참조.")]
         [SerializeField] private ParticleSystem _playerHitVfxPrefab;
 
         [Header("── Pool 설정 ──────────────────────")]
 
-        /// <summary>
-        /// Pool 인스턴스들의 부모 Transform.
-        /// 미연결 시 HitFeedbackController 자신이 부모가 됨.
-        /// Hierarchy 정리 목적.
-        /// </summary>
         [Tooltip("Pool 인스턴스 부모 오브젝트. 미연결 시 자신이 부모.")]
         [SerializeField] private Transform _poolRoot;
 
-        /// <summary>
-        /// 초기 Pool 크기.
-        /// 씬 시작 시 각 Prefab 을 이 수만큼 미리 Instantiate.
-        /// 부족하면 자동 확장.
-        /// </summary>
         [Tooltip("초기 Pool 크기. 부족하면 자동 확장됨.")]
-        [SerializeField] private int _initialPoolSize = 3;
+        [SerializeField, Min(0)] private int _initialPoolSize = 6;
+
+        [Tooltip("Pool 자동 확장 허용 여부.")]
+        [SerializeField] private bool _allowExpand = true;
+
+        [Tooltip("Pool 자동 확장 시 최대 개수. 0 이하면 제한 없음.")]
+        [SerializeField, Min(0)] private int _maxPoolSize = 0;
+
+        [Tooltip("재생 완료 감지 후 반환 전 추가 대기 시간.")]
+        [SerializeField, Min(0f)] private float _returnExtraDelay = 0.05f;
+
+        [Tooltip("looping 등으로 IsAlive가 계속 true일 때 강제 반환하기 위한 최대 대기 시간. 0 이하면 파티클 길이 기반 자동 계산만 사용.")]
+        [SerializeField, Min(0f)] private float _forcedReturnTime = 0f;
+
+        [Header("── 디버그 ──────────────────────")]
+        [SerializeField] private bool _logPoolExpand = false;
+        [SerializeField] private bool _logPoolWarning = true;
 
         // ══════════════════════════════════════════════════════
         // 내부 Pool
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 적 피격 파티클 Pool.
-        /// isPlaying=false 인 인스턴스를 꺼내 쓰고 재생 완료 후 자동 반환 가능 상태.
-        /// </summary>
-        private List<ParticleSystem> _enemyHitPool;
-
-        /// <summary>
-        /// 플레이어 피격 파티클 Pool.
-        /// 동일 규칙 적용.
-        /// </summary>
-        private List<ParticleSystem> _playerHitPool;
+        private ParticlePool _enemyHitPool;
+        private ParticlePool _playerHitPool;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -136,7 +89,6 @@ namespace SEAL
 
         private void Awake()
         {
-            // 싱글턴 설정
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
@@ -145,16 +97,34 @@ namespace SEAL
 
             Instance = this;
 
-            // Pool Root 미연결 시 자신으로 설정
             if (_poolRoot == null)
                 _poolRoot = transform;
 
-            // 초기 Pool 생성
-            _enemyHitPool = new List<ParticleSystem>(_initialPoolSize);
-            _playerHitPool = new List<ParticleSystem>(_initialPoolSize);
+            _enemyHitPool = new ParticlePool(
+                owner: this,
+                prefab: _enemyHitVfxPrefab,
+                root: _poolRoot,
+                initialSize: _initialPoolSize,
+                allowExpand: _allowExpand,
+                maxPoolSize: _maxPoolSize,
+                returnExtraDelay: _returnExtraDelay,
+                forcedReturnTime: _forcedReturnTime,
+                label: "EnemyHitVfx",
+                logExpand: _logPoolExpand,
+                logWarning: _logPoolWarning);
 
-            PrewarmPool(_enemyHitVfxPrefab, _enemyHitPool, _initialPoolSize);
-            PrewarmPool(_playerHitVfxPrefab, _playerHitPool, _initialPoolSize);
+            _playerHitPool = new ParticlePool(
+                owner: this,
+                prefab: _playerHitVfxPrefab,
+                root: _poolRoot,
+                initialSize: _initialPoolSize,
+                allowExpand: _allowExpand,
+                maxPoolSize: _maxPoolSize,
+                returnExtraDelay: _returnExtraDelay,
+                forcedReturnTime: _forcedReturnTime,
+                label: "PlayerHitVfx",
+                logExpand: _logPoolExpand,
+                logWarning: _logPoolWarning);
 
             ValidatePrefabs();
         }
@@ -169,120 +139,22 @@ namespace SEAL
         // 외부 API
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// 적 피격 파티클 재생.
-        /// 플레이어 공격이 적에 적중했을 때 호출.
-        ///
-        /// [호출 위치]
-        ///   PlayerAttackController.HandleHitboxHit()
-        ///   BossWardenArmPart.HandlePlayerHit()
-        /// </summary>
-        /// <param name="worldPosition">피격 월드 좌표.</param>
+        /// <summary>적 피격 파티클 재생.</summary>
         public void PlayEnemyHit(Vector2 worldPosition)
         {
-            if (_enemyHitVfxPrefab == null)
-            {
-                Debug.LogWarning("[HitFeedbackController] _enemyHitVfxPrefab 미연결.");
-                return;
-            }
-
-            ParticleSystem ps = GetFromPool(_enemyHitPool, _enemyHitVfxPrefab);
-            PlayAt(ps, worldPosition);
+            _enemyHitPool?.Play(worldPosition);
         }
 
-        /// <summary>
-        /// 플레이어 피격 파티클 재생.
-        /// 보스 패턴이 플레이어에 적중했을 때 호출.
-        ///
-        /// [호출 위치]
-        ///   BossPattern_Charge.CheckChargeHit()
-        ///   BossPattern_Slam / Sweep / GuardBreak / RageCharge
-        /// </summary>
-        /// <param name="worldPosition">피격 월드 좌표.</param>
+        /// <summary>플레이어 피격 파티클 재생.</summary>
         public void PlayPlayerHit(Vector2 worldPosition)
         {
-            if (_playerHitVfxPrefab == null)
-            {
-                Debug.LogWarning("[HitFeedbackController] _playerHitVfxPrefab 미연결.");
-                return;
-            }
-
-            ParticleSystem ps = GetFromPool(_playerHitPool, _playerHitVfxPrefab);
-            PlayAt(ps, worldPosition);
-        }
-
-        // ══════════════════════════════════════════════════════
-        // Pool 내부 로직
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// Pool 에서 사용 가능한 인스턴스를 반환.
-        ///
-        /// [규칙]
-        ///   isPlaying=false 인 인스턴스만 반환.
-        ///   isPlaying=true 인 인스턴스는 절대 반환하지 않음.
-        ///   Pool 이 모두 isPlaying=true 이면 새로 Instantiate → Pool 추가 → 반환.
-        /// </summary>
-        private ParticleSystem GetFromPool(List<ParticleSystem> pool, ParticleSystem prefab)
-        {
-            // Pool 순회 — isPlaying=false 인 것 반환
-            for (int i = 0; i < pool.Count; i++)
-            {
-                if (pool[i] != null && !pool[i].isPlaying)
-                    return pool[i];
-            }
-
-            // Pool 에 사용 가능한 인스턴스 없음 → 새로 생성 후 Pool 에 추가
-            ParticleSystem newPs = CreateInstance(prefab);
-            pool.Add(newPs);
-
-            Debug.Log($"[HitFeedbackController] Pool 확장 — {prefab.name} | 현재 Pool 크기: {pool.Count}");
-
-            return newPs;
-        }
-
-        /// <summary>
-        /// 파티클 인스턴스를 월드 위치에서 재생.
-        /// </summary>
-        private void PlayAt(ParticleSystem ps, Vector2 worldPosition)
-        {
-            if (ps == null) return;
-
-            ps.transform.position = worldPosition;
-            ps.Play(true);  // withChildren=true — 자식 ParticleSystem 포함 재생
-        }
-
-        /// <summary>
-        /// Prefab 으로부터 새 인스턴스 생성.
-        /// _poolRoot 하위에 배치 후 반환.
-        /// </summary>
-        private ParticleSystem CreateInstance(ParticleSystem prefab)
-        {
-            ParticleSystem ps = Instantiate(prefab, _poolRoot);
-            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            return ps;
-        }
-
-        /// <summary>
-        /// 초기 Pool 워밍업.
-        /// Awake 시 _initialPoolSize 만큼 미리 Instantiate.
-        /// </summary>
-        private void PrewarmPool(ParticleSystem prefab, List<ParticleSystem> pool, int count)
-        {
-            if (prefab == null) return;
-
-            for (int i = 0; i < count; i++)
-                pool.Add(CreateInstance(prefab));
+            _playerHitPool?.Play(worldPosition);
         }
 
         // ══════════════════════════════════════════════════════
         // 검증
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// Prefab 설정 검증.
-        /// playOnAwake / looping / SimulationSpace 확인.
-        /// </summary>
         private void ValidatePrefabs()
         {
             ValidateSingle(_enemyHitVfxPrefab, "EnemyHitVfx");
@@ -293,21 +165,226 @@ namespace SEAL
         {
             if (prefab == null)
             {
-                Debug.LogWarning($"[HitFeedbackController] {label} Prefab 미연결.");
+                if (_logPoolWarning)
+                    Debug.LogWarning($"[HitFeedbackController] {label} Prefab 미연결.");
                 return;
             }
 
-            var main = prefab.main;
+            ParticleSystem[] systems = prefab.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                var main = ps.main;
 
-            if (main.playOnAwake)
-                Debug.LogWarning($"[HitFeedbackController] {label}.playOnAwake = true — false 로 변경 필요.");
+                if (main.playOnAwake && _logPoolWarning)
+                    Debug.LogWarning($"[HitFeedbackController] {label}/{ps.name}.playOnAwake = true — false 권장.");
 
-            if (main.loop)
-                Debug.LogWarning($"[HitFeedbackController] {label}.looping = true — false 로 변경 필요.");
+                if (main.loop && _logPoolWarning)
+                    Debug.LogWarning($"[HitFeedbackController] {label}/{ps.name}.looping = true — Pool 반환 지연 원인. false 권장.");
 
-            if (main.simulationSpace != ParticleSystemSimulationSpace.World)
-                Debug.LogWarning($"[HitFeedbackController] {label}.SimulationSpace ≠ World " +
-                                 "— Particle System > Main > Simulation Space 를 World 로 변경 필요.");
+                if (main.simulationSpace != ParticleSystemSimulationSpace.World && _logPoolWarning)
+                    Debug.LogWarning($"[HitFeedbackController] {label}/{ps.name}.SimulationSpace ≠ World — World 권장.");
+            }
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 내부 Pool 클래스
+        // ══════════════════════════════════════════════════════
+
+        private sealed class ParticlePool
+        {
+            private readonly MonoBehaviour _owner;
+            private readonly ParticleSystem _prefab;
+            private readonly Transform _root;
+            private readonly bool _allowExpand;
+            private readonly int _maxPoolSize;
+            private readonly float _returnExtraDelay;
+            private readonly float _forcedReturnTime;
+            private readonly string _label;
+            private readonly bool _logExpand;
+            private readonly bool _logWarning;
+
+            private readonly Queue<ParticleSystem> _available = new Queue<ParticleSystem>();
+            private readonly HashSet<ParticleSystem> _active = new HashSet<ParticleSystem>();
+            private readonly List<ParticleSystem> _all = new List<ParticleSystem>();
+
+            public ParticlePool(
+                MonoBehaviour owner,
+                ParticleSystem prefab,
+                Transform root,
+                int initialSize,
+                bool allowExpand,
+                int maxPoolSize,
+                float returnExtraDelay,
+                float forcedReturnTime,
+                string label,
+                bool logExpand,
+                bool logWarning)
+            {
+                _owner = owner;
+                _prefab = prefab;
+                _root = root;
+                _allowExpand = allowExpand;
+                _maxPoolSize = maxPoolSize;
+                _returnExtraDelay = returnExtraDelay;
+                _forcedReturnTime = forcedReturnTime;
+                _label = label;
+                _logExpand = logExpand;
+                _logWarning = logWarning;
+
+                Prewarm(Mathf.Max(0, initialSize));
+            }
+
+            public void Play(Vector2 worldPosition)
+            {
+                if (_prefab == null)
+                {
+                    if (_logWarning)
+                        Debug.LogWarning($"[HitFeedbackController] {_label} Prefab 미연결.");
+                    return;
+                }
+
+                ParticleSystem ps = Rent();
+                if (ps == null)
+                    return;
+
+                PrepareAndPlay(ps, worldPosition);
+                _owner.StartCoroutine(ReturnWhenFinished(ps));
+            }
+
+            private void Prewarm(int count)
+            {
+                if (_prefab == null)
+                    return;
+
+                for (int i = 0; i < count; i++)
+                {
+                    ParticleSystem ps = CreateInstance();
+                    ReturnImmediately(ps);
+                }
+            }
+
+            private ParticleSystem Rent()
+            {
+                while (_available.Count > 0)
+                {
+                    ParticleSystem ps = _available.Dequeue();
+                    if (ps == null)
+                        continue;
+
+                    _active.Add(ps);
+                    return ps;
+                }
+
+                if (!_allowExpand)
+                {
+                    if (_logWarning)
+                        Debug.LogWarning($"[HitFeedbackController] {_label} Pool 부족 — 확장 비활성화 상태.");
+                    return null;
+                }
+
+                if (_maxPoolSize > 0 && _all.Count >= _maxPoolSize)
+                {
+                    if (_logWarning)
+                        Debug.LogWarning($"[HitFeedbackController] {_label} Pool 최대치 도달 — 재생 생략. Max:{_maxPoolSize}");
+                    return null;
+                }
+
+                ParticleSystem created = CreateInstance();
+                _active.Add(created);
+
+                if (_logExpand)
+                    Debug.Log($"[HitFeedbackController] Pool 확장 — {_label} | 현재 Pool 크기: {_all.Count}");
+
+                return created;
+            }
+
+            private ParticleSystem CreateInstance()
+            {
+                ParticleSystem ps = Object.Instantiate(_prefab, _root);
+                ps.name = $"{_prefab.name}_Pooled_{_all.Count:00}";
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.gameObject.SetActive(false);
+                _all.Add(ps);
+                return ps;
+            }
+
+            private void PrepareAndPlay(ParticleSystem ps, Vector2 worldPosition)
+            {
+                ps.gameObject.SetActive(true);
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.transform.position = worldPosition;
+                ps.Play(true);
+            }
+
+            private IEnumerator ReturnWhenFinished(ParticleSystem ps)
+            {
+                if (ps == null)
+                    yield break;
+
+                float maxWait = GetReturnWaitTime(ps);
+                float elapsed = 0f;
+
+                // IsAlive(true) = 자식 파티클까지 포함해서 살아있는지 확인.
+                while (ps != null && ps.IsAlive(true) && elapsed < maxWait)
+                {
+                    elapsed += Time.unscaledDeltaTime;
+                    yield return null;
+                }
+
+                if (_returnExtraDelay > 0f)
+                    yield return new WaitForSecondsRealtime(_returnExtraDelay);
+
+                ReturnImmediately(ps);
+            }
+
+            private void ReturnImmediately(ParticleSystem ps)
+            {
+                if (ps == null)
+                    return;
+
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.gameObject.SetActive(false);
+
+                _active.Remove(ps);
+
+                if (!_available.Contains(ps))
+                    _available.Enqueue(ps);
+            }
+
+            private float GetReturnWaitTime(ParticleSystem ps)
+            {
+                if (_forcedReturnTime > 0f)
+                    return _forcedReturnTime;
+
+                float max = 0.1f;
+                ParticleSystem[] systems = ps.GetComponentsInChildren<ParticleSystem>(true);
+
+                for (int i = 0; i < systems.Length; i++)
+                {
+                    var main = systems[i].main;
+                    float duration = main.duration;
+                    float lifetime = 0f;
+
+                    switch (main.startLifetime.mode)
+                    {
+                        case ParticleSystemCurveMode.Constant:
+                            lifetime = main.startLifetime.constant;
+                            break;
+                        case ParticleSystemCurveMode.TwoConstants:
+                            lifetime = main.startLifetime.constantMax;
+                            break;
+                        default:
+                            // Curve 계열은 정확한 최대값 계산이 복잡하므로 넉넉한 폴백.
+                            lifetime = main.duration;
+                            break;
+                    }
+
+                    max = Mathf.Max(max, duration + lifetime);
+                }
+
+                return max + 0.25f;
+            }
         }
     }
 }
