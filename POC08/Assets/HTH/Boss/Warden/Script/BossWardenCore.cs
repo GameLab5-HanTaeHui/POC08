@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// BossWardenCore.cs  v4.5
+// BossWardenCore.cs  v5.0
 // Boss_Warden 루트 초기화 허브 + 이벤트 중계 컴포넌트
 //
 // [v4.0 변경 — Groggy 브리지 제거]
@@ -14,7 +14,7 @@
 //     HandleDilPhaseEnter() → AI 정지 + Feedback 딜페이즈 색상 담당
 //     HandleDilPhaseExit()  → AI 재개 + Feedback Idle 복귀 담당
 //
-// [BossWardenCore v4.4 역할]
+// [BossWardenCore v5.0 역할 — Legacy fallback 제거]
 //   1. BossDataManager에서 BossWardenDataSO 수신
 //   2. BossPartManager에서 LeftArm / RightArm / Core 참조 수신
 //   3. BossEventHub로 주요 상태 이벤트 발행
@@ -23,7 +23,13 @@
 //   6. 모든 컴포넌트에 DataSO 주입
 //   7. SealStateManager 이벤트 → AI / VFX 브리지
 //   8. IBossCore v2.0 구현 (BattleManager 연동)
-//   9. 씬 조립 Inspector 연결 허브
+//   9. 신버전 Manager 기준 필수 연결 검증
+//
+// [v5.0 변경]
+//   - Legacy DataSO 직접 연결 제거
+//   - Legacy 부위 직접 연결 제거
+//   - BossSealManager / BossVFXManager 미연결 시 구버전 직접 호출 fallback 제거
+//   - Manager 누락 시 초기화 중단
 //
 // [namespace] SEAL
 // ============================================================
@@ -104,45 +110,24 @@ namespace SEAL
         [Tooltip("BossEventHub. 권장 연결. 미연결 시 같은 오브젝트에서 자동 탐색.")]
         [SerializeField] private BossEventHub _eventHub;
 
-        [Header("── Legacy DataSO Fallback ──────────────────────")]
-
-        /// <summary>
-        /// 기존 호환용 직접 DataSO 연결.
-        /// BossDataManager가 연결되어 있으면 Manager의 WardenData를 우선 사용한다.
-        /// </summary>
-        [Tooltip("기존 호환용 BossWardenDataSO. DataManager가 있으면 DataManager 값을 우선 사용.")]
-        [SerializeField] private BossWardenDataSO _data;
-
         // ══════════════════════════════════════════════════════
-        // Inspector — 부위 / 코어 연결
+        // Runtime Cache — Manager에서 확정된 값
         // ══════════════════════════════════════════════════════
 
-        [Header("── 부위 연결 (필수) ──────────────────────")]
+        /// <summary>BossDataManager에서 수신한 Warden DataSO.</summary>
+        private BossWardenDataSO _data;
 
-        /// <summary>왼팔 BossWardenArmPart. Initialize 주입용.</summary>
-        [Tooltip("왼팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenPart _armL;
+        /// <summary>BossPartManager에서 수신한 왼팔 부위.</summary>
+        private BossWardenPart _armL;
 
-        /// <summary>오른팔 BossWardenArmPart.</summary>
-        [Tooltip("오른팔 BossWardenArmPart.")]
-        [SerializeField] private BossWardenPart _armR;
+        /// <summary>BossPartManager에서 수신한 오른팔 부위.</summary>
+        private BossWardenPart _armR;
 
-        [Header("── 코어 연결 (필수) ──────────────────────")]
+        /// <summary>BossPartManager에서 수신한 코어 GameObject.</summary>
+        private GameObject _coreObject;
 
-        /// <summary>
-        /// 코어 GameObject.
-        /// 기본 SetActive = false.
-        /// SealStateManager.ConnectCore() 에 주입.
-        /// </summary>
-        [Tooltip("코어 GameObject. 기본 SetActive=false.")]
-        [SerializeField] private GameObject _coreObject;
-
-        /// <summary>
-        /// 코어 BossWardenPart. Step 4 호환용.
-        /// 미연결이어도 기존 흐름은 유지되며, 연결 시 DataSO 주입 대상에 포함된다.
-        /// </summary>
-        [Tooltip("코어 BossWardenPart. 선택 연결. PartManager가 있으면 자동 수신.")]
-        [SerializeField] private BossWardenPart _corePart;
+        /// <summary>BossPartManager에서 수신한 코어 부위.</summary>
+        private BossWardenPart _corePart;
 
         // ══════════════════════════════════════════════════════
         // 컴포넌트 참조 (Awake 자동 탐색)
@@ -234,56 +219,48 @@ namespace SEAL
 
         private void Awake()
         {
-            if (_dataManager == null) _dataManager = GetComponent<BossDataManager>();
-            if (_partManager == null) _partManager = GetComponent<BossPartManager>();
-            if (_sealManager == null) _sealManager = GetComponent<BossSealManager>();
-            if (_vfxManager == null) _vfxManager = GetComponent<BossVFXManager>();
-            if (_eventHub == null) _eventHub = GetComponent<BossEventHub>();
+            // 신버전 Manager 기준 탐색.
+            // 같은 오브젝트 또는 Manager 자식 오브젝트에 있어도 찾되,
+            // 구버전 Data/Part 직접 연결 fallback은 사용하지 않는다.
+            if (_dataManager == null) _dataManager = GetComponentInChildren<BossDataManager>(true);
+            if (_partManager == null) _partManager = GetComponentInChildren<BossPartManager>(true);
+            if (_sealManager == null) _sealManager = GetComponentInChildren<BossSealManager>(true);
+            if (_vfxManager == null) _vfxManager = GetComponentInChildren<BossVFXManager>(true);
+            if (_eventHub == null) _eventHub = GetComponentInChildren<BossEventHub>(true);
 
-            _stateManager = GetComponent<SealStateManager>();
-            _gaugeManager = GetComponent<SealGaugeManager>();
-            _effectManager = GetComponent<SealEffectManager>();
-            _executionRunner = GetComponent<SealExecutionRunner>();
             _ai = GetComponent<BossWardenAI>();
-            _feedback = GetComponent<BossWardenFeedback>();
-            _attackRange = GetComponent<BossWardenAttackRange>();
-            _shockwave = GetComponent<BossWardenShockwave>();
             _rigid2D = GetComponent<Rigidbody2D>();
 
-            ValidateComponents();
+            ValidateRequiredManagers();
         }
 
         private void Start()
         {
+            if (!ValidateRequiredManagers())
+            {
+                enabled = false;
+                return;
+            }
+
             if (!ResolveData())
             {
                 enabled = false;
                 return;
             }
 
-            // 1. BossPartManager를 우선 사용하여 부위 참조 확정
-            ResolveParts();
-
-            // 2. 모든 컴포넌트에 DataSO 주입
-            InjectData();
-
-            // 3. BossVFXManager가 있으면 코어 Transform 연결 중앙화
-            if (_vfxManager != null && _coreObject != null)
-                _vfxManager.ConnectCore(_coreObject.transform);
-
-            // 4. BossSealManager가 없을 때만 Legacy 방식으로 코어 연결
-            if (_sealManager == null)
+            if (!ResolveParts())
             {
-                _stateManager?.ConnectCore(_coreObject);
-
-                if (_coreObject != null)
-                    _effectManager?.SetCoreTransform(_coreObject.transform);
+                enabled = false;
+                return;
             }
 
-            // 5. SealStateManager 이벤트 구독 → AI / VFX 브리지
+            InjectData();
+
+            _vfxManager.ConnectCore(_coreObject.transform);
+
             SubscribeStateEvents();
 
-            Debug.Log("[BossWardenCore] v4.5 초기화 완료 — BossDataManager + BossPartManager + BossSealManager + BossVFXManager + BossEventHub 대응");
+            Debug.Log("[BossWardenCore] v5.0 초기화 완료 — 신버전 Manager 전용 / Legacy fallback 제거");
         }
 
         private void OnDestroy()
@@ -296,27 +273,22 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// BossDataManager를 우선 사용하여 BossWardenDataSO를 확정한다.
-        /// Manager가 없으면 기존 _data 직접 연결을 fallback으로 사용한다.
+        /// BossDataManager를 통해서만 BossWardenDataSO를 확정한다.
+        /// Legacy _data 직접 연결 fallback은 사용하지 않는다.
         /// </summary>
         private bool ResolveData()
         {
-            if (_dataManager != null && _dataManager.WardenData != null)
+            if (_dataManager == null)
             {
-                _data = _dataManager.WardenData;
+                Debug.LogError("[BossWardenCore] BossDataManager 미연결 — 신버전 구조에서는 필수입니다.");
+                return false;
             }
-            else if (_dataManager == null)
-            {
-                Debug.LogWarning("[BossWardenCore] BossDataManager 미연결 — Legacy _data 직접 연결을 사용합니다.");
-            }
-            else
-            {
-                Debug.LogWarning("[BossWardenCore] BossDataManager에 WardenData가 없습니다 — Legacy _data 직접 연결을 사용합니다.");
-            }
+
+            _data = _dataManager.WardenData;
 
             if (_data == null || !_data.IsValid())
             {
-                Debug.LogError("[BossWardenCore] BossWardenDataSO 미연결 또는 유효하지 않음 — 초기화 중단.");
+                Debug.LogError("[BossWardenCore] BossDataManager.WardenData 미연결 또는 유효하지 않음 — 초기화 중단.");
                 return false;
             }
 
@@ -328,33 +300,35 @@ namespace SEAL
         // ══════════════════════════════════════════════════════
 
         /// <summary>
-        /// BossPartManager를 우선 사용하여 LeftArm / RightArm / Core 참조를 확정한다.
-        /// Manager가 없거나 특정 참조가 비어 있으면 기존 Inspector 직접 연결 값을 유지한다.
+        /// BossPartManager를 통해서만 LeftArm / RightArm / Core 참조를 확정한다.
+        /// Legacy Inspector 직접 연결과 혼합하지 않는다.
         /// </summary>
-        private void ResolveParts()
+        private bool ResolveParts()
         {
             if (_partManager == null)
             {
-                Debug.LogWarning("[BossWardenCore] BossPartManager 미연결 — Legacy 부위 직접 연결을 사용합니다.");
-                return;
+                Debug.LogError("[BossWardenCore] BossPartManager 미연결 — 신버전 구조에서는 필수입니다.");
+                return false;
             }
-
-            if (_partManager.LeftArm != null)
-                _armL = _partManager.LeftArm;
-
-            if (_partManager.RightArm != null)
-                _armR = _partManager.RightArm;
-
-            if (_partManager.CorePart != null)
-                _corePart = _partManager.CorePart;
-
-            if (_partManager.CoreObject != null)
-                _coreObject = _partManager.CoreObject;
 
             if (!_partManager.IsValid())
             {
-                Debug.LogWarning("[BossWardenCore] BossPartManager 필수 참조 일부 누락 — Legacy 직접 연결과 혼합 사용합니다.");
+                Debug.LogError("[BossWardenCore] BossPartManager 필수 참조 누락 — LeftArm / RightArm / CoreObject 연결을 확인하세요.");
+                return false;
             }
+
+            _armL = _partManager.LeftArm;
+            _armR = _partManager.RightArm;
+            _corePart = _partManager.CorePart;
+            _coreObject = _partManager.CoreObject;
+
+            if (_armL == null || _armR == null || _corePart == null || _coreObject == null)
+            {
+                Debug.LogError("[BossWardenCore] BossPartManager에서 부위 참조를 모두 가져오지 못했습니다.");
+                return false;
+            }
+
+            return true;
         }
 
         // ══════════════════════════════════════════════════════
@@ -368,53 +342,28 @@ namespace SEAL
         /// </summary>
         private void InjectData()
         {
-            // Step 8 — BossSealManager가 있으면 봉인 시스템 초기화를 중앙 위임
-            if (_sealManager != null)
-            {
-                _sealManager.Initialize(_data, _coreObject);
+            _sealManager.Initialize(_data, _coreObject);
 
-                // Core는 기존 브리지 로직을 유지하기 위해 실제 하위 매니저 참조를 계속 보관한다.
-                if (_sealManager.StateManager != null) _stateManager = _sealManager.StateManager;
-                if (_sealManager.GaugeManager != null) _gaugeManager = _sealManager.GaugeManager;
-                if (_sealManager.EffectManager != null) _effectManager = _sealManager.EffectManager;
-                if (_sealManager.ExecutionRunner != null) _executionRunner = _sealManager.ExecutionRunner;
-            }
-            else
-            {
-                // Legacy 범용 컴포넌트 — BossDataSO 주입
-                _stateManager?.Initialize(_data);
-                _gaugeManager?.Initialize(_data);
-                _effectManager?.Initialize(_data);
-                _executionRunner?.Initialize(_data);
-            }
+            if (_sealManager.StateManager != null) _stateManager = _sealManager.StateManager;
+            if (_sealManager.GaugeManager != null) _gaugeManager = _sealManager.GaugeManager;
+            if (_sealManager.EffectManager != null) _effectManager = _sealManager.EffectManager;
+            if (_sealManager.ExecutionRunner != null) _executionRunner = _sealManager.ExecutionRunner;
 
-            // Warden 전용 컴포넌트 — BossWardenDataSO 주입
             _ai?.Initialize(_data);
 
-            // Step 9 — BossVFXManager가 있으면 VFX 초기화를 중앙 위임
-            if (_vfxManager != null)
-            {
-                Transform coreTransform = _coreObject != null ? _coreObject.transform : null;
-                _vfxManager.Initialize(_data, coreTransform);
+            Transform coreTransform = _coreObject != null ? _coreObject.transform : null;
+            _vfxManager.Initialize(_data, coreTransform);
 
-                // Core는 기존 fallback 로직을 유지하기 위해 실제 하위 VFX 참조를 계속 보관한다.
-                if (_vfxManager.Feedback != null) _feedback = _vfxManager.Feedback;
-                if (_vfxManager.AttackRange != null) _attackRange = _vfxManager.AttackRange;
-                if (_vfxManager.Shockwave != null) _shockwave = _vfxManager.Shockwave;
-                if (_vfxManager.SealEffectManager != null) _effectManager = _vfxManager.SealEffectManager;
-            }
-            else
-            {
-                _feedback?.Initialize(_data);
-                _attackRange?.Initialize(_data);
-                _shockwave?.Initialize(_data);
-            }
+            if (_vfxManager.Feedback != null) _feedback = _vfxManager.Feedback;
+            if (_vfxManager.AttackRange != null) _attackRange = _vfxManager.AttackRange;
+            if (_vfxManager.Shockwave != null) _shockwave = _vfxManager.Shockwave;
+            if (_vfxManager.SealEffectManager != null) _effectManager = _vfxManager.SealEffectManager;
 
-            _armL?.Initialize(_data);
-            _armR?.Initialize(_data);
-            _corePart?.Initialize(_data);
+            _armL.Initialize(_data);
+            _armR.Initialize(_data);
+            _corePart.Initialize(_data);
 
-            Debug.Log("[BossWardenCore] DataSO 전체 주입 완료");
+            Debug.Log("[BossWardenCore] DataSO 전체 주입 완료 — Manager 전용");
         }
 
         // ══════════════════════════════════════════════════════
@@ -458,13 +407,7 @@ namespace SEAL
         private void HandleDilPhaseEnter()
         {
             _ai?.OnDilPhaseEnter();
-            if (_vfxManager != null)
-                _vfxManager.OnDilPhaseEnter();
-            else
-            {
-                _feedback?.OnDilPhaseEnter();
-                _attackRange?.HideAll();
-            }
+            _vfxManager.OnDilPhaseEnter();
 
             if (_rigid2D != null)
                 _rigid2D.linearVelocity = Vector2.zero;
@@ -483,10 +426,7 @@ namespace SEAL
         private void HandleDilPhaseExit()
         {
             _ai?.OnDilPhaseExit();
-            if (_vfxManager != null)
-                _vfxManager.OnDilPhaseExit();
-            else
-                _feedback?.OnDilPhaseExit();
+            _vfxManager.OnDilPhaseExit();
 
             OnDilPhaseExit?.Invoke();
             _eventHub?.RaiseDilPhaseExit();
@@ -501,10 +441,7 @@ namespace SEAL
         /// </summary>
         private void HandleFinalSealReady()
         {
-            if (_vfxManager != null)
-                _vfxManager.OnFinalSealReady();
-            else
-                _feedback?.OnFinalSealReady();
+            _vfxManager.OnFinalSealReady();
 
             OnFinalSealReady?.Invoke();
             _eventHub?.RaiseFinalSealReady();
@@ -520,10 +457,7 @@ namespace SEAL
         private void HandlePhaseChanged(int newPhase)
         {
             _ai?.OnPhaseChanged(newPhase);
-            if (_vfxManager != null)
-                _vfxManager.OnPhaseChanged(newPhase);
-            else
-                _feedback?.OnPhaseChanged(newPhase);
+            _vfxManager.OnPhaseChanged(newPhase);
 
             OnPhaseChanged?.Invoke(newPhase);
             _eventHub?.RaisePhaseChanged(newPhase);
@@ -539,17 +473,8 @@ namespace SEAL
         private void HandleDead()
         {
             _ai?.OnDead();
-            if (_vfxManager != null)
-                _vfxManager.OnDead();
-            else
-            {
-                _feedback?.OnDead();
-                _attackRange?.HideAll();
-            }
-            if (_sealManager != null)
-                _sealManager.ForceStopExecution();
-            else
-                _executionRunner?.ForceStop();
+            _vfxManager.OnDead();
+            _sealManager.ForceStopExecution();
 
             OnDead?.Invoke();
             _eventHub?.RaiseDead();
@@ -562,30 +487,44 @@ namespace SEAL
         // 유효성 검사
         // ══════════════════════════════════════════════════════
 
-        private void ValidateComponents()
+        private bool ValidateRequiredManagers()
         {
-            if (_stateManager == null)
-                Debug.LogError("[BossWardenCore] SealStateManager 미연결.");
-            if (_gaugeManager == null)
-                Debug.LogError("[BossWardenCore] SealGaugeManager 미연결.");
+            bool valid = true;
+
+            if (_dataManager == null)
+            {
+                Debug.LogError("[BossWardenCore] BossDataManager 미연결.");
+                valid = false;
+            }
+
+            if (_partManager == null)
+            {
+                Debug.LogError("[BossWardenCore] BossPartManager 미연결.");
+                valid = false;
+            }
+
+            if (_sealManager == null)
+            {
+                Debug.LogError("[BossWardenCore] BossSealManager 미연결.");
+                valid = false;
+            }
+
+            if (_vfxManager == null)
+            {
+                Debug.LogError("[BossWardenCore] BossVFXManager 미연결.");
+                valid = false;
+            }
+
+            if (_eventHub == null)
+            {
+                Debug.LogError("[BossWardenCore] BossEventHub 미연결.");
+                valid = false;
+            }
+
             if (_ai == null)
                 Debug.LogWarning("[BossWardenCore] BossWardenAI 미연결.");
-            if (_feedback == null)
-                Debug.LogWarning("[BossWardenCore] BossWardenFeedback 미연결.");
-            if (_partManager == null)
-                Debug.LogWarning("[BossWardenCore] BossPartManager 미연결 — Step 4 권장 연결입니다.");
-            if (_sealManager == null)
-                Debug.LogWarning("[BossWardenCore] BossSealManager 미연결 — Step 8 권장 연결입니다.");
-            if (_vfxManager == null)
-                Debug.LogWarning("[BossWardenCore] BossVFXManager 미연결 — Step 9 권장 연결입니다.");
-            if (_eventHub == null)
-                Debug.LogWarning("[BossWardenCore] BossEventHub 미연결 — Step 5 권장 연결입니다.");
-            if (_coreObject == null)
-                Debug.LogWarning("[BossWardenCore] Core GameObject 미연결.");
-            if (_armL == null)
-                Debug.LogWarning("[BossWardenCore] LeftArm BossWardenPart 미연결.");
-            if (_armR == null)
-                Debug.LogWarning("[BossWardenCore] RightArm BossWardenPart 미연결.");
+
+            return valid;
         }
 
         // ══════════════════════════════════════════════════════

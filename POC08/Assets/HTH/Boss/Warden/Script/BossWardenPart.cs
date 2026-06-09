@@ -20,12 +20,12 @@
 //     → 봉인 완료 시 HurtBox Collider 비활성 (동일)
 //
 // [공통 동작]
-//   Step 7 이후 권장 흐름:
-//     BossHitManager 가 PlayerAttackHitboxManager.OnHit 을 중앙 구독
+//   Step 13 이후 흐름:
+//     BossHitManager 가 PlayerAttackHitboxManager.OnHit 을 단독 중앙 구독
 //     → Collider 기준으로 BossWardenPart 조회
 //     → BossWardenPart.TryReceiveHit() 호출
 //
-//   BossHitManager가 없으면 기존 방식으로 각 Part가 OnHit을 직접 구독한다.
+//   BossWardenPart 는 더 이상 PlayerAttackHitboxManager.OnHit 을 직접 구독하지 않는다.
 //   봉인 완료 → HurtBox Collider 비활성
 //   봉인 해제 → HurtBox Collider 재활성
 //
@@ -150,21 +150,12 @@ namespace SEAL
         /// <summary>봉인도 관리. Awake 에서 GetComponent.</summary>
         private SealableComponent _sealable;
 
-        /// <summary>PlayerAttackHitboxManager 참조. Start 에서 캐싱.</summary>
-        private PlayerAttackHitboxManager _hitboxManager;
-
         /// <summary>플레이어 Transform. IsPlayerFacingFront() 에서 사용. Start 1회 캐싱.</summary>
         private Transform _playerTransform;
 
         /// <summary>보스 AI. 정면 방향 계산에 사용. Awake 에서 GetComponentInParent.</summary>
         private BossWardenAI _ai;
 
-
-        /// <summary>
-        /// Step 7 중앙 피격 관리자.
-        /// 존재하면 이 Part는 PlayerAttackHitboxManager.OnHit을 직접 구독하지 않는다.
-        /// </summary>
-        private BossHitManager _centralHitManager;
 
         // ══════════════════════════════════════════════════════
         // 내부 상태 — 팔 전용 배율 (Core 는 미사용)
@@ -210,9 +201,6 @@ namespace SEAL
         /// <summary>현재 취약 배율이 활성화되어 있는지 여부.</summary>
         public bool IsWeakVulnerable => _isRecoveryVuln || _isSlamVuln;
 
-        /// <summary>BossHitManager 중앙 라우팅을 사용하는지 여부.</summary>
-        public bool UsesCentralHitManager => _centralHitManager != null && _centralHitManager.enabled;
-
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
         // ══════════════════════════════════════════════════════
@@ -221,7 +209,6 @@ namespace SEAL
         {
             _sealable = GetComponent<SealableComponent>();
             _ai = GetComponentInParent<BossWardenAI>();
-            _centralHitManager = GetComponentInParent<BossHitManager>();
 
             if (_sealable == null)
                 Debug.LogError($"[BossWardenPart] {gameObject.name} — SealableComponent 미부착.");
@@ -231,27 +218,11 @@ namespace SEAL
 
         private void Start()
         {
-            // Step 7: BossHitManager가 있으면 중앙 라우팅을 사용하므로
-            // 각 Part가 PlayerAttackHitboxManager.OnHit을 직접 구독하지 않는다.
-            if (UsesCentralHitManager)
-            {
-                Debug.Log($"[BossWardenPart] {_partType} — BossHitManager 중앙 라우팅 사용");
-            }
-            else
-            {
-                // Legacy fallback: BossHitManager가 없을 때만 기존 방식으로 직접 구독
-                var managers = FindObjectsByType<PlayerAttackHitboxManager>(FindObjectsSortMode.None);
-                if (managers.Length > 0)
-                {
-                    _hitboxManager = managers[0];
-                    _hitboxManager.OnHit += HandlePlayerHit;
-                    Debug.Log($"[BossWardenPart] {_partType} — Legacy OnHit 직접 구독 완료");
-                }
-                else
-                    Debug.LogWarning($"[BossWardenPart] {_partType} — PlayerAttackHitboxManager 없음.");
-            }
+            // Step 13:
+            // PlayerAttackHitboxManager.OnHit 구독은 BossHitManager 하나만 담당한다.
+            // BossWardenPart 는 피격 처리 진입점 TryReceiveHit() 만 제공한다.
 
-            // 플레이어 Transform 1회 캐싱
+            // 플레이어 Transform 1회 캐싱 — GuardBreak 정면 판정용
             var players = FindObjectsByType<PlayerMoveController>(FindObjectsSortMode.None);
             if (players.Length > 0)
                 _playerTransform = players[0].transform;
@@ -262,13 +233,12 @@ namespace SEAL
                 _sealable.OnSealCompleted += HandleSealCompleted;
                 _sealable.OnForceReleased += HandleForceReleased;
             }
+
+            Debug.Log($"[BossWardenPart] {_partType} — 중앙 피격 라우팅 전용 모드");
         }
 
         private void OnDestroy()
         {
-            if (_hitboxManager != null)
-                _hitboxManager.OnHit -= HandlePlayerHit;
-
             if (_sealable != null)
             {
                 _sealable.OnSealCompleted -= HandleSealCompleted;
@@ -299,33 +269,10 @@ namespace SEAL
         // 피격 처리
         // ══════════════════════════════════════════════════════
 
-        /// <summary>
-        /// PlayerAttackHitboxManager.OnHit 수신.
-        /// hitCol 이 _ownCollider 와 일치할 때만 봉인도 누적.
-        ///
-        /// [부위별 처리 분기]
-        ///   Core
-        ///     → 배율 없음
-        ///     → SealableComponent._isDilPhaseOnly 가 DilPhase 외 차단 처리
-        ///
-        ///   LeftArm / RightArm
-        ///     → GuardBreak 가드 중 정면 공격 봉인도 차단 (RightArm + _guardBreakPattern 연결 시)
-        ///     → RecoveryVuln 배율 적용
-        ///     → SlamVuln 배율 적용
-        ///
-        /// [피격 점멸]
-        ///   SealableComponent.PlayHitFlash() 위임
-        ///   colorHitFlash 로 점멸 후 현재 봉인도 색상으로 자동 복귀
-        /// </summary>
-        private void HandlePlayerHit(Collider2D hitCol, float sealAmount)
-        {
-            if (!ContainsCollider(hitCol)) return;
-            TryReceiveHit(sealAmount, hitCol != null ? hitCol.bounds.center : transform.position);
-        }
 
         /// <summary>
         /// 이 Part가 전달받은 Collider를 소유하는지 확인한다.
-        /// BossPartManager.GetPartByCollider() 와 Legacy 직접 구독에서 사용한다.
+        /// BossPartManager.GetPartByCollider() 에서 사용한다.
         /// </summary>
         public bool ContainsCollider(Collider2D hitCol)
         {
@@ -334,11 +281,11 @@ namespace SEAL
 
         /// <summary>
         /// 중앙 피격 처리 진입점.
-        /// BossHitManager 또는 Legacy HandlePlayerHit 에서 호출한다.
+        /// BossHitManager 에서만 호출한다.
         ///
         /// [Step 7 범위]
-        ///   - 피격 라우팅은 BossHitManager로 이동
-        ///   - 가드 무효 / 취약 배율 / AddGauge / HitFlash는 기존 로직을 유지
+        ///   - 피격 라우팅은 BossHitManager만 담당
+        ///   - 가드 무효 / 취약 배율 / AddGauge / HitFlash는 이 Part가 담당
         ///   - 이후 BossSealManager 단계에서 봉인도 계산을 추가로 이관할 수 있음
         /// </summary>
         public BossPartHitResult TryReceiveHit(float sealAmount, Vector3 hitPoint)
@@ -390,9 +337,8 @@ namespace SEAL
         /// HurtBox Collider 비활성화 → 봉인 완료 후 피격 차단.
         ///
         /// [이유]
-        ///   봉인 완료 후에도 PlayerAttackHitboxManager 가 계속 hitCol 감지
-        ///   → 파티클 낭비 + HandlePlayerHit IsSealed 체크로 봉인도는 막히지만
-        ///     피격 판정 자체가 계속 발생 → Collider 비활성으로 근본 차단
+        ///   봉인 완료 후에도 PlayerAttackHitboxManager 가 계속 hitCol 감지할 수 있으므로
+        ///   Collider 비활성으로 피격 라우팅 자체를 차단한다.
         /// </summary>
         private void HandleSealCompleted()
         {

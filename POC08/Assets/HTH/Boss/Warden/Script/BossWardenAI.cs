@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// BossWardenAI.cs  v3.1
+// BossWardenAI.cs  v4.0
 // Boss_Warden 탑뷰 AI — Step 6 AttackManager 분리
 //
 // [v3.0 변경 — Groggy 브리지 메서드 제거]
@@ -23,15 +23,15 @@
 //   변경:
 //     패턴 선택/실행 책임을 BossAttackManager 로 이동
 //     BossWardenAI 는 이동/상태 전환/공격 요청만 담당
-//   유지:
-//     BossAttackManager 미연결 시 기존 AI 내부 패턴 실행 흐름 fallback 유지
+//   Step 13 변경:
+//     BossAttackManager 미연결 fallback 제거
+//     AI 내부 패턴 선택/실행 코드 제거
+//     공격은 BossAttackManager.RequestAttack() 로만 요청
 //
 // [namespace] SEAL
 // ============================================================
 
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace SEAL
@@ -102,19 +102,11 @@ namespace SEAL
 
         /// <summary>
         /// Step 6에서 추가된 공격 패턴 선택/실행 관리자.
-        /// 미연결 시 기존 AI 내부 패턴 실행 방식으로 fallback 한다.
+        /// Step 13 이후 필수 연결이다.
         /// </summary>
-        [Tooltip("BossAttackManager. 권장 연결. 미연결 시 같은 오브젝트에서 자동 탐색.")]
+        [Tooltip("BossAttackManager. 필수 연결.")]
         [SerializeField] private BossAttackManager _attackManager;
 
-        [Header("── 패턴 목록 (필수 / AttackManager 주입용) ──────────────────────")]
-
-        /// <summary>
-        /// 패턴 목록. Inspector 에서 BossPattern_XX 연결.
-        /// CanExecute + IsAvailable 로 실행 가능 패턴 필터.
-        /// </summary>
-        [Tooltip("패턴 목록. Inspector 에서 BossPattern_XX 연결.")]
-        [SerializeField] private List<BossPatternBase> _patterns = new();
 
         [Header("── 팔 부위 연결 (필수) ──────────────────────")]
 
@@ -149,9 +141,6 @@ namespace SEAL
         /// <summary>현재 실행 중인 패턴.</summary>
         private BossPatternBase _currentPattern;
 
-        /// <summary>현재 패턴 코루틴 핸들.</summary>
-        private Coroutine _patternCoroutine;
-
         /// <summary>
         /// 이동/패턴 정지 플래그.
         /// true: DilPhase / Dead 중.
@@ -168,8 +157,6 @@ namespace SEAL
         /// <summary>현재 플레이어 방향 벡터 (정규화).</summary>
         private Vector2 _facingDir = Vector2.right;
 
-        /// <summary>패턴 선택 캐시 리스트 (GC 할당 방지).</summary>
-        private readonly List<BossPatternBase> _availablePatterns = new();
 
         // ══════════════════════════════════════════════════════
         // 이벤트
@@ -212,7 +199,7 @@ namespace SEAL
         {
             _rigid2D = GetComponent<Rigidbody2D>();
             _spriteRenderer = GetComponent<SpriteRenderer>();
-            if (_attackManager == null) _attackManager = GetComponent<BossAttackManager>();
+            if (_attackManager == null) _attackManager = GetComponentInChildren<BossAttackManager>(true);
             // v3.0: _core 참조 없음 — BossWardenCore 브리지 방식 유지
             _currentMoveSpeed = _data != null ? _data.moveSpeed : 3.5f;
         }
@@ -226,17 +213,12 @@ namespace SEAL
             else
                 Debug.LogWarning("[BossWardenAI] PlayerMoveController 탐색 실패.");
 
-            // Step 6:
-            // BossAttackManager 가 있으면 패턴 종료/중단 흐름은 AttackManager 가 관리한다.
-            // 없으면 기존 AI 내부 패턴 실행 fallback 을 위해 이벤트 구독을 유지한다.
             if (_attackManager == null)
-                SubscribePatternEvents();
+                Debug.LogError("[BossWardenAI] BossAttackManager 미연결 — 공격 실행 불가.");
         }
 
         private void OnDestroy()
         {
-            if (_attackManager == null)
-                UnsubscribePatternEvents();
         }
 
         private void Update()
@@ -269,65 +251,32 @@ namespace SEAL
             _data = data;
             _currentMoveSpeed = data.moveSpeed;
 
-            // Step 6:
-            // BossAttackManager 가 있으면 패턴 초기화/선택/실행을 AttackManager 로 위임한다.
-            // 없으면 Step 2 방식처럼 AI가 패턴 목록에 직접 DataSO를 주입한다.
-            if (_attackManager != null)
+            // Step 13:
+            // 패턴 초기화/선택/실행은 BossAttackManager만 담당한다.
+            if (_attackManager == null)
             {
-                _attackManager.Initialize(data, this, _patterns, _armL, _armR);
+                Debug.LogError("[BossWardenAI] BossAttackManager 미연결 — Initialize 중단.");
+                enabled = false;
+                return;
             }
-            else
-            {
-                foreach (var pattern in _patterns)
-                {
-                    if (pattern == null) continue;
-                    pattern.Initialize(data);
-                }
-            }
+
+            _attackManager.Initialize(data, this, _armL, _armR);
 
             Debug.Log("[BossWardenAI] 초기화 완료");
         }
 
-        // ══════════════════════════════════════════════════════
-        // 패턴 이벤트 구독
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>패턴 이벤트 구독. OnPatternEnd / OnPatternGroggy 수신.</summary>
-        private void SubscribePatternEvents()
-        {
-            foreach (var p in _patterns)
-            {
-                if (p == null) continue;
-                p.OnPatternEnd -= HandlePatternEnd;
-                p.OnPatternEnd += HandlePatternEnd;
-                p.OnPatternGroggy -= HandlePatternGroggy;
-                p.OnPatternGroggy += HandlePatternGroggy;
-            }
-        }
-
-        private void UnsubscribePatternEvents()
-        {
-            foreach (var p in _patterns)
-            {
-                if (p == null) continue;
-                p.OnPatternEnd -= HandlePatternEnd;
-                p.OnPatternGroggy -= HandlePatternGroggy;
-            }
-        }
 
         // ══════════════════════════════════════════════════════
         // BossWardenCore 브리지 메서드 — public
         // BossWardenCore v4.0 이 SealStateManager 이벤트 수신 후 직접 호출
         // ══════════════════════════════════════════════════════
 
-        // 수정 — InterruptCurrentPattern() 이 이미 _currentState=Idle 처리하므로
-        // 추가 작업 없음. 단, velocity 명시 정지 추가.
+        // 수정 — BossAttackManager를 통해 실행 중인 패턴을 중단한다.
         public void OnDilPhaseEnter()
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
-            if (_attackManager != null) _attackManager.InterruptCurrentPattern();
-            else InterruptCurrentPattern(); // fallback: 내부에서 StopAllCoroutines + 상태 복귀 처리
+            _attackManager?.InterruptCurrentPattern();
 
             // velocity 즉시 정지 (Rigidbody2D 관성 제거)
             if (_rigid2D != null)
@@ -362,18 +311,7 @@ namespace SEAL
             if (_data != null)
                 _currentMoveSpeed = _data.phase2MoveSpeed;
 
-            if (_attackManager != null)
-            {
-                _attackManager.UnlockPhase2();
-            }
-            else
-            {
-                foreach (var p in _patterns)
-                {
-                    if (p == null) continue;
-                    p.UnlockPhase2();
-                }
-            }
+            _attackManager?.UnlockPhase2();
 
             Debug.Log("[BossWardenAI] ▶ 2페이즈 전환 — 이동 속도/패턴 강화 적용");
         }
@@ -387,45 +325,11 @@ namespace SEAL
         {
             _isStopped = true;
             SetArmsRecoveryVuln(false);
-            if (_attackManager != null) _attackManager.InterruptCurrentPattern();
-            else InterruptCurrentPattern();
+            _attackManager?.InterruptCurrentPattern();
             enabled = false;
             Debug.Log("[BossWardenAI] ✅ 처치 → AI 정지");
         }
 
-        // ══════════════════════════════════════════════════════
-        // 패턴 이벤트 핸들러
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 패턴 Recovery 완전 종료 수신.
-        /// 패턴 정리 후 Idle 복귀.
-        /// </summary>
-        private void HandlePatternEnd(BossPatternBase pattern)
-        {
-            CleanupPattern();
-            if (!_isStopped)
-                ChangeState(WardenAIState.Idle);
-        }
-
-        /// <summary>
-        /// 패턴 Recovery 중 그로기 트리거 수신.
-        ///
-        /// [v3.0 설계]
-        ///   그로기 개념 제거 — DilPhase 진입은 SealGaugeManager.OnAllPartsSealed 경로만 사용.
-        ///   패턴 자체가 그로기를 유발하는 경로 없음.
-        ///   → 이 핸들러는 빈 함수로 유지 (OnPatternGroggy 이벤트는 패턴 내부용으로 보존).
-        ///
-        /// [패턴별 주의]
-        ///   BossPattern_GuardBreak._triggerGroggyOnRecovery = true 로 설정되어 있으나
-        ///   이 핸들러에서 아무것도 하지 않으므로 실제 영향 없음.
-        ///   GuardBreak 의 그로기 유도 의도는 향후 기획 결정에 따라 재설계 필요.
-        /// </summary>
-        private void HandlePatternGroggy()
-        {
-            // v3.0: DilPhase 진입은 SealGaugeManager.OnAllPartsSealed 경로로만 처리
-            // 패턴 그로기 트리거는 현재 사용하지 않음
-        }
 
         // ══════════════════════════════════════════════════════
         // AI 로직 — Update / FixedUpdate
@@ -515,91 +419,8 @@ namespace SEAL
 
         private void TrySelectPattern()
         {
-            // Step 6: 공격 선택/실행은 BossAttackManager 로 우선 위임.
-            if (_attackManager != null)
-            {
-                _attackManager.RequestAttack();
-                return;
-            }
-
-            // fallback: AttackManager 미연결 시 기존 AI 내부 선택/실행 방식 유지.
-            // 이미 패턴 실행 중이면 무시.
-            if (_currentPattern != null) return;
-
-            // DilPhase 중 (_isStopped = true) 이면 패턴 선택 금지.
-            // DilPhase 진입 직후 1프레임 내 패턴 선택을 방지.
-            if (_isStopped) return;
-
-            if (_patterns == null || _patterns.Count == 0) return;
-
-            _availablePatterns.Clear();
-            foreach (var p in _patterns)
-            {
-                if (p == null) continue;
-                if (!p.CanExecute) continue;
-                if (!p.IsAvailable) continue;
-                _availablePatterns.Add(p);
-            }
-
-            if (_availablePatterns.Count == 0) return;
-
-            int idx = UnityEngine.Random.Range(0, _availablePatterns.Count);
-            var selected = _availablePatterns[idx];
-
-            _currentPattern = selected;
-            _patternCoroutine = StartCoroutine(ExecutePattern(selected));
-        }
-
-        /// <summary>
-        /// 패턴 실행 코루틴. Warning → Active → Recovery.
-        /// 각 단계 전후 _isStopped 이중 체크.
-        /// </summary>
-        /// <summary>
-        /// 패턴 실행 코루틴. Warning → Active → Recovery.
-        ///
-        /// [중단 조건 — _isStopped 단독 가드]
-        ///   _isStopped = true 는 DilPhase 진입 / Dead 시에만 발생.
-        ///   Warning 중 Chase 전환은 CheckChaseTransition() 에서 이미 차단되므로
-        ///   _currentState 체크는 불필요. _isStopped 만으로 충분.
-        ///
-        /// [패턴 완수 원칙]
-        ///   Warning 이 시작되면 _isStopped 가 아닌 한 Active 까지 반드시 완수.
-        ///   플레이어가 범위 밖으로 나가도 패턴은 끝까지 실행된다.
-        /// </summary>
-        private IEnumerator ExecutePattern(BossPatternBase pattern)
-        {
-            string pName = pattern.GetType().Name;
-
-            // ── Warning ──
-            Debug.Log($"[BossWardenAI] ▶ [{pName}] Warning");
-            ChangeState(WardenAIState.Warning);
-            yield return StartCoroutine(pattern.ExecuteWarning());
-
-            // DilPhase 진입 등 강제 중단 시에만 취소
-            if (_isStopped) { CleanupPattern(); yield break; }
-
-            // ── Active ──
-            Debug.Log($"[BossWardenAI] ▶ [{pName}] Active");
-            ChangeState(WardenAIState.Active);
-            yield return StartCoroutine(pattern.ExecuteActive());
-
-            if (_isStopped) { CleanupPattern(); yield break; }
-
-            // ── Recovery ──
-            Debug.Log($"[BossWardenAI] ▶ [{pName}] Recovery");
-            ChangeState(WardenAIState.Recovery);
-            SetArmsRecoveryVuln(true);
-
-            yield return StartCoroutine(pattern.ExecuteRecovery());
-
-            SetArmsRecoveryVuln(false);
-
-            if (_isStopped) { CleanupPattern(); yield break; }
-
-            // ── 정상 완료 ──
-            Debug.Log($"[BossWardenAI] ✅ [{pName}] 패턴 완료 → Idle");
-            CleanupPattern();
-            ChangeState(WardenAIState.Idle);
+            if (_attackManager == null) return;
+            _attackManager.RequestAttack();
         }
 
         // ══════════════════════════════════════════════════════
@@ -634,7 +455,6 @@ namespace SEAL
             if (_currentPattern == pattern)
                 _currentPattern = null;
 
-            _patternCoroutine = null;
             SetArmsRecoveryVuln(false);
 
             if (!_isStopped)
@@ -647,7 +467,6 @@ namespace SEAL
             if (_currentPattern == pattern)
                 _currentPattern = null;
 
-            _patternCoroutine = null;
             SetArmsRecoveryVuln(false);
             _currentState = WardenAIState.Idle;
         }
@@ -658,46 +477,7 @@ namespace SEAL
             SetArmsRecoveryVuln(isVulnerable);
         }
 
-        // 수정
-        /// <summary>
-        /// 현재 실행 중인 패턴을 안전하게 강제 중단한다.
-        ///
-        /// [핵심 수정 — StopAllCoroutines()]
-        ///   기존 StopCoroutine(_patternCoroutine) 은 ExecutePattern() 만 중단.
-        ///   그 안에서 StartCoroutine(pattern.ExecuteWarning()) 으로 실행된
-        ///   OnWarning() / OnActive() 중첩 코루틴은 계속 실행됨 → 패턴 캔슬 불가.
-        ///   StopAllCoroutines() 로 이 MonoBehaviour 의 모든 코루틴을 종료해야
-        ///   OnWarning() → OnActive() 내부 로직까지 완전 중단.
-        ///
-        /// [팔 상태 복구]
-        ///   중단 후 SetArmsRecoveryVuln(false) 로 취약 배율 해제.
-        ///   _currentState = Idle 로 강제 복귀 (ChangeState 이벤트 발행 없이).
-        /// </summary>
-        private void InterruptCurrentPattern()
-        {
-            if (_currentPattern != null)
-            {
-                _currentPattern.Interrupt(); // 패턴 내부 DOTween 정리 + _isInterrupted = true
-                _currentPattern = null;
-            }
 
-            // StopAllCoroutines: ExecutePattern + 그 안의 OnWarning/OnActive 자식 코루틴 전부 중단
-            StopAllCoroutines();
-            _patternCoroutine = null;
-
-            // 상태 직접 복귀 (팔 일그러짐 방지)
-            SetArmsRecoveryVuln(false);
-
-            // ChangeState() 대신 직접 설정: 이미 _isStopped=true 상태이므로
-            // 이벤트 발행 없이 내부 변수만 정리
-            _currentState = WardenAIState.Idle;
-        }
-
-        private void CleanupPattern()
-        {
-            _currentPattern = null;
-            _patternCoroutine = null;
-        }
 
         /// <summary>
         /// 플레이어 방향 즉시 갱신 (쿨타임 무시).

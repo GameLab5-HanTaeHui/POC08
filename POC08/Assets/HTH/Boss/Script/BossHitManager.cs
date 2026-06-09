@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// BossHitManager.cs  v1.0
+// BossHitManager.cs  v2.0
 // Boss_Warden 피격 라우팅 중앙 관리자 — Step 7
 //
 // [역할]
@@ -7,12 +7,10 @@
 //   BossHitManager 하나가 구독하고, 맞은 Collider 를 BossPartManager 로 조회하여
 //   해당 BossWardenPart 에 피격 처리를 위임한다.
 //
-// [Step 7 범위]
-//   - 피격 이벤트 구독 지점을 BossHitManager 로 중앙화
-//   - BossWardenPart 의 기존 피격 처리 로직은 최대한 유지
-//   - BossWardenPart 는 중앙 매니저가 있으면 직접 OnHit 구독을 하지 않음
-//   - 봉인도 계산 / 가드 무효 / 취약 배율은 아직 BossWardenPart 내부에 유지
-//   - 이후 Step에서 BossSealManager 로 봉인도 규칙을 추가 이관할 준비
+// [Step 13 변경]
+//   - BossWardenPart 직접 OnHit 구독 제거에 맞춰 단독 피격 라우터가 됨
+//   - BossPartManager 없이 Collider 부모 fallback 탐색 금지
+//   - BossPartManager.GetPartByCollider() 결과만 신뢰
 //
 // [부착 위치]
 //   Boss_Warden Root 오브젝트
@@ -38,10 +36,10 @@ namespace SEAL
 
         [Header("── 연결 컴포넌트 ──────────────────────")]
 
-        [Tooltip("BossPartManager. 미연결 시 같은 오브젝트에서 자동 탐색.")]
+        [Tooltip("BossPartManager. 필수 연결.")]
         [SerializeField] private BossPartManager _partManager;
 
-        [Tooltip("BossEventHub. 미연결 시 같은 오브젝트에서 자동 탐색.")]
+        [Tooltip("BossEventHub. 선택 연결.")]
         [SerializeField] private BossEventHub _eventHub;
 
         [Header("── Player HitBox Manager ──────────────────────")]
@@ -70,7 +68,13 @@ namespace SEAL
         private void Awake()
         {
             if (_partManager == null) _partManager = GetComponent<BossPartManager>();
+            if (_partManager == null) _partManager = GetComponentInParent<BossPartManager>();
+
             if (_eventHub == null) _eventHub = GetComponent<BossEventHub>();
+            if (_eventHub == null) _eventHub = GetComponentInParent<BossEventHub>();
+
+            if (_partManager == null)
+                Debug.LogError("[BossHitManager] BossPartManager 미연결 — 피격 라우팅 불가.");
         }
 
         private void Start()
@@ -95,6 +99,12 @@ namespace SEAL
         public void SubscribePlayerHitbox()
         {
             if (_subscribed) return;
+
+            if (_partManager == null)
+            {
+                Debug.LogError("[BossHitManager] BossPartManager 미연결 — PlayerAttackHitboxManager 구독을 중단합니다.");
+                return;
+            }
 
             if (_hitboxManager == null)
             {
@@ -160,18 +170,17 @@ namespace SEAL
 
         /// <summary>
         /// Collider 로부터 대상 BossWardenPart 조회.
-        /// 우선 BossPartManager 를 사용하고, 실패 시 Collider 부모에서 fallback 탐색한다.
+        /// Step 13 이후 BossPartManager 결과만 사용하며 부모 fallback 탐색은 하지 않는다.
         /// </summary>
         private BossWardenPart FindTargetPart(Collider2D hitCol)
         {
-            if (_partManager != null)
+            if (_partManager == null)
             {
-                BossWardenPart part = _partManager.GetPartByCollider(hitCol);
-                if (part != null)
-                    return part;
+                Debug.LogError("[BossHitManager] BossPartManager 미연결 — 피격 대상 조회 실패.");
+                return null;
             }
 
-            return hitCol.GetComponentInParent<BossWardenPart>();
+            return _partManager.GetPartByCollider(hitCol);
         }
 
         /// <summary>

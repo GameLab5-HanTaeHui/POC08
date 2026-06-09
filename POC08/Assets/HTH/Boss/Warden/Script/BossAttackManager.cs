@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// BossAttackManager.cs  v1.0
+// BossAttackManager.cs  v2.0
 // Boss_Warden 공격 패턴 선택 / 실행 관리자 — Step 6
 //
 // [역할]
@@ -7,11 +7,10 @@
 //   AI는 "공격할 수 있다"고 판단하면 RequestAttack() 만 호출하고,
 //   실제 패턴 선택 / Warning / Active / Recovery 실행은 이 매니저가 처리한다.
 //
-// [Step 6 범위]
-//   - BossWardenAI 의 패턴 선택/실행 책임을 이관
-//   - 기존 BossPattern_XXX 구조 유지
-//   - Transform / Rigidbody / AttackRange 참조는 아직 각 패턴에 남김
-//   - 이후 Step에서 BossPartManager / VFXManager 기반으로 추가 정리
+// [Step 13 변경]
+//   - BossWardenAI 내부 패턴 fallback 제거
+//   - BossAttackManager._patterns 를 유일한 패턴 목록으로 사용
+//   - AI에서 패턴 목록을 주입받는 호환 경로 제거
 //
 // [부착 위치]
 //   Boss_Warden Root 오브젝트
@@ -37,20 +36,20 @@ namespace SEAL
 
         [Header("── DataSO ──────────────────────")]
 
-        [Tooltip("BossWardenDataSO. BossWardenAI.Initialize() 에서 주입되며, 미주입 시 Inspector 값을 사용.")]
+        [Tooltip("BossWardenDataSO. BossWardenCore/BossWardenAI 초기화에서 주입된다.")]
         [SerializeField] private BossWardenDataSO _data;
 
         [Header("── 연결 컴포넌트 ──────────────────────")]
 
-        [Tooltip("BossWardenAI. 미연결 시 같은 오브젝트에서 자동 탐색.")]
+        [Tooltip("BossWardenAI. 필수 연결.")]
         [SerializeField] private BossWardenAI _ai;
 
-        [Tooltip("BossEventHub. 미연결 시 같은 오브젝트에서 자동 탐색.")]
+        [Tooltip("BossEventHub. 선택 연결.")]
         [SerializeField] private BossEventHub _eventHub;
 
         [Header("── 패턴 목록 ──────────────────────")]
 
-        [Tooltip("BossPattern_XXX 목록. 미비어 있으면 BossWardenAI.Initialize() 에서 AI 패턴 목록을 주입받음.")]
+        [Tooltip("BossPattern_XXX 목록. Step 13 이후 이 목록만 사용한다.")]
         [SerializeField] private List<BossPatternBase> _patterns = new();
 
         [Header("── 팔 부위 연결 ──────────────────────")]
@@ -84,8 +83,11 @@ namespace SEAL
 
         private void Awake()
         {
-            if (_ai == null) _ai = GetComponent<BossWardenAI>();
+            if (_ai == null) _ai = GetComponentInParent<BossWardenAI>();
+            if (_ai == null) _ai = GetComponentInChildren<BossWardenAI>(true);
+
             if (_eventHub == null) _eventHub = GetComponent<BossEventHub>();
+            if (_eventHub == null) _eventHub = GetComponentInParent<BossEventHub>();
         }
 
         // ══════════════════════════════════════════════════════
@@ -94,12 +96,11 @@ namespace SEAL
 
         /// <summary>
         /// BossWardenAI.Initialize() 에서 호출된다.
-        /// Step 6에서는 AI가 보유하던 패턴 목록을 AttackManager로 넘겨받아 사용한다.
+        /// Step 13 이후 패턴 목록은 이 Manager의 _patterns만 사용한다.
         /// </summary>
         public void Initialize(
             BossWardenDataSO data,
             BossWardenAI ai,
-            List<BossPatternBase> patterns,
             BossWardenPart armL,
             BossWardenPart armR)
         {
@@ -108,8 +109,14 @@ namespace SEAL
             if (armL != null) _armL = armL;
             if (armR != null) _armR = armR;
 
-            if ((_patterns == null || _patterns.Count == 0) && patterns != null)
-                _patterns = patterns;
+            if (_ai == null)
+                Debug.LogError("[BossAttackManager] BossWardenAI 미연결.");
+
+            if (_patterns == null || _patterns.Count == 0)
+            {
+                Debug.LogError("[BossAttackManager] 패턴 목록이 비어 있습니다. BossAttackManager._patterns에 패턴 5개를 연결하세요.");
+                return;
+            }
 
             foreach (var pattern in _patterns)
             {
@@ -117,7 +124,7 @@ namespace SEAL
                 pattern.Initialize(data);
             }
 
-            Debug.Log("[BossAttackManager] 초기화 완료");
+            Debug.Log("[BossAttackManager] 초기화 완료 — Manager 패턴 목록 전용");
         }
 
         // ══════════════════════════════════════════════════════
