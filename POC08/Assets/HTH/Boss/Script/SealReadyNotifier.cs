@@ -87,6 +87,9 @@ namespace SEAL
 
         [Header("── 범위 원 LineRenderer ──────────────────────")]
 
+        [Tooltip("false면 기존 LineRenderer 범위 표시를 사용하지 않습니다. Ready 표시는 SealableComponent의 Ready ParticleSystem을 사용하세요.")]
+        [SerializeField] private bool _useLineRendererRange = false;
+
         /// <summary>
         /// 봉인 집행 가능 범위 원 LineRenderer.
         /// 자기 자식 오브젝트에 부착된 LineRenderer 연결.
@@ -186,13 +189,20 @@ namespace SEAL
                 return;
             }
 
-            // LineRenderer 자동 생성 (미연결 시)
-            if (_rangeCircle == null)
-                _rangeCircle = CreateRangeCircle();
+            // LineRenderer 범위 표시는 더 이상 기본값이 아니다.
+            // Ready 표시는 SealableComponent의 로컬 ParticleSystem을 사용한다.
+            if (_useLineRendererRange)
+            {
+                if (_rangeCircle == null)
+                    _rangeCircle = CreateRangeCircle();
 
-            // 초기 비활성
-            if (_rangeCircle != null)
+                if (_rangeCircle != null)
+                    _rangeCircle.gameObject.SetActive(false);
+            }
+            else if (_rangeCircle != null)
+            {
                 _rangeCircle.gameObject.SetActive(false);
+            }
         }
 
         private void Start()
@@ -271,6 +281,7 @@ namespace SEAL
         /// </summary>
         private void ShowRange()
         {
+            if (!_useLineRendererRange) return;
             if (_rangeCircle == null) return;
 
             // 반경
@@ -309,6 +320,7 @@ namespace SEAL
         /// </summary>
         private void StartPulse()
         {
+            if (!_useLineRendererRange) return;
             if (_rangeCircle == null || _pulseAmount <= 0f) return;
 
             StopPulse();

@@ -23,7 +23,7 @@ namespace SEAL
     /// ────────────────────────────────────────────────────
     /// [패턴 생애주기]
     ///   ExecuteWarning() → ExecuteActive() → ExecuteRecovery()
-    ///   각 구간은 BossWardenAI.ExecutePattern() 코루틴에서 순서대로 호출.
+    ///   각 구간은 BossAttackManager.ExecutePattern() 코루틴에서 순서대로 호출.
     ///
     /// [중단 처리]
     ///   Interrupt() → _isInterrupted = true
@@ -103,7 +103,7 @@ namespace SEAL
         protected bool _isInterrupted;
 
         /// <summary>2페이즈 활성화 여부. UnlockPhase2() 호출 시 true.</summary>
-        private bool _isPhase2Unlocked;
+        protected bool _isPhase2Unlocked;
 
         // ══════════════════════════════════════════════════════
         // 이벤트
@@ -145,7 +145,7 @@ namespace SEAL
         /// _linkedArmPart == null → 독립 패턴 → 항상 true.
         /// _linkedArmPart.IsSealed == true → 팔 봉인됨 → false.
         /// </summary>
-        public bool IsAvailable
+        public virtual bool IsAvailable
         {
             get
             {
@@ -156,6 +156,9 @@ namespace SEAL
 
         /// <summary>현재 Warning Duration (외부 참조용).</summary>
         public float WarningDuration => _warningDuration;
+
+        /// <summary>현재 2페이즈 패턴 해금 여부. 하위 패턴에서 2페이즈 분기용으로 사용.</summary>
+        protected bool IsPhase2Unlocked => _isPhase2Unlocked;
 
         // ══════════════════════════════════════════════════════
         // Unity 라이프사이클
@@ -254,7 +257,7 @@ namespace SEAL
 
         /// <summary>
         /// 강제 중단.
-        /// BossWardenAI 에서 DilPhase 진입 시 호출.
+        /// BossAttackManager 에서 DilPhase 진입 시 호출.
         /// </summary>
         public virtual void Interrupt()
         {
@@ -270,9 +273,9 @@ namespace SEAL
 
         /// <summary>
         /// 2페이즈 패턴 활성화.
-        /// BossWardenAI.OnPhaseChanged(2) 수신 시 호출.
+        /// BossAttackManager.OnPhaseChanged(2) 수신 시 호출.
         /// </summary>
-        public void UnlockPhase2()
+        public virtual void UnlockPhase2()
         {
             _isPhase2Unlocked = true;
             Debug.Log($"[BossPatternBase] {GetType().Name} 2페이즈 활성화");
@@ -314,6 +317,17 @@ namespace SEAL
         protected void TriggerGroggy()
         {
             OnPatternGroggy?.Invoke();
+        }
+
+
+
+        /// <summary>
+        /// 특정 부위가 패턴에 사용할 수 있는 상태인지 확인한다.
+        /// null이면 독립 패턴으로 간주하고 true를 반환한다.
+        /// </summary>
+        protected bool IsPartAvailable(BossWardenPart part)
+        {
+            return part == null || !part.IsSealed;
         }
 
         // ══════════════════════════════════════════════════════

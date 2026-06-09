@@ -1,6 +1,6 @@
 ﻿// ============================================================
-// BossWardenDataSO.cs  v2.1
-// Boss_Warden 전용 수치 ScriptableObject — PatternDataSO 분리
+// BossWardenDataSO.cs  v2.2
+// Boss_Warden 전용 수치 ScriptableObject — PatternDataSO 복구
 //
 // [v2.0 — BossDataSO 상속 리팩토링]
 //
@@ -13,9 +13,7 @@
 //     armSealGaugeMax / sealResistMultipliers
 //     coreSealGaugeMax / phase1CoreSealTarget / phase2CoreSealTarget
 //     coreBasicAttackGain / coreChargeAttackGain
-//     sealExecutionRange / sealExecutionHoldTime
-//     coreUnlockRange / coreUnlockHoldTime
-//     finalSealHoldTime / groggyDuration
+//     sealExecutionRange / groggyDuration
 //     partSealSlowTimeScale / partSealSlowDuration
 //     dilPhaseSlowTimeScale / finalSealSlowTimeScale
 //
@@ -28,7 +26,7 @@
 //   [유지된 필드 — Warden 전용]
 //     본체 AI 색상  (colorIdle ~ colorDead)
 //     이동 수치     (moveSpeed, phase2MoveSpeed, patternRange, flipCooldown)
-//     패턴 수치     BossWardenPatternDataSO 로 분리
+//     패턴 수치     BossWardenPatternDataSO 참조
 //     페이즈 수치   (dilPhaseDuration, 충격파, recoveryVulnMultiplier)
 //     예고 범위     (colorWarningRange)
 //
@@ -44,9 +42,9 @@
 //   Assets 우클릭 → Create → SEAL/Boss/BossWardenDataSO
 //
 // [연결]
-//   BossWardenCore._data 에 Inspector 연결.
+//   BossDataManager.WardenData 에 Inspector 연결.
 //   범용 컴포넌트(SealableComponent 등) 는 BossDataSO 캐스팅 또는
-//   BossWardenCore.Initialize() 시 BossDataSO 주입.
+//   BossSealManager 초기화 시 BossDataSO 주입.
 //
 // [namespace]
 //   namespace : SEAL
@@ -57,7 +55,7 @@ using UnityEngine;
 namespace SEAL
 {
     /// <summary>
-    /// Boss_Warden 전용 수치 ScriptableObject — PatternDataSO 분리. (v2.0)
+    /// Boss_Warden 전용 수치 ScriptableObject. (v2.0)
     ///
     /// ────────────────────────────────────────────────────
     /// [상속 구조]
@@ -76,8 +74,8 @@ namespace SEAL
     /// ────────────────────────────────────────────────────
     /// </summary>
     [CreateAssetMenu(
-        menuName = "SEAL/Boss/BossWardenDataSOO",
-        fileName = "BossWardenDataSOO")]
+        menuName = "SEAL/Boss/BossWardenDataSO",
+        fileName = "BossWardenDataSO")]
     public class BossWardenDataSO : BossDataSO
     {
         // ══════════════════════════════════════════════════════
@@ -133,20 +131,16 @@ namespace SEAL
         public Color colorWarningRange = new Color(1.0f, 0.0f, 0.0f, 0.4f);
 
         // ══════════════════════════════════════════════════════
-        // 공격 패턴 DataSO (Warden 전용 — Step 1 분리)
+        // 공격 패턴 DataSO (Warden 전용)
         // ══════════════════════════════════════════════════════
 
         [Header("── 공격 패턴 DataSO ──────────────────────")]
 
         /// <summary>
         /// Boss_Warden 공격 패턴 전용 DataSO.
-        /// Charge / Slam / Sweep / GuardBreak / RageCharge 수치를 이 SO에서 관리한다.
-        ///
-        /// [Step 1 호환성]
-        ///   기존 코드가 _data.chargeSpeed 처럼 접근하던 부분은
-        ///   아래 호환 프로퍼티를 통해 PatternDataSO 값을 반환한다.
+        /// BossDataManager.PatternData 와 패턴 수치 주입에서 사용한다.
         /// </summary>
-        [Tooltip("Boss_Warden 공격 패턴 전용 DataSO. 패턴 수치는 이 에셋에서 관리.")]
+        [Tooltip("Boss_Warden 공격 패턴 전용 DataSO. Slam/Swing 등 패턴 수치 관리.")]
         [SerializeField] private BossWardenPatternDataSO _patternData;
 
         public BossWardenPatternDataSO PatternData => _patternData;
@@ -265,45 +259,115 @@ namespace SEAL
         public float recoveryVulnMultiplier = 1.5f;
 
         // ══════════════════════════════════════════════════════
-        // 패턴 수치 호환 프로퍼티 — 기존 코드 원형 유지용
+        // 패턴 수치 — Charge (돌진)
         // ══════════════════════════════════════════════════════
 
-        private BossWardenPatternDataSO.ChargeSettings ChargePattern
-            => _patternData != null ? _patternData.Charge : BossWardenPatternDataSO.DefaultCharge;
+        [Header("── 패턴: Charge (돌진) ──────────────────────")]
 
-        private BossWardenPatternDataSO.SlamSettings SlamPattern
-            => _patternData != null ? _patternData.Slam : BossWardenPatternDataSO.DefaultSlam;
+        /// <summary>Charge 돌진 속도 (units/s).</summary>
+        [Tooltip("Charge 돌진 속도. 권장: 12.0.")]
+        [Min(0f)]
+        public float chargeSpeed = 12f;
 
-        private BossWardenPatternDataSO.SweepSettings SweepPattern
-            => _patternData != null ? _patternData.Sweep : BossWardenPatternDataSO.DefaultSweep;
+        /// <summary>2페이즈 Charge 돌진 속도 (units/s).</summary>
+        [Tooltip("2페이즈 Charge 돌진 속도. 권장: 16.0.")]
+        [Min(0f)]
+        public float phase2ChargeSpeed = 16f;
 
-        private BossWardenPatternDataSO.GuardBreakSettings GuardBreakPattern
-            => _patternData != null ? _patternData.GuardBreak : BossWardenPatternDataSO.DefaultGuardBreak;
+        /// <summary>Charge 최대 돌진 거리 (units).</summary>
+        [Tooltip("Charge 최대 돌진 거리. 권장: 15.0.")]
+        [Min(0f)]
+        public float chargeDistance = 15f;
 
-        private BossWardenPatternDataSO.RageChargeSettings RageChargePattern
-            => _patternData != null ? _patternData.RageCharge : BossWardenPatternDataSO.DefaultRageCharge;
+        /// <summary>Charge 히트박스 크기 (width, height).</summary>
+        [Tooltip("Charge 히트박스 크기.")]
+        public Vector2 chargeHitboxSize = new Vector2(1f, 8f);
 
-        public float chargeSpeed => ChargePattern.speed;
-        public float phase2ChargeSpeed => ChargePattern.phase2Speed;
-        public float chargeDistance => ChargePattern.distance;
-        public Vector2 chargeHitboxSize => ChargePattern.hitboxSize;
-        public Vector2 chargeWarningSize => ChargePattern.warningSize;
+        /// <summary>Charge 예고 범위 크기 (히트박스보다 10~20% 넉넉).</summary>
+        [Tooltip("Charge 예고 범위 크기. 히트박스보다 넉넉하게.")]
+        public Vector2 chargeWarningSize = new Vector2(1.6f, 9.6f);
 
-        public float slamHitRadius => SlamPattern.hitRadius;
-        public float slamWarningRadius => SlamPattern.warningRadius;
+        // ══════════════════════════════════════════════════════
+        // 패턴 수치 — Slam (내려치기)
+        // ══════════════════════════════════════════════════════
 
-        public float sweepHitRadius => SweepPattern.hitRadius;
-        public float sweepWarningRadius => SweepPattern.warningRadius;
-        public float sweepRotateSpeed => SweepPattern.rotateSpeed;
-        public float phase2SweepRotateSpeed => SweepPattern.phase2RotateSpeed;
+        [Header("── 패턴: Slam (내려치기) ──────────────────────")]
 
-        public Vector2 guardBreakHitboxSize => GuardBreakPattern.hitboxSize;
-        public Vector2 guardBreakWarningSize => GuardBreakPattern.warningSize;
-        public float guardBreakGuardDuration => GuardBreakPattern.guardDuration;
+        /// <summary>Slam 히트박스 반경 (units).</summary>
+        [Tooltip("Slam 히트박스 반경. 권장: 2.5.")]
+        [Min(0f)]
+        public float slamHitRadius = 2.5f;
 
-        public float rageChargeSpeed => RageChargePattern.speed;
-        public int rageChargeCount => RageChargePattern.count;
-        public float rageChargeInterval => RageChargePattern.interval;
+        /// <summary>Slam 예고 범위 반경 (히트박스보다 넉넉).</summary>
+        [Tooltip("Slam 예고 범위 반경. 히트박스보다 넉넉하게. 권장: 3.0.")]
+        [Min(0f)]
+        public float slamWarningRadius = 3f;
+
+        // ══════════════════════════════════════════════════════
+        // 패턴 수치 — Sweep (회전 스윕)
+        // ══════════════════════════════════════════════════════
+
+        [Header("── 패턴: Sweep (회전 스윕) ──────────────────────")]
+
+        /// <summary>Sweep 히트박스 반경 (units).</summary>
+        [Tooltip("Sweep 히트박스 반경. 권장: 5.0.")]
+        [Min(0f)]
+        public float sweepHitRadius = 5f;
+
+        /// <summary>Sweep 예고 범위 반경 (히트박스보다 넉넉).</summary>
+        [Tooltip("Sweep 예고 범위 반경. 히트박스보다 넉넉하게. 권장: 10.0.")]
+        [Min(0f)]
+        public float sweepWarningRadius = 10f;
+
+        /// <summary>1페이즈 Sweep 회전 속도 (°/s).</summary>
+        [Tooltip("1페이즈 Sweep 회전 속도 (°/s). 권장: 180.0.")]
+        [Min(0f)]
+        public float sweepRotateSpeed = 180f;
+
+        /// <summary>2페이즈 Sweep 회전 속도 (°/s).</summary>
+        [Tooltip("2페이즈 Sweep 회전 속도 (°/s). 권장: 270.0.")]
+        [Min(0f)]
+        public float phase2SweepRotateSpeed = 270f;
+
+        // ══════════════════════════════════════════════════════
+        // 패턴 수치 — GuardBreak (가드브레이크)
+        // ══════════════════════════════════════════════════════
+
+        [Header("── 패턴: GuardBreak (가드브레이크) ──────────────────────")]
+
+        /// <summary>GuardBreak 히트박스 크기 (width, height).</summary>
+        [Tooltip("GuardBreak 히트박스 크기.")]
+        public Vector2 guardBreakHitboxSize = new Vector2(1f, 0.8f);
+
+        /// <summary>GuardBreak 예고 범위 크기.</summary>
+        [Tooltip("GuardBreak 예고 범위 크기.")]
+        public Vector2 guardBreakWarningSize = new Vector2(1.5f, 1f);
+
+        /// <summary>GuardBreak 가드 지속 시간 (초).</summary>
+        [Tooltip("GuardBreak 가드 지속 시간 (초). 권장: 0.8.")]
+        [Min(0f)]
+        public float guardBreakGuardDuration = 0.8f;
+
+        // ══════════════════════════════════════════════════════
+        // 패턴 수치 — RageCharge (3연 돌진)
+        // ══════════════════════════════════════════════════════
+
+        [Header("── 패턴: RageCharge (3연 돌진) ──────────────────────")]
+
+        /// <summary>RageCharge 개별 돌진 속도 (units/s).</summary>
+        [Tooltip("RageCharge 돌진 속도. 권장: 18.0.")]
+        [Min(0f)]
+        public float rageChargeSpeed = 18f;
+
+        /// <summary>RageCharge 연속 돌진 횟수.</summary>
+        [Tooltip("RageCharge 연속 돌진 횟수. 권장: 3.")]
+        [Min(1)]
+        public int rageChargeCount = 3;
+
+        /// <summary>RageCharge 돌진 사이 간격 (초).</summary>
+        [Tooltip("RageCharge 돌진 사이 간격 (초). 권장: 0.2.")]
+        [Min(0f)]
+        public float rageChargeInterval = 0.2f;
 
         // ══════════════════════════════════════════════════════
         // 유틸리티 메서드
@@ -323,7 +387,7 @@ namespace SEAL
         /// <param name="phase">현재 페이즈 (1 or 2).</param>
         /// <returns>Charge 속도 (units/s).</returns>
         public float GetChargeSpeed(int phase)
-            => ChargePattern.GetSpeed(phase);
+            => phase >= 2 ? phase2ChargeSpeed : chargeSpeed;
 
         /// <summary>
         /// 현재 페이즈에 맞는 Sweep 회전 속도를 반환한다.
@@ -331,7 +395,7 @@ namespace SEAL
         /// <param name="phase">현재 페이즈 (1 or 2).</param>
         /// <returns>Sweep 회전 속도 (°/s).</returns>
         public float GetSweepRotateSpeed(int phase)
-            => SweepPattern.GetRotateSpeed(phase);
+            => phase >= 2 ? phase2SweepRotateSpeed : sweepRotateSpeed;
 
         /// <summary>
         /// Warden 전용 필수 SO 연결 여부를 검사한다.

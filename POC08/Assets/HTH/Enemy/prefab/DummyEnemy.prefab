@@ -188,6 +188,7 @@ GameObject:
   - component: {fileID: 3113194075810363365}
   - component: {fileID: 794397621606795048}
   - component: {fileID: 520384614759084497}
+  - component: {fileID: 3554740382762811469}
   m_Layer: 20
   m_Name: DummyEnemy
   m_TagString: Untagged
@@ -262,6 +263,34 @@ MonoBehaviour:
   _executionPoint: {fileID: 3113194075810363365}
   _target: {fileID: 0}
   _spriteRenderer: {fileID: 3234904056569342641}
+--- !u!114 &3554740382762811469
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6351723036072812653}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c580ce0921cfd1d4fb8cf55103a2fc9c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SEAL.DummySealStoneDropper
+  _sealStonePrefab: {fileID: 4634089202036779991, guid: b401b83d873fd8a4bb4a9a8fbfa6efdf, type: 3}
+  _dropPoint: {fileID: 8477578985767115767}
+  _stoneAmount: 1
+  _convertDuration: 0.55
+  _visualRoot: {fileID: 8477578985767115767}
+  _shrinkVisual: 1
+  _shrinkEase: 26
+  _disableCollidersOnDropStart: 1
+  _convertParticlePrefab: {fileID: 5800810028302783952, guid: ccafa13518ede964a95ded15c1868c00, type: 3}
+  _localConvertParticle: {fileID: 0}
+  _particleDestroyDelay: 0
+  _playStonePopTween: 1
+  _stonePopDuration: 0.18
+  _stonePopEase: 27
+  _deactivateEnemyAfterDrop: 1
+  _deactivateDelayAfterStoneSpawn: 0.05
 --- !u!1 &8383205760957925404
 GameObject:
   m_ObjectHideFlags: 0
@@ -344,7 +373,7 @@ SpriteRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_MaskInteraction: 0
-  m_Sprite: {fileID: 7482667652216324306, guid: 311925a002f4447b3a28927169b83ea6, type: 3}
+  m_Sprite: {fileID: -7282886668606283007, guid: e0e1550e0c03bb34d9746710fcf08de4, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -392,7 +421,7 @@ BoxCollider2D:
   m_SpriteTilingProperty:
     border: {x: 0, y: 0, z: 0, w: 0}
     pivot: {x: 0.5, y: 0.5}
-    oldSize: {x: 1, y: 1}
+    oldSize: {x: 1.1851852, y: 0.8333333}
     newSize: {x: 1, y: 1}
     adaptiveTilingThreshold: 0.5
     drawMode: 0

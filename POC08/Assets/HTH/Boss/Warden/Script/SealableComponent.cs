@@ -38,10 +38,12 @@
 //           grade = Core  → Initialize(maxGauge) 로 외부 주입
 //           grade = Normal → Inspector _maxGauge 유지 (일반 몬스터용)
 //
-//   [v1.1 유지 사항]
-//     홀드 진행 UI (ShowHoldProgress / UpdateHoldProgress / Complete / Cancel)
+//   [v2.1 유지 사항]
 //     ForceRelease 저항 횟수 유지 원칙
 //     ActivateGauge (코어 전용 딜 페이즈 활성)
+//
+//   [Step 31]
+//     팔/코어 자식으로 배치된 봉인 완료 ParticleSystem 연결 지원
 //     OnStageChanged 이벤트 유지 (외부 UI 연동용)
 //     CheckPhaseTarget (코어 페이즈 목표치)
 //
@@ -56,7 +58,6 @@
 
 using System;
 using UnityEngine;
-using TMPro;
 using DG.Tweening;
 
 namespace SEAL
@@ -86,10 +87,6 @@ namespace SEAL
     ///   ForceRelease(bool)      강제 해제
     ///   ActivateGauge(bool)     딜 페이즈 활성 (코어 전용)
     ///   Initialize(float)       최대치 외부 주입 (코어 전용)
-    ///   ShowHoldProgress()      홀드 UI 표시
-    ///   UpdateHoldProgress(float) 홀드 진행도 갱신
-    ///   CompleteHoldProgress()  홀드 완료 UI
-    ///   CancelHoldProgress()    홀드 취소 UI
     /// ────────────────────────────────────────────────────
     /// </summary>
     public class SealableComponent : MonoBehaviour
@@ -102,11 +99,11 @@ namespace SEAL
 
         /// <summary>
         /// 이 부위의 봉인 집행 등급.
-        /// SealExecutor 에서 슬로우 / 연출 분기에 사용.
+        /// BossSealManager에서 집행 분기에 사용.
         ///
-        ///   Part   : 팔 등 부위 봉인 (집행 완료 후 짧은 슬로우)
-        ///   Core   : 코어 봉인 (홀드 중 내내 강한 슬로우)
-        ///   Normal : 일반 몬스터 (슬로우 없음)
+        ///   Part   : 팔 등 부위 봉인
+        ///   Core   : 코어 봉인
+        ///   Normal : 일반 몬스터
         /// </summary>
         [Tooltip("봉인 집행 등급. Part=부위 / Core=코어 / Normal=일반.")]
         [SerializeField] public SealGrade grade = SealGrade.Part;
@@ -122,7 +119,7 @@ namespace SEAL
         ///   기존 BossWardenDataSO → BossDataSO 로 교체.
         ///   어떤 보스든 이 컴포넌트 재사용 가능.
         ///
-        /// BossWardenCore.Initialize() 에서 주입 or Inspector 직접 연결.
+        /// BossDataManager/BossSealManager 초기화에서 주입 or Inspector 직접 연결.
         /// </summary>
         [Tooltip("BossDataSO. 봉인도 수치 + 색상 참조. 필수.")]
         [SerializeField] private BossDataSO _bossData;
@@ -131,25 +128,14 @@ namespace SEAL
 
         /// <summary>
         /// 봉인 집행 가능 범위 반경 (units).
-        /// SealExecutor 가 플레이어 거리 체크 시 참조.
-        /// BossDataSO.SealData.sealExecutionRange 와 동일하게 설정 권장.
+        /// BossSealManager가 플레이어 접근/일섬 대상 선택 시 참조.
+        /// 즉시 집행/일섬 접근 범위로 사용.
         ///
         /// [권장값] 1.5
         /// </summary>
         [Tooltip("봉인 집행 접근 범위. 권장: 1.5.")]
         [Min(0.1f)]
         [SerializeField] private float _sealRange = 1.5f;
-
-        /// <summary>
-        /// S키 홀드 시간 (초).
-        /// SealExecutor 가 집행 홀드 시간 체크 시 참조.
-        ///
-        /// [권장값]
-        ///   Part = 1.5 / Core = 2.0 (최종 봉인)
-        /// </summary>
-        [Tooltip("S키 홀드 시간. Part=1.5 / Core(최종봉인)=2.0.")]
-        [Min(0.1f)]
-        [SerializeField] private float _sealHoldTime = 1.5f;
 
         [Header("── Normal 등급 전용 수치 ──────────────────────")]
 
@@ -175,11 +161,34 @@ namespace SEAL
         /// <summary>
         /// 페이즈 목표치 (0이면 미사용).
         /// 이 수치 도달 시 OnPhaseTargetReached 발행.
-        /// BossWardenCore 에서 페이즈 전환 판단에 사용.
+        /// BossSealManager에서 페이즈 전환 판단에 사용.
         /// </summary>
         [Tooltip("페이즈 목표치. 0이면 미사용. 코어용.")]
         [Min(0f)]
         [SerializeField] private float _phaseTarget = 0f;
+
+
+        [Header("── 봉인 가능 로컬 파티클 ──────────────────────")]
+
+        [Tooltip("봉인도 100% 도달 시 재생할 Ready 표시 ParticleSystem. 기존 LineRenderer 범위 표시 대체용입니다.")]
+        [SerializeField] private ParticleSystem[] _sealReadyLocalParticles;
+
+        [Tooltip("true면 자식 ParticleSystem 중 이름에 Ready/SealReady/Available 이 들어간 파티클을 자동 수집합니다.")]
+        [SerializeField] private bool _autoCollectLocalReadyParticles = true;
+
+        [Tooltip("시작 시 로컬 Ready 파티클을 Stop+Clear 합니다.")]
+        [SerializeField] private bool _clearReadyParticlesOnAwake = true;
+
+        [Header("── 봉인 완료 로컬 파티클 ──────────────────────")]
+
+        [Tooltip("봉인 완료 시 재생할 로컬 ParticleSystem. 각 팔 자식 파티클을 여기에 연결하세요.")]
+        [SerializeField] private ParticleSystem[] _sealedLocalParticles;
+
+        [Tooltip("true면 자식 ParticleSystem을 자동 수집합니다. 팔마다 하나씩 붙어있는 봉인 파티클 연결용.")]
+        [SerializeField] private bool _autoCollectLocalSealedParticles = true;
+
+        [Tooltip("시작 시 로컬 봉인 파티클을 Stop+Clear 합니다.")]
+        [SerializeField] private bool _clearLocalParticlesOnAwake = true;
 
         [Header("── SpriteRenderer ──────────────────────")]
 
@@ -189,27 +198,6 @@ namespace SEAL
         /// </summary>
         [Tooltip("색상 변화 + 피격 점멸 SpriteRenderer. 미연결 시 자동 탐색.")]
         [SerializeField] private SpriteRenderer _spriteRenderer;
-
-        [Header("── 홀드 진행 UI ──────────────────────")]
-
-        /// <summary>
-        /// 봉인 집행 홀드 진행도 TextMeshPro.
-        /// 자기 자식 오브젝트로 연결. 미연결 시 텍스트 생략.
-        ///
-        /// [씬 구성]
-        ///   Boss_LeftArm
-        ///     └─ SealProgressText [TextMeshPro]
-        ///          Font Size = 3 / Alignment = Center / SetActive = false
-        /// </summary>
-        [Tooltip("홀드 진행도 TMP. 자기 자식으로 연결. 미연결 시 생략.")]
-        [SerializeField] private TextMeshPro _holdProgressText;
-
-        /// <summary>
-        /// 진행 텍스트 로컬 위치 오프셋.
-        /// 부위 위에 표시되도록 기본값 (0, 1.5, 0) 권장.
-        /// </summary>
-        [Tooltip("진행 텍스트 로컬 오프셋. 기본: (0, 1.5, 0).")]
-        [SerializeField] private Vector3 _progressTextLocalOffset = new Vector3(0f, 1.5f, 0f);
 
         // ══════════════════════════════════════════════════════
         // 내부 상태
@@ -255,20 +243,20 @@ namespace SEAL
 
         /// <summary>
         /// 봉인도 100% 도달 시 1회 발행.
-        /// SealExecutor 가 구독 → 집행 대기 목록 등록 + 범위 표시.
+        /// BossSealManager가 구독 → 집행 대기 목록 등록 + 범위 표시.
         /// 파라미터: 자기 자신(SealableComponent).
         /// </summary>
         public event Action<SealableComponent> OnSealRequested;
 
         /// <summary>
         /// 봉인 집행 완료 시 발행.
-        /// SealManager 가 구독 → 그로기 조건 체크.
+        /// BossSealManager가 구독 → 보스 봉인 상태 갱신.
         /// </summary>
         public event Action OnSealCompleted;
 
         /// <summary>
         /// 강제 해제 시 발행.
-        /// SealExecutor 가 구독 → 집행 목록에서 제거.
+        /// BossSealManager가 구독 → 집행 목록에서 제거.
         /// </summary>
         public event Action OnForceReleased;
 
@@ -286,7 +274,7 @@ namespace SEAL
 
         /// <summary>
         /// 페이즈 목표치 도달 시 1회 발행 (코어 전용).
-        /// BossWardenCore 에서 페이즈 전환 판단에 사용.
+        /// BossSealManager에서 페이즈 전환 판단에 사용.
         /// </summary>
         public event Action OnPhaseTargetReached;
 
@@ -306,13 +294,22 @@ namespace SEAL
         /// <summary>집행 가능 범위 반경. SealExecutor 참조용.</summary>
         public float SealRange => _sealRange;
 
-        /// <summary>S키 홀드 시간. SealExecutor 참조용.</summary>
-        public float SealHoldTime => _sealHoldTime;
-
         /// <summary>봉인도 UI 퍼센트 (0~100).</summary>
         public float UIPercent => _maxGauge > 0f
             ? Mathf.Clamp01(_currentGauge / _maxGauge) * 100f
             : 0f;
+
+        /// <summary>현재 봉인도 원본 수치.</summary>
+        public float CurrentGauge => _currentGauge;
+
+        /// <summary>현재 봉인도 최대치.</summary>
+        public float MaxGauge => _maxGauge;
+
+        /// <summary>딜 페이즈 전용 게이지 활성 여부.</summary>
+        public bool IsGaugeActive => _isGaugeActive;
+
+        /// <summary>딜 페이즈에서만 봉인도 누적되는 코어형 게이지인지 여부.</summary>
+        public bool IsDilPhaseOnly => _isDilPhaseOnly;
 
         /// <summary>현재 봉인 횟수 (저항 배율 참조용).</summary>
         public int SealCount => _sealCount;
@@ -327,6 +324,15 @@ namespace SEAL
             if (_spriteRenderer == null)
                 _spriteRenderer = GetComponent<SpriteRenderer>();
 
+            AutoCollectLocalReadyParticles();
+            AutoCollectLocalSealedParticles();
+
+            if (_clearReadyParticlesOnAwake)
+                StopLocalReadyParticles(clear: true);
+
+            if (_clearLocalParticlesOnAwake)
+                StopLocalSealedParticles(clear: true);
+
             // grade 기준 최대 봉인도 자동 설정
             ApplyMaxGaugeFromData();
         }
@@ -338,6 +344,9 @@ namespace SEAL
             _pulseTween?.Kill();
 
             // 파티클 정리
+            StopLocalReadyParticles(clear: true);
+            StopLocalSealedParticles(clear: true);
+
             if (_sealedParticleInstance != null)
                 Destroy(_sealedParticleInstance);
         }
@@ -348,7 +357,7 @@ namespace SEAL
 
         /// <summary>
         /// 외부에서 BossDataSO 와 최대치를 주입하여 초기화.
-        /// BossWardenCore.Start() → 각 부위 Initialize() 에서 호출.
+        /// BossDataManager/BossSealManager 초기화 과정에서 호출.
         ///
         /// [코어 전용]
         ///   grade = Core 일 때 coreSealGaugeMax 를 maxGauge 로 전달.
@@ -441,6 +450,7 @@ namespace SEAL
             {
                 IsSealReady = true;
                 StartSealReadyPulse();
+                PlayLocalReadyParticles();
                 OnSealRequested?.Invoke(this);
 
                 Debug.Log($"[SealableComponent] ▶ {gameObject.name} 봉인 집행 가능 | " +
@@ -454,7 +464,7 @@ namespace SEAL
 
         /// <summary>
         /// 봉인 집행 완료 처리.
-        /// SealExecutor 가 S키 홀드 완료 후 호출.
+        /// BossSealManager가 즉시 집행/일섬 도착 후 호출.
         ///
         /// [처리 내용]
         ///   IsSealed = true
@@ -470,13 +480,15 @@ namespace SEAL
             IsSealed = true;
             _sealCount++;
 
-            // 맥동 종료 → colorSealed 고정
+            // Ready 표시 종료 → colorSealed 고정
             StopPulse();
+            StopLocalReadyParticles(clear: true);
             ApplyColor(_bossData?.ColorData?.colorSealed ?? Color.blue,
                        _bossData?.ColorData?.sealTransitionDuration ?? 0.3f);
 
             // Loop 파티클 활성
             SpawnSealedParticle();
+            PlayLocalSealedParticles();
 
             OnSealCompleted?.Invoke();
 
@@ -512,8 +524,10 @@ namespace SEAL
             ApplyColor(_bossData?.ColorData?.colorBase ?? Color.white,
                        _bossData?.ColorData?.sealTransitionDuration ?? 0.3f);
 
-            // Loop 파티클 파괴
+            // Ready/Loop 파티클 정리
+            StopLocalReadyParticles(clear: true);
             DestroySealedParticle();
+            StopLocalSealedParticles(clear: true);
 
             OnForceReleased?.Invoke();
 
@@ -528,7 +542,7 @@ namespace SEAL
         /// <summary>
         /// 딜 페이즈 활성/비활성 전환.
         /// _isDilPhaseOnly = true 인 코어 컴포넌트에만 의미 있음.
-        /// BossWardenCore.OnDilPhaseEnter/Exit 에서 호출.
+        /// BossSealManager의 DilPhase Enter/Exit에서 호출.
         /// </summary>
         public void ActivateGauge(bool isActive)
         {
@@ -536,82 +550,28 @@ namespace SEAL
             Debug.Log($"[SealableComponent] {gameObject.name} 게이지 활성 = {isActive}");
         }
 
-        // ══════════════════════════════════════════════════════
-        // 홀드 진행 UI
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 집행 시작 시 홀드 진행 텍스트 표시.
-        /// SealExecutor 에서 집행 루프 진입 직후 호출.
-        /// </summary>
-        public void ShowHoldProgress()
+        /// <summary>코어 페이즈 목표치를 런타임에서 설정한다. 0 이하이면 목표치 이벤트를 사용하지 않는다.</summary>
+        public void SetPhaseTarget(float target, bool resetReached = true)
         {
-            if (_holdProgressText == null) return;
-
-            _holdProgressText.DOKill();
-            _holdProgressText.transform.localPosition = _progressTextLocalOffset;
-            _holdProgressText.text = "0%";
-            _holdProgressText.color = new Color(1f, 1f, 1f, 0f);
-            _holdProgressText.gameObject.SetActive(true);
-
-            _holdProgressText
-                .DOFade(1f, 0.15f)
-                .SetUpdate(true);
+            _phaseTarget = Mathf.Max(0f, target);
+            if (resetReached)
+                _phaseTargetReached = false;
         }
 
-        /// <summary>
-        /// 홀드 진행도 갱신.
-        /// SealExecutor 홀드 루프에서 매 프레임 호출.
-        /// </summary>
-        /// <param name="progress">진행도 0.0 ~ 1.0.</param>
-        public void UpdateHoldProgress(float progress)
+        /// <summary>현재 게이지 수치를 초기화한다. 코어 DilPhase 재진입/실패 복구용.</summary>
+        public void ResetGaugeOnly(bool clearReady = true)
         {
-            if (_holdProgressText == null || !_holdProgressText.gameObject.activeSelf) return;
+            _currentGauge = 0f;
+            _currentStage = 0;
+            _phaseTargetReached = false;
 
-            int percent = Mathf.Clamp(Mathf.RoundToInt(progress * 100f), 0, 100);
-            _holdProgressText.text = $"{percent}%";
-        }
+            if (clearReady)
+                IsSealReady = false;
 
-        /// <summary>
-        /// 집행 완료 UI 처리.
-        /// "100%" 표시 → 보라색 강조 → DOFade 소멸.
-        /// </summary>
-        public void CompleteHoldProgress()
-        {
-            if (_holdProgressText == null) return;
-
-            _holdProgressText.DOKill();
-            _holdProgressText.text = "100%";
-            _holdProgressText.color = new Color(0.78f, 0.49f, 1f, 1f); // 보라색 강조
-
-            _holdProgressText
-                .DOFade(0f, 0.3f)
-                .SetDelay(0.1f)
-                .SetUpdate(true)
-                .OnComplete(() =>
-                {
-                    if (_holdProgressText != null)
-                        _holdProgressText.gameObject.SetActive(false);
-                });
-        }
-
-        /// <summary>
-        /// 집행 취소 UI 처리.
-        /// 키 해제 / 범위 이탈 시 SealExecutor 에서 호출.
-        /// </summary>
-        public void CancelHoldProgress()
-        {
-            if (_holdProgressText == null || !_holdProgressText.gameObject.activeSelf) return;
-
-            _holdProgressText.DOKill();
-            _holdProgressText
-                .DOFade(0f, 0.1f)
-                .SetUpdate(true)
-                .OnComplete(() =>
-                {
-                    if (_holdProgressText != null)
-                        _holdProgressText.gameObject.SetActive(false);
-                });
+            StopPulse();
+            StopLocalReadyParticles(clear: true);
+            OnGaugeChanged?.Invoke(0f);
+            UpdateGaugeColor();
         }
 
         // ══════════════════════════════════════════════════════
@@ -620,7 +580,7 @@ namespace SEAL
 
         /// <summary>
         /// 피격 점멸 연출.
-        /// BossWardenArmPart 등 피격 처리 컴포넌트에서 호출.
+        /// BossWardenPart 등 피격 처리 컴포넌트에서 호출.
         ///
         /// [v2.0 변경]
         ///   흰색(white) → colorHitFlash 로 점멸 (봉인도 색상 초기화 방지)
@@ -731,6 +691,129 @@ namespace SEAL
         // 내부 — Loop 파티클
         // ══════════════════════════════════════════════════════
 
+        /// <summary>자식으로 배치된 봉인 가능 Ready ParticleSystem 자동 수집.</summary>
+        private void AutoCollectLocalReadyParticles()
+        {
+            if (!_autoCollectLocalReadyParticles) return;
+            if (_sealReadyLocalParticles != null && _sealReadyLocalParticles.Length > 0) return;
+
+            var all = GetComponentsInChildren<ParticleSystem>(true);
+            var list = new System.Collections.Generic.List<ParticleSystem>();
+            foreach (var ps in all)
+            {
+                if (ps == null) continue;
+                if (IsReadyParticleName(ps.name))
+                    list.Add(ps);
+            }
+
+            _sealReadyLocalParticles = list.ToArray();
+        }
+
+        /// <summary>자식으로 배치된 봉인 완료 ParticleSystem 자동 수집.</summary>
+        private void AutoCollectLocalSealedParticles()
+        {
+            if (!_autoCollectLocalSealedParticles) return;
+            if (_sealedLocalParticles != null && _sealedLocalParticles.Length > 0) return;
+
+            var all = GetComponentsInChildren<ParticleSystem>(true);
+            var list = new System.Collections.Generic.List<ParticleSystem>();
+            foreach (var ps in all)
+            {
+                if (ps == null) continue;
+                if (IsReadyParticleName(ps.name)) continue;
+
+                if (IsSealedParticleName(ps.name))
+                    list.Add(ps);
+            }
+
+            // 이름 규칙이 없는 기존 프리팹 호환: Ready 파티클이 아닌 모든 파티클을 완료 파티클로 취급.
+            if (list.Count == 0)
+            {
+                foreach (var ps in all)
+                {
+                    if (ps == null) continue;
+                    if (IsReadyParticleName(ps.name)) continue;
+                    list.Add(ps);
+                }
+            }
+
+            _sealedLocalParticles = list.ToArray();
+        }
+
+        private static bool IsReadyParticleName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string lower = name.ToLowerInvariant();
+            return lower.Contains("ready") || lower.Contains("available") || lower.Contains("canseal");
+        }
+
+        private static bool IsSealedParticleName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            string lower = name.ToLowerInvariant();
+            return lower.Contains("sealed") || lower.Contains("complete") || lower.Contains("success") || lower.Contains("execution");
+        }
+
+        /// <summary>프리팹에 미리 배치된 로컬 Ready 파티클 재생.</summary>
+        private void PlayLocalReadyParticles()
+        {
+            if (_sealReadyLocalParticles == null) return;
+
+            foreach (var ps in _sealReadyLocalParticles)
+            {
+                if (ps == null) continue;
+                ps.gameObject.SetActive(true);
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.Play(true);
+            }
+        }
+
+        /// <summary>로컬 Ready 파티클 정지/초기화.</summary>
+        private void StopLocalReadyParticles(bool clear)
+        {
+            if (_sealReadyLocalParticles == null) return;
+
+            var stopBehavior = clear
+                ? ParticleSystemStopBehavior.StopEmittingAndClear
+                : ParticleSystemStopBehavior.StopEmitting;
+
+            foreach (var ps in _sealReadyLocalParticles)
+            {
+                if (ps == null) continue;
+                ps.Stop(true, stopBehavior);
+            }
+        }
+
+        /// <summary>프리팹에 미리 배치된 로컬 봉인 파티클 재생.</summary>
+        private void PlayLocalSealedParticles()
+        {
+            if (_sealedLocalParticles == null) return;
+
+            foreach (var ps in _sealedLocalParticles)
+            {
+                if (ps == null) continue;
+                ps.gameObject.SetActive(true);
+                ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                ps.Play(true);
+            }
+        }
+
+        /// <summary>로컬 봉인 파티클 정지/초기화.</summary>
+        private void StopLocalSealedParticles(bool clear)
+        {
+            if (_sealedLocalParticles == null) return;
+
+            var stopBehavior = clear
+                ? ParticleSystemStopBehavior.StopEmittingAndClear
+                : ParticleSystemStopBehavior.StopEmitting;
+
+            foreach (var ps in _sealedLocalParticles)
+            {
+                if (ps == null) continue;
+                ps.Stop(true, stopBehavior);
+            }
+        }
+
         /// <summary>
         /// 봉인 완료 Loop 파티클 생성 + 자식으로 부착.
         /// 부위가 이동해도 파티클이 자동으로 따라감.
@@ -820,6 +903,9 @@ namespace SEAL
             _isGaugeActive = false;
 
             if (resetSealCount) _sealCount = 0;
+
+            StopPulse();
+            StopLocalReadyParticles(clear: true);
 
             OnGaugeChanged?.Invoke(0f);
         }

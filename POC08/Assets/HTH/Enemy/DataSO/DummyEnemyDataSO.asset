@@ -19,6 +19,10 @@ MonoBehaviour:
   MaxSealGaugeVarianceAmount: 20
   MaxSealGauge: 100
   ReadyReviveTime: 40
+  AttackDamage: 10
+  AttackHitCooldown: 0.6
+  DisableAttackHitBoxWhenReady: 1
+  DisableAttackHitBoxWhenSealed: 1
   ExecuteRange: 10
   IssenMoveSpeed: 18
   IssenArriveDistance: 0.08

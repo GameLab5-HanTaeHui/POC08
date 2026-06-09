@@ -15,19 +15,14 @@
 //   [마우스 추가]
 //     _actionMousePosition : 마우스 스크린 좌표 Value Action
 //     _actionMouseLeft     : 마우스 좌클릭 Button (공격)
-//     _actionMouseRight    : 마우스 우클릭 Button (봉인 — F키와 OR)
+//     _actionMouseRight    : 마우스 우클릭 Button (봉인 입력)
 //
 //     MouseScreenPosition  : Vector2 스크린 좌표 프로퍼티
 //     MouseWorldPosition   : Vector2 월드 좌표 프로퍼티
 //       → Camera.main.ScreenToWorldPoint 변환
 //       → Cinemachine Follow 카메라 지원 (Camera.main 사용)
 //
-//   [봉인 IsSealHeld 변경]
-//     기존: F키 홀드
-//     변경: F키 홀드 OR 마우스 우클릭 홀드 중 하나라도 true이면 IsSealHeld = true
-//
-// [v1.3 변경 — BlockAction() 에 홀드 상태 초기화 추가]
-// [v1.2 변경 — IsSealHeld 프로퍼티 추가]
+// [v1.5 변경 — 봉인 유지 상태 제거, OnSeal 즉시 입력만 사용]
 // [v1.1 변경 — SEAL_README 키 할당 기준 전면 수정]
 //
 // [키 바인딩 — v1.4 확정]
@@ -100,9 +95,9 @@ namespace SEAL
 
         /// <summary>
         /// 봉인 집행 키보드 키. 기본 F.
-        /// 마우스 우클릭과 OR 조건 — 둘 중 하나 홀드 시 IsSealHeld = true.
+        /// 마우스 우클릭과 함께 즉시 봉인 입력으로 사용.
         /// </summary>
-        [Tooltip("봉인 집행 키. 기본 F. 마우스 우클릭과 OR 조건.")]
+        [Tooltip("봉인 집행 키. 기본 F. 마우스 우클릭도 동일하게 즉시 입력 처리.")]
         [SerializeField] private Key _keySeal = Key.F;
 
         [Header("── 보조 키 ──────────────────────")]
@@ -170,13 +165,6 @@ namespace SEAL
         /// <summary>공격 버튼 홀드 여부. (마우스 좌클릭)</summary>
         private bool _isAttackHeld;
 
-        /// <summary>
-        /// 봉인 버튼 홀드 여부.
-        /// F키 홀드 OR 마우스 우클릭 홀드 중 하나라도 true이면 true.
-        /// BlockAction() 호출 시 강제 false 초기화.
-        /// </summary>
-        private bool _isSealHeld;
-
         /// <summary>마우스 스크린 좌표. 매 프레임 갱신.</summary>
         private Vector2 _mouseScreenPosition;
 
@@ -221,13 +209,6 @@ namespace SEAL
 
         /// <summary>공격 버튼(마우스 좌클릭) 홀드 여부.</summary>
         public bool IsAttackHeld => _isAttackHeld;
-
-        /// <summary>
-        /// 봉인 버튼 홀드 여부.
-        /// F키 또는 마우스 우클릭 중 하나라도 홀드 시 true.
-        /// BossWardenSealExecutor 에서 매 프레임 폴링.
-        /// </summary>
-        public bool IsSealHeld => _isSealHeld;
 
         public bool IsActionBlocked => _actionBlocked;
 
@@ -296,7 +277,7 @@ namespace SEAL
         /// [v1.4 변경]
         ///   이동: WASD 2DVector Composite
         ///   공격: 마우스 좌클릭
-        ///   봉인: F키 + 마우스 우클릭 별도 Action (OR 처리)
+        ///   봉인: F키 + 마우스 우클릭 별도 Action (즉시 입력)
         ///   마우스 좌표: Position 읽기 전용 Value Action
         /// </summary>
         private void BuildInGameMap()
@@ -330,7 +311,6 @@ namespace SEAL
             _actionSeal.AddBinding("<Gamepad>/buttonSouth");
 
             // ── 마우스 우클릭 (봉인 집행 보조) ──────────────────────
-            // F키(_actionSeal)와 OR 조건으로 _isSealHeld 갱신
             _actionMouseRight = _inGameMap.AddAction("MouseRight", InputActionType.Button);
             _actionMouseRight.AddBinding("<Mouse>/rightButton");
 
@@ -380,30 +360,16 @@ namespace SEAL
                 OnAttackReleased?.Invoke();
             };
 
-            // ── 봉인 집행 — F키 ──────────────────────
+            // ── 봉인 집행 — F키 / 마우스 우클릭 ──────────────────────
+            // 봉인 집행은 입력 1회 즉시 실행이다.
             _actionSeal.performed += _ =>
             {
-                _isSealHeld = true;
                 if (!_actionBlocked) OnSeal?.Invoke();
-            };
-            _actionSeal.canceled += _ =>
-            {
-                // 마우스 우클릭이 아직 홀드 중이면 IsSealHeld 유지
-                if (!(_actionMouseRight.IsPressed()))
-                    _isSealHeld = false;
             };
 
-            // ── 봉인 집행 — 마우스 우클릭 ──────────────────────
             _actionMouseRight.performed += _ =>
             {
-                _isSealHeld = true;
                 if (!_actionBlocked) OnSeal?.Invoke();
-            };
-            _actionMouseRight.canceled += _ =>
-            {
-                // F키가 아직 홀드 중이면 IsSealHeld 유지
-                if (!(_actionSeal.IsPressed()))
-                    _isSealHeld = false;
             };
 
             // ── 상호작용 ──────────────────────
@@ -462,21 +428,12 @@ namespace SEAL
 
         /// <summary>대시 입력 차단 해제.</summary>
         public void UnblockDash() => _dashBlocked = false;
-
-        /// <summary>
-        /// 공격 / 봉인 / 상호작용 입력 차단.
-        ///
-        /// [v1.3 변경 — 홀드 상태 초기화]
-        ///   _isSealHeld / _isAttackHeld 강제 false.
-        ///   → ExecuteSeal while 루프에서 IsSealHeld=false → goto cleanup
-        ///   → TimeScale 복구 보장.
-        /// </summary>
+        /// <summary>공격 / 봉인 / 상호작용 입력 차단.</summary>
         public void BlockAction()
         {
             Debug.Log($"[PlayerInputHandler] BlockAction 호출 — {System.Environment.StackTrace}");
-            _actionBlocked  = true;
-            _isSealHeld     = false;
-            _isAttackHeld   = false;
+            _actionBlocked = true;
+            _isAttackHeld = false;
         }
 
         /// <summary>공격 / 봉인 / 상호작용 입력 차단 해제.</summary>
@@ -484,7 +441,7 @@ namespace SEAL
 
         /// <summary>
         /// 모든 입력 차단.
-        /// BlockAction() 포함 → 홀드 상태도 초기화.
+        /// BlockAction() 포함.
         /// </summary>
         public void BlockAll()
         {

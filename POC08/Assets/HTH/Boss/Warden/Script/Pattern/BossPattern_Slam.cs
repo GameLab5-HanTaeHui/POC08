@@ -1,418 +1,382 @@
 ﻿// ============================================================
-// BossPattern_Slam.cs  v3.3
-// Boss_Warden 내려치기 패턴 — 팔 던지기 + 공략 타임
+// BossPattern_Slam.cs v5.1
+// Boss_Warden 내려치기 패턴 — Arm FIFO Queue + Per-Arm Target Lock
 //
-// [v3.3 — 색상 코드 제거 (BossWardenFeedback 위임)]
-//   제거: _armLRenderer / _armColorTween / _armOriginColor
-//   제거: Warning DOColor Pulse
-//   제거: 공략 타임 DOColor Yoyo
-//   제거: Recovery 팔 색상 복귀
-//   제거: Interrupt 팔 색상 복귀
-//   → 팔 색상은 SealableComponent + BossWardenFeedback 이 전담
-//
-//   Warning AttackRange 점멸 추가 (v1.2 AttackRange 연동)
-//   → ShowSlamDisc() 후 StartSlamPulse() 호출
-//   Active 진입 시 점멸 중단
-//   → StopAllPulse() 호출
-//
-// [v3.2 유지 — 원복]
-//   팔 Z축 회전 DOLocalRotate (+90f 오프셋) — 플레이어 방향 향함
-//   InverseTransformDirection 로컬 좌표 변환
-//   플레이어 위치 스냅 (_slamTarget0) 로직
-//   SetParent(null/bossTransform) 팔 분리/재부착
-//   공략 타임 SetSlamVuln 배율
-//   Scale 캐싱/복구 (_armLOriginLocalScale)
-//   DOPunchPosition 진동 연출
-//   귀환 DOMove + 회전 초기화
-//   2페이즈: 두 번째 내려치기 + 공략 타임 단축
-//
-// [연결 부위] 왼팔 (LeftArm)
-// [namespace] SEAL
+// [수정 내용]
+//   - Step27 패턴 인스턴스 Queue 방식 폐기.
+//   - Slam 패턴 인스턴스는 1개만 유지한다.
+//   - 실행 시점에 봉인되지 않은 팔을 골라 FIFO Queue로 처리한다.
+//   - 각 팔 실행 직전 플레이어 위치를 다시 읽고, 그 위치를 예고/실제 공격 위치로 고정한다.
+//   - 타격 후/복귀 중 취약 시간을 보장해 플레이어가 팔을 공격할 시간을 만든다.
 // ============================================================
 
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using DG.Tweening;
 
 namespace SEAL
 {
-    /// <summary>
-    /// Boss_Warden 내려치기 패턴 — 팔 던지기 + 공략 타임. (v3.3)
-    ///
-    /// ────────────────────────────────────────────────────
-    /// [연출 흐름]
-    ///   Warning : 플레이어 위치 스냅 → 디스크 배치 + 점멸 → 팔 백스윙 + 회전
-    ///   Active  : StopAllPulse → 팔 분리 → 플레이어 위치 꽂기 → 공략 타임 → 귀환
-    ///   Recovery: 팔 원위치 보정 → 충격 연출
-    /// ────────────────────────────────────────────────────
-    /// </summary>
     public class BossPattern_Slam : BossPatternBase
     {
-        // ══════════════════════════════════════════════════════
-        // Inspector
-        // ══════════════════════════════════════════════════════
-
-        [Header("── 컴포넌트 연결 ──────────────────────")]
-
-        [Tooltip("BossWardenAttackRange. 미연결 시 자동 탐색.")]
-        [SerializeField] private BossWardenAttackRange _attackRange;
-
-        [Tooltip("BossWardenAI. 미연결 시 자동 탐색.")]
-        [SerializeField] private BossWardenAI _ai;
-
-        [Tooltip("BossWardenDataSO.")]
+        [Header("── Manager 연결 ──────────────────────")]
+        [SerializeField] private BossVFXManager _vfxManager;
+        [SerializeField] private BossAttackManager _attackManager;
+        [SerializeField] private BossPartManager _partManager;
         [SerializeField] private BossWardenDataSO _data;
 
-        [Header("── 왼팔 Transform ──────────────────────")]
+        [Header("── 팔 후보 ──────────────────────")]
+        [Tooltip("true면 직접 후보 배열보다 BossPartManager의 동적 팔 목록을 우선 사용합니다.")]
+        [SerializeField] private bool _usePartManagerArmCandidates = true;
 
-        /// <summary>
-        /// 왼팔 Transform.
-        /// Active 중 SetParent(null) 으로 분리 → DOMove 이동 → 재부착.
-        /// 색상 제어 없음 (SealableComponent 전담).
-        /// </summary>
-        [Tooltip("왼팔 Transform. LeftArm 오브젝트 연결. 색상 제어 없음.")]
-        [SerializeField] private Transform _armLTransform;
+        [Tooltip("직접 지정된 Slam 후보 팔. _usePartManagerArmCandidates=false일 때만 우선 사용.")]
+        [SerializeField] private BossWardenPart[] _slamArmCandidates;
 
-        [Header("── 레이어 ──────────────────────")]
+        [Header("── Arm FIFO Queue ──────────────────────")]
+        [Tooltip("true면 이 Slam 패턴 1개가 선택된 팔들을 FIFO Queue로 순서대로 실행합니다.")]
+        [SerializeField] private bool _useArmQueue = true;
 
-        [Tooltip("플레이어 HurtBox 레이어. PlayerAttackHitBox 레이어 선택.")]
+        [Tooltip("패턴 1회에서 사용하려고 시도할 팔 수. 0이면 사용 가능한 모든 팔을 사용합니다. 봉인된 팔은 자동 제외됩니다.")]
+        [Min(0)][SerializeField] private int _maxArmsPerPattern = 0;
+
+        [Tooltip("Queue 구성 시 팔 순서를 랜덤으로 섞습니다.")]
+        [SerializeField] private bool _randomizeArmOrder = true;
+
+        [Tooltip("FIFO Queue에서 각 팔 Slam 사이의 간격.")]
+        [Min(0f)][SerializeField] private float _queueInterval = 0.08f;
+
+        [Tooltip("true면 FIFO의 각 팔이 시작될 때마다 플레이어 위치를 새로 읽고, 그 위치를 예고/실제 공격 위치로 고정합니다.")]
+        [SerializeField] private bool _retargetEachArmOnStart = true;
+
+        [Tooltip("각 팔의 짧은 개별 백스윙 시간.")]
+        [Min(0.01f)][SerializeField] private float _perArmWindupDuration = 0.14f;
+
+        [Header("── 판정 ──────────────────────")]
         [SerializeField] private LayerMask _playerLayer;
+        [Min(0f)][SerializeField] private float _hitRadius = 2.5f;
+        [Min(0f)][SerializeField] private float _warningRadius = 3.0f;
 
-        // ══════════════════════════════════════════════════════
-        // 내부 상태
-        // ══════════════════════════════════════════════════════
+        [Header("── 이동/연출 ──────────────────────")]
+        [Min(0.05f)][SerializeField] private float _throwDuration = 0.18f;
+        [Min(0.05f)][SerializeField] private float _returnDuration = 0.28f;
+        [Min(0f)][SerializeField] private float _backSwingDistance = 0.8f;
+        [Tooltip("타격 직후, 복귀 전 바닥에 남아있는 취약 시간.")]
+        [Min(0f)][SerializeField] private float _slamVulnWindow = 0.55f;
 
-        /// <summary>왼팔 원래 로컬 위치 (Awake 에서 캐싱).</summary>
-        private Vector3 _armOriginLocalPos;
+        [Tooltip("복귀 완료 후 추가로 팔을 공격할 수 있는 여유 시간.")]
+        [Min(0f)][SerializeField] private float _postReturnVulnWindow = 0.25f;
 
-        /// <summary>왼팔 원래 로컬 스케일. SetParent 재부착 시 복구용.</summary>
-        private Vector3 _armOriginLocalScale;
+        [Min(1f)][SerializeField] private float _slamVulnMultiplier = 2.0f;
 
-        /// <summary>보스 본체 Transform (팔 재부착 대상).</summary>
-        private Transform _bossTransform;
+        [Header("── 팔 방향 보정 ──────────────────────")]
+        [Tooltip("true면 팔의 Vector2.down 방향이 플레이어/목표 방향을 바라보도록 회전합니다.")]
+        [SerializeField] private bool _rotateDownAxisToTarget = true;
 
-        /// <summary>보스 Rigidbody2D (월드 위치 참조).</summary>
-        private Rigidbody2D _rigid2D;
+        private readonly List<BossWardenPart> _availableParts = new();
+        private readonly Queue<BossWardenPart> _armQueue = new();
 
-        /// <summary>Warning 시 스냅한 플레이어 월드 위치 (1번째).</summary>
-        private Vector2 _slamTarget0;
-
-        /// <summary>2페이즈 두 번째 내려치기 목표 위치.</summary>
-        private Vector2 _slamTarget1;
-
-        /// <summary>현재 2페이즈 여부.</summary>
+        private BossWardenPart _activePart;
+        private Transform _activeArm;
+        private Transform _originParent;
+        private Vector3 _originLocalPosition;
+        private Quaternion _originLocalRotation;
+        private Vector3 _originLocalScale;
+        private Vector2 _targetPos;
+        private bool _isDetached;
         private bool _isPhase2;
 
-        /// <summary>팔이 분리된 상태 여부. Interrupt 시 재부착 처리에 사용.</summary>
-        private bool _isArmDetached;
-
-        private BossWardenPatternDataSO.SlamSettings SlamData
-            => _data != null && _data.PatternData != null
-                ? _data.PatternData.Slam
-                : BossWardenPatternDataSO.DefaultSlam;
-
-        private BossWardenPatternDataSO.CommonSettings CommonData
-            => _data != null && _data.PatternData != null
-                ? _data.PatternData.Common
-                : BossWardenPatternDataSO.DefaultCommon;
-
-        // ══════════════════════════════════════════════════════
-        // Unity 라이프사이클
-        // ══════════════════════════════════════════════════════
+        public override bool IsAvailable
+        {
+            get
+            {
+                ResolveReferences();
+                return BuildAvailablePartSequence(previewOnly: true).Count > 0;
+            }
+        }
 
         private void Awake()
         {
-            if (_attackRange == null) _attackRange = GetComponentInParent<BossWardenAttackRange>();
-            if (_ai == null) _ai = GetComponentInParent<BossWardenAI>();
-
-            _rigid2D = GetComponentInParent<Rigidbody2D>();
-            _bossTransform = _rigid2D != null ? _rigid2D.transform : transform.parent;
-
-            if (_armLTransform != null)
-            {
-                _armOriginLocalPos = _armLTransform.localPosition;
-                _armOriginLocalScale = _armLTransform.localScale;
-            }
-
-            _triggerGroggyOnRecovery = false;
-            ApplyPatternData();
-        }
-
-        public override void Initialize(BossWardenDataSO data)
-        {
-            _data = data;
-            ApplyPatternData();
-        }
-
-        private void ApplyPatternData()
-        {
-            ConfigureLifecycle(SlamData.lifecycle, CommonData);
+            ResolveReferences();
             _triggerGroggyOnRecovery = false;
         }
 
         private void OnDestroy()
         {
-            ReattachArm();
+            ReattachImmediate();
         }
 
-        public new void UnlockPhase2()
+        public override void Initialize(BossWardenDataSO data)
+        {
+            base.Initialize(data);
+            ResolveReferences();
+
+            _data = data != null ? data : _data;
+            if (_data != null)
+            {
+                _hitRadius = _data.slamHitRadius;
+                _warningRadius = _data.slamWarningRadius;
+            }
+        }
+
+        public override void UnlockPhase2()
         {
             base.UnlockPhase2();
             _isPhase2 = true;
         }
 
-        // ══════════════════════════════════════════════════════
-        // Warning — 플레이어 위치 스냅 + 디스크 점멸 + 팔 백스윙 + 회전
-        // ══════════════════════════════════════════════════════
-
         protected override IEnumerator OnWarning()
         {
-            if (_data == null) yield break;
+            ResolveReferences();
 
-            var pattern = SlamData;
+            BuildArmQueue();
+            if (_armQueue.Count == 0) yield break;
 
-            // ① 플레이어 현재 위치 스냅 (이후 고정)
-            _slamTarget0 = GetPlayerPos();
-
-            // ② 예고 디스크 배치 + 점멸 시작 (v3.3: StopAllPulse 는 Active 에서)
-            _attackRange?.ShowSlamDisc(_slamTarget0, pattern.hitRadius, 0);
-            _attackRange?.StartSlamPulse(0);
-
-            // ③ 보스→플레이어 방향 계산 (월드 기준)
-            Vector2 bossPos = _rigid2D != null ? _rigid2D.position : (Vector2)transform.position;
-            Vector2 toPlayer = (_slamTarget0 - bossPos).normalized;
-
-            // ④ 팔 백스윙: 플레이어 반대 방향 + 들어올리기 (로컬 좌표 변환)
-            Vector3 windupLocalDir = Vector3.zero;
-            if (_bossTransform != null)
-            {
-                Vector3 worldBackDir = new Vector3(-toPlayer.x, -toPlayer.y, 0f);
-                windupLocalDir = _bossTransform.InverseTransformDirection(worldBackDir);
-            }
-            else
-            {
-                windupLocalDir = new Vector3(-toPlayer.x, -toPlayer.y, 0f);
-            }
-
-            Vector3 windupOffset = windupLocalDir * pattern.windupPullAmount
-                                 + new Vector3(0f, pattern.windupLiftAmount, 0f);
-
-            if (_armLTransform != null)
-            {
-                // 위치: 플레이어 반대로 당기기
-                _armLTransform
-                    .DOLocalMove(_armOriginLocalPos + windupOffset, _warningDuration * 0.4f)
-                    .SetEase(Ease.OutBack);
-
-                // v3.2: 팔이 플레이어를 바라보도록 Z 회전
-                // Vector.Down 이 플레이어 방향을 향함 → + 90f 오프셋
-                float lookAngle = Mathf.Atan2(toPlayer.y, toPlayer.x) * Mathf.Rad2Deg + 90f;
-                _armLTransform
-                    .DOLocalRotate(new Vector3(0f, 0f, lookAngle), _warningDuration * 0.4f)
-                    .SetEase(Ease.OutBack);
-            }
-
+            // 전체 패턴 진입 경고 시간. 실제 공격 예고 범위는 각 팔 실행 직전에 새로 표시한다.
+            _vfxManager?.HideSlamDisc(0);
             yield return StartCoroutine(WaitForPattern(_warningDuration));
         }
-
-        // ══════════════════════════════════════════════════════
-        // Active — 팔 분리 → 꽂기 → 공략 타임 → 귀환
-        // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnActive()
         {
             if (_isInterrupted) yield break;
-            if (_data == null || _armLTransform == null) yield break;
+            if (_armQueue.Count == 0) yield break;
 
-            var pattern = SlamData;
+            _vfxManager?.StopAllPulse();
 
-            // 점멸 중단 (v3.3)
-            _attackRange?.StopAllPulse();
-
-            // 첫 번째 내려치기
-            yield return StartCoroutine(ExecuteThrow(_slamTarget0, 0));
-            if (_isInterrupted) yield break;
-
-            // 2페이즈: 귀환 직후 두 번째 내려치기
-            if (_isPhase2 && pattern.phase2SecondSlam)
+            while (_armQueue.Count > 0)
             {
-                _slamTarget1 = GetPlayerPos();
-                _attackRange?.ShowSlamDisc(_slamTarget1, pattern.hitRadius, 1);
-                _attackRange?.StartSlamPulse(1);
-
-                yield return StartCoroutine(WaitForPattern(pattern.phase2SecondDelay));
                 if (_isInterrupted) yield break;
 
-                _attackRange?.StopAllPulse();
-                yield return StartCoroutine(ExecuteThrow(_slamTarget1, 1));
+                BossWardenPart part = _armQueue.Dequeue();
+                if (part == null || part.IsSealed) continue;
+
+                yield return StartCoroutine(ExecuteSingleSlam(part));
+
+                if (_isInterrupted) yield break;
+                if (_queueInterval > 0f && _armQueue.Count > 0)
+                    yield return StartCoroutine(WaitForPattern(_queueInterval));
             }
         }
-
-        /// <summary>
-        /// 단일 팔 던지기 실행 코루틴.
-        ///
-        /// [순서]
-        ///   ① 팔 SetParent(null) 분리
-        ///   ② DOMove → 목표 위치로 꽂기 + DOLocalRotate(+90f) 방향 회전
-        ///   ③ 충격 OverlapCircle + 디스크 플래시
-        ///   ④ 공략 타임 (봉인도 배율 활성) + DOPunchPosition 진동
-        ///   ⑤ DOMove → 보스 위치로 귀환 + 회전 초기화
-        ///   ⑥ SetParent(bossTransform) 재부착 + localPosition/Scale 보정
-        /// </summary>
-        private IEnumerator ExecuteThrow(Vector2 targetWorldPos, int discIndex)
-        {
-            if (_isInterrupted || _armLTransform == null) yield break;
-            if (_data == null) yield break;
-
-            var pattern = SlamData;
-
-            // ① 팔 분리
-            _armLTransform.SetParent(null, worldPositionStays: true);
-            _isArmDetached = true;
-
-            // ② 팔 → 목표 위치로 꽂기 DOMove + 방향 회전
-            //    + 90f 오프셋: Vector.Down 이 목표 방향 (손바닥 아래 이미지 기준)
-            Vector2 flyDir = (targetWorldPos - (Vector2)_armLTransform.position).normalized;
-            float targetAngle = Mathf.Atan2(flyDir.y, flyDir.x) * Mathf.Rad2Deg + 90f;
-
-            _armLTransform
-                .DOMove(new Vector3(targetWorldPos.x, targetWorldPos.y, _armLTransform.position.z),
-                        pattern.moveDuration)
-                .SetEase(Ease.OutExpo);
-
-            _armLTransform
-                .DOLocalRotate(new Vector3(0f, 0f, targetAngle), pattern.moveDuration * 0.5f)
-                .SetEase(Ease.OutQuart);
-
-            yield return new WaitForSecondsRealtime(pattern.moveDuration);
-            if (_isInterrupted) { ReattachArm(); yield break; }
-
-            // ③ 충격 히트박스 + 디스크 플래시
-            _attackRange?.FlashAndHideSlamDisc(discIndex);
-
-            Collider2D hit = Physics2D.OverlapCircle(targetWorldPos, pattern.hitRadius, _playerLayer);
-            if (hit != null)
-                Debug.Log($"[BossPattern_Slam] 내려치기 피격! | 목표:{targetWorldPos}");
-
-            // ④ 공략 타임 — 팔이 꽂힌 채 대기 + 취약 배율 활성
-            float vulnDuration = pattern.GetVulnerableDuration(_isPhase2);
-
-            _armLTransform
-                .DOPunchPosition(
-                    new Vector3(0.05f, 0.05f, 0f),
-                    vulnDuration,
-                    vibrato: 20,
-                    elasticity: 0.5f)
-                .SetUpdate(true);
-
-            var armPart = _armLTransform.GetComponent<BossWardenPart>();
-            armPart?.SetSlamVuln(true, pattern.vulnerableMultiplier);
-
-            yield return new WaitForSecondsRealtime(vulnDuration);
-
-            armPart?.SetSlamVuln(false, 1f);
-
-            if (_isInterrupted) { ReattachArm(); yield break; }
-
-            // ⑤ 팔 귀환 — 보스 현재 위치로 DOMove + 회전 초기화
-            Vector3 bossCurrentPos = _bossTransform != null
-                ? _bossTransform.position
-                : Vector3.zero;
-
-            Vector3 returnWorldPos = bossCurrentPos + _armOriginLocalPos;
-
-            _armLTransform
-                .DOMove(returnWorldPos, pattern.returnDuration)
-                .SetEase(Ease.InBack);
-
-            _armLTransform
-                .DORotate(Vector3.zero, pattern.returnDuration * 0.7f)
-                .SetEase(Ease.OutQuart);
-
-            yield return new WaitForSecondsRealtime(pattern.returnDuration);
-
-            // ⑥ 재부착
-            ReattachArm();
-        }
-
-        // ══════════════════════════════════════════════════════
-        // Recovery — 팔 원위치 보정 + 충격 연출
-        // ══════════════════════════════════════════════════════
 
         protected override IEnumerator OnRecovery()
         {
-            if (_isInterrupted) yield break;
-
-            // 팔 원위치 보정 (귀환 후 미세 오차 수정)
-            if (_armLTransform != null && !_isArmDetached)
-            {
-                _armLTransform
-                    .DOLocalMove(_armOriginLocalPos, _recoveryDuration * 0.3f)
-                    .SetEase(Ease.OutBack);
-            }
-
-            // 본체 충격 흔들림
-            transform.DOShakePosition(
-                    duration: 0.3f,
-                    strength: 0.2f,
-                    vibrato: 10,
-                    randomness: 90f)
-                .SetUpdate(true);
-
+            ReattachTween(_returnDuration);
             yield return StartCoroutine(WaitForPattern(_recoveryDuration));
         }
 
-        // ══════════════════════════════════════════════════════
-        // Interrupt 오버라이드
-        // ══════════════════════════════════════════════════════
-
         public override void Interrupt()
         {
-            _attackRange?.StopAllPulse();
-            _attackRange?.HideSlamDisc(0);
-            _attackRange?.HideSlamDisc(1);
-
-            ReattachArm();
+            _vfxManager?.StopAllPulse();
+            _vfxManager?.HideSlamDisc(0);
+            _activePart?.SetSlamVuln(false, 1f);
+            ReattachImmediate();
             base.Interrupt();
         }
 
-        // ══════════════════════════════════════════════════════
-        // 팔 재부착 공용 처리
-        // ══════════════════════════════════════════════════════
-
-        /// <summary>
-        /// 분리된 팔을 보스에게 즉시 재부착한다.
-        ///
-        /// [worldPositionStays = true]
-        ///   재부착 시 현재 월드 위치 유지 후 localPosition / localScale 강제 보정.
-        /// </summary>
-        private void ReattachArm()
+        private IEnumerator ExecuteSingleSlam(BossWardenPart part)
         {
-            if (!_isArmDetached || _armLTransform == null) return;
-            if (_bossTransform == null) return;
+            if (part == null || part.IsSealed) yield break;
 
-            _armLTransform.DOKill();
-            _armLTransform.SetParent(_bossTransform, worldPositionStays: true);
-            _armLTransform.localPosition = _armOriginLocalPos;
-            _armLTransform.localRotation = Quaternion.identity;
-            _armLTransform.localScale = _armOriginLocalScale;
+            _activePart = part;
+            _activeArm = part.transform;
+            if (_activeArm == null) yield break;
 
-            var armPart = _armLTransform.GetComponent<BossWardenPart>();
-            armPart?.SetSlamVuln(false, 1f);
+            CacheOrigin();
 
-            _isArmDetached = false;
-            Debug.Log("[BossPattern_Slam] 팔 재부착 완료");
+            if (_retargetEachArmOnStart || _targetPos == Vector2.zero)
+                _targetPos = GetPlayerPosition();
+
+            // 각 팔마다 새로 잠근 공격 예상 범위와 실제 공격 위치는 동일해야 한다.
+            _vfxManager?.ShowSlamDisc(_targetPos, _warningRadius, 0);
+            _vfxManager?.StartSlamPulse(0);
+
+            Vector2 dirFromTarget = ((Vector2)_activeArm.position - _targetPos).normalized;
+            if (dirFromTarget.sqrMagnitude < 0.01f)
+                dirFromTarget = -GetFacingDirection();
+
+            Vector3 windupWorld = _activeArm.position + (Vector3)(dirFromTarget * _backSwingDistance);
+            _activeArm.DOKill();
+            _activeArm.DOMove(windupWorld, _perArmWindupDuration).SetEase(Ease.OutBack).SetUpdate(true);
+            RotateArmDownTo(_activeArm, (_targetPos - (Vector2)_activeArm.position).normalized, _perArmWindupDuration, Ease.OutBack);
+
+            yield return StartCoroutine(WaitForPattern(_perArmWindupDuration));
+            if (_isInterrupted) yield break;
+
+            _vfxManager?.StopAllPulse();
+
+            _originParent = _activeArm.parent;
+            _activeArm.SetParent(null, worldPositionStays: true);
+            _isDetached = true;
+
+            float duration = _isPhase2 ? _throwDuration * 0.8f : _throwDuration;
+
+            _activeArm.DOKill();
+
+            Vector2 flyDir = (_targetPos - (Vector2)_activeArm.position).normalized;
+            RotateArmDownTo(_activeArm, flyDir, duration * 0.5f, Ease.OutQuart);
+
+            _activeArm.DOMove(new Vector3(_targetPos.x, _targetPos.y, _activeArm.position.z), duration)
+                .SetEase(Ease.InCubic)
+                .SetUpdate(true);
+
+            yield return StartCoroutine(WaitForPattern(duration));
+            if (_isInterrupted) yield break;
+
+            Collider2D hit = Physics2D.OverlapCircle(_targetPos, _hitRadius, _playerLayer);
+            if (hit != null)
+                Debug.Log($"[BossPattern_Slam] 플레이어 피격 | target:{_targetPos} radius:{_hitRadius}");
+
+            _vfxManager?.FlashAndHideSlamDisc(0);
+
+            _activePart?.SetSlamVuln(true, _slamVulnMultiplier);
+
+            // 타격 후 바로 복귀하지 않고 짧게 남겨 플레이어가 팔을 칠 수 있게 한다.
+            yield return StartCoroutine(WaitForPattern(_slamVulnWindow));
+            if (_isInterrupted) yield break;
+
+            // 복귀 중에도 취약 상태 유지.
+            ReattachTween(_returnDuration);
+            yield return StartCoroutine(WaitForPattern(_returnDuration));
+            if (_isInterrupted) yield break;
+
+            if (_postReturnVulnWindow > 0f)
+                yield return StartCoroutine(WaitForPattern(_postReturnVulnWindow));
+
+            _activePart?.SetSlamVuln(false, 1f);
         }
 
-        // ══════════════════════════════════════════════════════
-        // 유틸
-        // ══════════════════════════════════════════════════════
-
-        private Vector2 GetPlayerPos()
+        private void ResolveReferences()
         {
-            return (_ai != null && _ai.PlayerTransform != null)
-                ? (Vector2)_ai.PlayerTransform.position
-                : (_rigid2D != null ? _rigid2D.position : (Vector2)transform.position);
+            Transform root = transform.root;
+            if (_vfxManager == null) _vfxManager = root.GetComponentInChildren<BossVFXManager>(true);
+            if (_attackManager == null) _attackManager = root.GetComponentInChildren<BossAttackManager>(true);
+            if (_partManager == null) _partManager = root.GetComponentInChildren<BossPartManager>(true);
+        }
+
+        private void BuildArmQueue()
+        {
+            _armQueue.Clear();
+            _availableParts.Clear();
+
+            if (_usePartManagerArmCandidates && _partManager != null)
+            {
+                foreach (var part in _partManager.GetAllArmParts())
+                    AddAvailablePart(_availableParts, part);
+            }
+            else if (_slamArmCandidates != null)
+            {
+                foreach (var part in _slamArmCandidates)
+                    AddAvailablePart(_availableParts, part);
+            }
+
+            if (_availableParts.Count == 0 && _partManager != null)
+            {
+                foreach (var part in _partManager.GetAllArmParts())
+                    AddAvailablePart(_availableParts, part);
+            }
+
+            if (_randomizeArmOrder)
+                Shuffle(_availableParts);
+
+            int useCount = _maxArmsPerPattern <= 0
+                ? _availableParts.Count
+                : Mathf.Min(_maxArmsPerPattern, _availableParts.Count);
+
+            for (int i = 0; i < useCount; i++)
+                _armQueue.Enqueue(_availableParts[i]);
+        }
+
+        private List<BossWardenPart> BuildAvailablePartSequence(bool previewOnly)
+        {
+            BuildArmQueue();
+            return new List<BossWardenPart>(_armQueue);
+        }
+
+        private void AddAvailablePart(List<BossWardenPart> list, BossWardenPart part)
+        {
+            if (part == null) return;
+            if (part.IsSealed) return;
+            if (list.Contains(part)) return;
+            list.Add(part);
+        }
+
+        private void Shuffle(List<BossWardenPart> list)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                int j = Random.Range(i, list.Count);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
+        }
+
+        private void CacheOrigin()
+        {
+            if (_activeArm == null) return;
+
+            _originParent = _activeArm.parent;
+            _originLocalPosition = _activeArm.localPosition;
+            _originLocalRotation = _activeArm.localRotation;
+            _originLocalScale = _activeArm.localScale;
+        }
+
+        private Vector2 GetPlayerPosition()
+        {
+            if (_attackManager != null && _attackManager.PlayerTransform != null)
+                return _attackManager.PlayerTransform.position;
+
+            return transform.position;
+        }
+
+        private Vector2 GetFacingDirection()
+        {
+            if (_attackManager != null && _attackManager.FacingDir.sqrMagnitude > 0.01f)
+                return _attackManager.FacingDir;
+
+            return Vector2.right;
+        }
+
+        private void RotateArmDownTo(Transform arm, Vector2 direction, float duration, Ease ease)
+        {
+            if (!_rotateDownAxisToTarget) return;
+            if (arm == null) return;
+            if (direction.sqrMagnitude < 0.0001f) return;
+
+            float z = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg + 90f;
+            arm.DORotate(new Vector3(0f, 0f, z), Mathf.Max(0.01f, duration))
+                .SetEase(ease)
+                .SetUpdate(true);
+        }
+
+        private void ReattachTween(float duration)
+        {
+            if (_activeArm == null) return;
+
+            if (_isDetached && _originParent != null)
+                _activeArm.SetParent(_originParent, worldPositionStays: true);
+
+            _activeArm.DOKill();
+            _activeArm.DOLocalMove(_originLocalPosition, duration).SetEase(Ease.OutBack).SetUpdate(true);
+            _activeArm.DOLocalRotateQuaternion(_originLocalRotation, duration).SetEase(Ease.OutBack).SetUpdate(true);
+            _activeArm.localScale = _originLocalScale;
+
+            _isDetached = false;
+        }
+
+        private void ReattachImmediate()
+        {
+            if (_activeArm == null) return;
+
+            _activeArm.DOKill();
+
+            if (_isDetached && _originParent != null)
+                _activeArm.SetParent(_originParent, worldPositionStays: true);
+
+            _activeArm.localPosition = _originLocalPosition;
+            _activeArm.localRotation = _originLocalRotation;
+            _activeArm.localScale = _originLocalScale;
+            _activePart?.SetSlamVuln(false, 1f);
+
+            _isDetached = false;
         }
     }
 }
